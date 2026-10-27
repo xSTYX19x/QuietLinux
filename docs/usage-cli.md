@@ -255,7 +255,17 @@ quietlinux macro create --repeat while-held --delay 30 spam KeyA
 quietlinux macro edit 3 --name copy --events ctrl+KeyC
 quietlinux macro edit 3 --repeat repeat
 quietlinux macro delete 3
+quietlinux macro record                      # type it on the Light Mount, then Enter
+quietlinux macro record --pause none --create greeting
 ```
+
+`macro record` uses the keyboard's own recording, like IO Center: type the
+macro on the Light Mount, then press Enter in the terminal (an Enter typed on
+the Light Mount to stop is left out of the macro). `--pause` sets the pauses
+between the events: `recorded` (as you typed, default), `none` (50 ms) or a
+number of ms. Without `--create` the events are printed in the syntax of
+`macro create`; nothing is stored. The keys you type also reach the program
+in front, as always: record in a terminal or an empty text field.
 
 Events, separated by spaces (or commas):
 

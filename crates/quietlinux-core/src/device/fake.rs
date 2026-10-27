@@ -42,6 +42,8 @@ pub struct FakeKeyboard {
     pub game_mode_on: bool,
     /// Stored macros by ID (`12:01`–`12:08`).
     pub macros: BTreeMap<u16, Macro>,
+    /// Input events "typed" after `12:09` (start recording): `[kind][data]`.
+    pub recording: Vec<(u8, u8)>,
     fragments: Vec<Packet>,
 }
 
@@ -59,6 +61,7 @@ impl FakeKeyboard {
             game_mode_flags: 0,
             game_mode_on: false,
             macros: BTreeMap::new(),
+            recording: Vec::new(),
             fragments: Vec::new(),
         }
     }
@@ -116,6 +119,12 @@ impl FakeKeyboard {
         };
         let known = self.macros.contains_key(&id);
         match msg.cmd {
+            p::START_RECORDING => {
+                self.reply(request, &[]);
+                for (kind, data) in self.recording.clone() {
+                    self.notify(p::INPUT_EVENT, &[kind, data]);
+                }
+            }
             p::GET_MACROS => {
                 let mut data = u16::try_from(self.macros.len())
                     .unwrap()

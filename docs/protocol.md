@@ -464,8 +464,11 @@ again when one changes:
   index` fields are presumably for longer lists.
 - While IO Center for Windows records a macro, the keyboard sends `12:05`
   InputEvent notifications with the recorded key presses (`[kind][HID usage]`,
-  e.g. `02 04` A down). [cap] No `12:09` StartRecording was seen in that
-  capture. They are key presses: `qlcap` hides them with `--no-key-events`.
+  e.g. `02 04` A down). [cap] IO Center sends `12:09` `03 08 09 0b` once, when
+  it starts, and no `12:0a` StopRecording at all; QuietLinux records the same
+  way (`macro record`) and ends a recording by ending the session. Modifiers
+  may come as kind `01` with a bit mask ([web]); QuietLinux turns them into
+  presses and releases of the modifier keys. They are key presses: `qlcap` hides them with `--no-key-events`.
 
 IO Center Web does not list this feature for the (full-size) Light Mount. For
 the TKL it uses only `12:09` StartRecording and `12:0a` StopRecording.

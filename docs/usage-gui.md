@@ -112,6 +112,14 @@ The list shows the macros stored in the keyboard. Select one to change its
 name, repeat mode or events, then **Save**; **New macro** starts an empty one,
 **Create** stores it. **Delete** is refused while a key is bound to the macro.
 
+**Record** records the macro as you type it on the Light Mount (the keyboard's
+own recording); **Stop** ends it (only with the mouse, so that typing cannot
+press it). **Pauses** chooses the pause after each event: **None** (50 ms),
+**Fixed** (set the ms) or **As recorded**; changing it after a recording
+recalculates the events. The recording fills the events field; nothing is
+stored until **Save** / **Create**. The typed keys also reach the window (the
+text fields are locked meanwhile).
+
 Events use the syntax of `quietlinux macro create`: `KeyA` taps a key,
 `ctrl+KeyC` a combination, `+shift` / `-shift` press / release a key, `250ms` is
 a pause. Without a pause, 100 ms follow each event.
@@ -139,4 +147,4 @@ arrow at the top left (or the gear again) returns to the tabs.
 
 ## Not in the window yet
 
-Recording macros by typing them: see [todo.md](todo.md).
+File chooser and screen reader support: see [todo.md](todo.md).

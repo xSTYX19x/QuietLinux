@@ -9,7 +9,7 @@
 //! 3. a known firmware version (`03:01` reply), unless writing to an unknown
 //!    version is explicitly allowed.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 use std::fmt;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Write};
@@ -442,7 +442,12 @@ pub struct Session<T> {
     sid: u8,
     identity: Identity,
     allow_unknown_firmware: bool,
+    /// Notifications that arrived while waiting for a reply.
+    notifications: VecDeque<Message>,
 }
+
+/// Most notifications kept while waiting for replies.
+const MAX_QUEUED_NOTIFICATIONS: usize = 256;
 
 /// First request ID: changes between runs, as with IO Center. Never 0.
 fn initial_request_id() -> u8 {
@@ -471,6 +476,7 @@ impl<T: Transport> Session<T> {
                 version: Vec::new(),
             },
             allow_unknown_firmware,
+            notifications: VecDeque::new(),
         };
         let id = session.next_request_id();
         session.identity.version = session.request(&p::get_device_info(id))?.data;
@@ -538,6 +544,14 @@ impl<T: Transport> Session<T> {
             }) else {
                 return Err(Error::NoReply(cmd));
             };
+            if fragments.is_empty() && p::crc_ok(&resp) && p::is_notification(&resp) {
+                // a key press while waiting: kept for next_notification
+                if self.notifications.len() < MAX_QUEUED_NOTIFICATIONS {
+                    self.notifications
+                        .extend(p::reassemble(std::slice::from_ref(&resp)));
+                }
+                continue;
+            }
             let expected = if fragments.is_empty() {
                 p::is_reply(&resp, packet)
             } else {
@@ -601,6 +615,9 @@ impl<T: Transport> Session<T> {
     /// Next notification from the keyboard (such as a key event), or `None` after
     /// `timeout`. Replies to earlier requests and broken packets are skipped.
     pub fn next_notification(&mut self, timeout: Duration) -> Result<Option<Message>> {
+        if let Some(note) = self.notifications.pop_front() {
+            return Ok(Some(note));
+        }
         let deadline = Instant::now() + timeout;
         loop {
             let left = deadline.saturating_duration_since(Instant::now());
@@ -650,6 +667,41 @@ impl<T: Transport> Session<T> {
             }
         }
         Ok((total, all))
+    }
+
+    /// Start the keyboard's macro recording (`12:09`, as IO Center for Windows
+    /// sends it): key presses and releases then arrive as `12:05` notifications,
+    /// see [`Self::next_input_event`]. Keep the session open with
+    /// [`Self::keep_alive`]. Nothing stops it: IO Center sends no `12:0a`
+    /// either; it ends with the session.
+    pub fn start_recording(&mut self) -> Result<()> {
+        self.check_writable()?;
+        let id = self.next_request_id();
+        self.request(&p::frame(
+            p::START_RECORDING,
+            &p::START_RECORDING_PAYLOAD,
+            id,
+            self.sid,
+        )?)?;
+        Ok(())
+    }
+
+    /// The next recorded input event (`12:05`): `[kind][data]`, or `None` after
+    /// `timeout`. Other notifications are skipped.
+    pub fn next_input_event(&mut self, timeout: Duration) -> Result<Option<(u8, u8)>> {
+        let deadline = Instant::now() + timeout;
+        loop {
+            let left = deadline.saturating_duration_since(Instant::now());
+            let Some(note) = self.next_notification(left)? else {
+                return Ok(None);
+            };
+            if note.cmd != p::INPUT_EVENT {
+                continue;
+            }
+            if let [kind, data, ..] = note.data[..] {
+                return Ok(Some((kind, data)));
+            }
+        }
     }
 
     /// IDs of the macros stored in the keyboard (`12:01`).

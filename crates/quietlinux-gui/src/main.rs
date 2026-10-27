@@ -14,7 +14,8 @@ use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::process::ExitCode;
-use std::sync::mpsc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, mpsc};
 use std::time::Duration;
 
 use clap::Parser;
@@ -96,6 +97,8 @@ enum Job {
     PollGameMode,
     /// Per-LED colors; the state is not read again.
     Leds(Vec<Led>),
+    /// Record a macro until the flag is set.
+    Record(Arc<AtomicBool>),
 }
 
 /// The default backup file.
@@ -136,6 +139,11 @@ struct Controller {
     /// Sends the painted colors after [`PAINT_DELAY`].
     paint_timer: slint::Timer,
     paint: Paint,
+    /// The last recording, as the keyboard reported it (to apply another pause
+    /// setting); cleared when the events are edited by hand.
+    recorded: Vec<macros::Recorded>,
+    /// Set to stop the recording.
+    stop_recording: Option<Arc<AtomicBool>>,
     /// Save what is set for the next start (not in the demo mode).
     remember: bool,
     /// The lighting view was chosen from the keyboard's mode (on the first answer).
@@ -157,6 +165,8 @@ impl Controller {
             painted: BTreeMap::new(),
             paint_timer: slint::Timer::default(),
             paint: Paint::Idle,
+            recorded: Vec::new(),
+            stop_recording: None,
             remember: false,
             view_chosen: false,
             editor_key: String::new(),
@@ -690,6 +700,65 @@ impl Controller {
         }
     }
 
+    fn record(&mut self, ui: &AppWindow) {
+        let Some(requests) = &self.requests else {
+            return;
+        };
+        let stop = Arc::new(AtomicBool::new(false));
+        if requests.send(Job::Record(stop.clone())).is_ok() {
+            self.stop_recording = Some(stop);
+            ui.set_recording(true);
+            ui.set_busy(true);
+            ui.set_status_error(false);
+            ui.set_status("Recording: type the macro on the Light Mount, then click Stop.".into());
+        }
+    }
+
+    fn stop_recording(&mut self) {
+        if let Some(stop) = &self.stop_recording {
+            stop.store(true, Ordering::Relaxed);
+        }
+    }
+
+    fn recording_progress(ui: &AppWindow, events: usize) {
+        ui.set_status(
+            format!("Recording: {events} key event(s) so far. Click Stop when done.").into(),
+        );
+    }
+
+    fn recorded(&mut self, ui: &AppWindow, result: Result<Vec<macros::Recorded>, String>) {
+        self.stop_recording = None;
+        ui.set_recording(false);
+        ui.set_busy(false);
+        match result {
+            Ok(recorded) if recorded.is_empty() => show_error(ui, "nothing was recorded"),
+            Ok(recorded) => {
+                self.recorded = recorded;
+                self.show_recording(ui);
+                ui.set_status_error(false);
+                ui.set_status(
+                    "Recorded. Choose the pauses, then save the macro (nothing is stored yet)."
+                        .into(),
+                );
+            }
+            Err(e) => show_error(ui, &e),
+        }
+    }
+
+    /// The recorded events with the chosen pauses, in the events field.
+    fn show_recording(&self, ui: &AppWindow) {
+        if self.recorded.is_empty() {
+            return;
+        }
+        let pause = match ui.get_pause_mode() {
+            0 => macros::Pause::Fixed(macros::NO_PAUSE_MS),
+            1 => macros::Pause::Fixed(u16::try_from(ui.get_pause_ms()).unwrap_or(0)),
+            _ => macros::Pause::Recorded,
+        };
+        let events = macros::from_recording(&self.recorded, pause);
+        ui.set_macro_events(macros::events_text(&events, macros::DEFAULT_DELAY_MS).into());
+    }
+
     /// Remember the painted keys and zones for the next start.
     fn save_paint(&self, ui: &AppWindow) {
         let mut prefs = prefs::load();
@@ -1008,6 +1077,10 @@ fn set_up(ui: &AppWindow) {
     });
     ui.on_macro_save(|| with_controller(Controller::save_macro));
     ui.on_macro_delete(|| with_controller(Controller::delete_macro));
+    ui.on_record(|| with_controller(Controller::record));
+    ui.on_stop_recording(|| with_controller(|c, _| c.stop_recording()));
+    ui.on_pause_changed(|| with_controller(|c, ui| c.show_recording(ui)));
+    ui.on_events_edited(|| with_controller(|c, _| c.recorded.clear()));
 }
 
 /// Start the backend thread; its answers go back to the UI thread.
@@ -1026,6 +1099,21 @@ fn spawn_backend(mut backend: Backend) -> mpsc::Sender<Job> {
                     let result = backend.set_leds(&leds);
                     slint::invoke_from_event_loop(move || {
                         with_controller(|c, ui| c.painted(ui, result));
+                    })
+                }
+                Job::Record(stop) => {
+                    let mut shown = 0;
+                    let result = backend.record(|events| {
+                        if events != shown {
+                            shown = events;
+                            let _ = slint::invoke_from_event_loop(move || {
+                                with_controller(|_, ui| Controller::recording_progress(ui, events));
+                            });
+                        }
+                        !stop.load(Ordering::Relaxed)
+                    });
+                    slint::invoke_from_event_loop(move || {
+                        with_controller(|c, ui| c.recorded(ui, result));
                     })
                 }
                 Job::PollGameMode => {

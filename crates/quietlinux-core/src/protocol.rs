@@ -96,6 +96,16 @@ pub const SET_MACROS: Command = Command::new(FEATURE_MACROS, 0x02);
 pub const SET_MACRO_CONFIG: Command = Command::new(FEATURE_MACROS, 0x04);
 /// Notification while the keyboard records a macro: a key press or release.
 pub const INPUT_EVENT: Command = Command::new(FEATURE_MACROS, 0x05);
+/// Start recording: the keyboard reports key presses and releases as
+/// `INPUT_EVENT` notifications.
+pub const START_RECORDING: Command = Command::new(FEATURE_MACROS, 0x09);
+/// `12:09` payload as IO Center for Windows sends it when it starts [cap];
+/// `[count][key IDs]` by IO Center Web's names, the meaning of these keys (Tab,
+/// Caps Lock, left Ctrl) is unknown.
+pub const START_RECORDING_PAYLOAD: [u8; 4] = [0x03, 0x08, 0x09, 0x0b];
+/// Event kind of `INPUT_EVENT`: the modifier keys changed, data `[bit mask]`
+/// (IO Center Web's input event type 1).
+pub const INPUT_MODIFIERS: u8 = 0x01;
 /// Request: the events of a macro. Same code as the `INPUT_EVENT` notification.
 pub const GET_MACRO_EVENTS: Command = READ_ONLY[18];
 pub const SET_MACRO_EVENTS: Command = Command::new(FEATURE_MACROS, 0x06);

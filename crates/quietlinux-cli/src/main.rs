@@ -211,6 +211,36 @@ enum MacroCommand {
     },
     /// Delete a macro (refused while a key is bound to it)
     Delete { id: u16 },
+    /// Record a macro by typing it on the Light Mount; Enter in this terminal stops
+    ///
+    /// Uses the keyboard's own recording (as IO Center for Windows). Prints the
+    /// events in the syntax of `macro create`, or stores them with --create.
+    Record {
+        /// Pauses between the events: none (50 ms), recorded, or a number of ms
+        #[arg(long, default_value = "recorded")]
+        pause: macros::Pause,
+        /// Store the recording as a new macro with this name
+        #[arg(long, value_name = "NAME")]
+        create: Option<String>,
+        /// Repeat mode of the new macro: once, while-held or repeat
+        #[arg(long, default_value = "once", requires = "create")]
+        repeat: macros::RepeatMode,
+    },
+}
+
+/// Record until a line is read from standard input.
+fn record<T: device::Transport>(
+    session: &mut device::Session<T>,
+) -> Result<Vec<macros::Recorded>, Box<dyn std::error::Error>> {
+    let (stop_tx, stop) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = io::stdin().lock().read_line(&mut String::new());
+        let _ = stop_tx.send(());
+    });
+    eprintln!("Recording: type the macro on the Light Mount, then press Enter here.");
+    let mut recorded = macros::record(session, |_| stop.try_recv().is_err())?;
+    macros::drop_stopping_enter(&mut recorded);
+    Ok(recorded)
 }
 
 fn run_macro<T: device::Transport>(
@@ -257,6 +287,32 @@ fn run_macro<T: device::Transport>(
         MacroCommand::Delete { id } => {
             macros::delete(session, id)?;
             vec![format!("Macro {id} deleted.")]
+        }
+        MacroCommand::Record {
+            pause,
+            create,
+            repeat,
+        } => {
+            let recorded = record(session)?;
+            let events = macros::from_recording(&recorded, pause);
+            if events.is_empty() {
+                return Err("nothing was recorded".into());
+            }
+            let text = macros::events_text(&events, macros::DEFAULT_DELAY_MS);
+            match create {
+                Some(name) => {
+                    let id = macros::create(session, &name, repeat, events)?;
+                    vec![
+                        format!("Events: {text}"),
+                        format!("Macro {id} {name:?} stored. Bind it: quietlinux bind KEY macro {id}"),
+                    ]
+                }
+                None => vec![
+                    format!("Events: {text}"),
+                    "Store it with: quietlinux macro create NAME <events>, or record again with --create NAME"
+                        .to_owned(),
+                ],
+            }
         }
     };
     for line in lines {

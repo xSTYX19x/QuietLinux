@@ -3,7 +3,7 @@
 
 import {
     Button, CheckBox, ComboBox, GroupBox, HorizontalBox, LineEdit, Palette, Slider,
-    StandardListView, TabWidget, TextEdit, VerticalBox,
+    SpinBox, StandardListView, TabWidget, TextEdit, VerticalBox,
 } from "std-widgets.slint";
 
 export struct KeyCap {
@@ -642,6 +642,49 @@ component KeysPage inherits VerticalBox {
     }
 }
 
+// Record / Stop: mouse only, so that typing the macro can never press it.
+component RecordButton inherits Rectangle {
+    in property <bool> recording;
+    in property <bool> enabled;
+    callback clicked();
+    height: 32px;
+    width: label.preferred-width + 40px;
+    border-radius: 4px;
+    border-width: 1px;
+    border-color: root.recording ? #c42b1c : Palette.border;
+    background: root.recording ? #c42b1c : (touch.has-hover ? Palette.alternate-background : Palette.control-background);
+    opacity: root.enabled ? 1 : 0.5;
+
+    HorizontalLayout {
+        padding-left: 12px;
+        spacing: 8px;
+        alignment: start;
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 10px;
+                height: 10px;
+                border-radius: root.recording ? 2px : 5px;
+                background: root.recording ? white : #c42b1c;
+            }
+        }
+
+        label := Text {
+            text: root.recording ? "Stop" : "Record";
+            vertical-alignment: center;
+            color: root.recording ? white : Palette.control-foreground;
+        }
+    }
+
+    touch := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
 component MacrosPage inherits HorizontalBox {
     in property <[StandardListViewItem]> items;
     in-out property <int> current;
@@ -649,10 +692,18 @@ component MacrosPage inherits HorizontalBox {
     in-out property <int> repeat;
     in-out property <string> events;
     in property <bool> enabled;
+    // recording: on now; pauses 0 none (50 ms), 1 fixed, 2 as recorded
+    in property <bool> recording;
+    in-out property <int> pause-mode;
+    in-out property <int> pause-ms;
     callback selected(index: int);
     callback new-macro();
     callback save();
     callback delete();
+    callback record();
+    callback stop-recording();
+    callback pause-changed();
+    callback events-edited();
 
     VerticalLayout {
         spacing: 8px;
@@ -695,6 +746,8 @@ component MacrosPage inherits HorizontalBox {
             LineEdit {
                 text <=> root.name;
                 placeholder-text: "up to 32 characters";
+                // the recorded keys are typed into the focused field too
+                enabled: !root.recording;
             }
         }
 
@@ -712,14 +765,62 @@ component MacrosPage inherits HorizontalBox {
             }
         }
 
-        Text {
-            text: "Events";
+        HorizontalLayout {
+            spacing: 8px;
+            Text {
+                text: "Events";
+                vertical-alignment: center;
+                min-width: 70px;
+            }
+
+            RecordButton {
+                recording: root.recording;
+                enabled: root.recording || root.enabled;
+                clicked => {
+                    if root.recording {
+                        root.stop-recording();
+                    } else {
+                        root.record();
+                    }
+                }
+            }
+
+            Text {
+                text: "Pauses";
+                vertical-alignment: center;
+            }
+
+            ComboBox {
+                model: ["None (50 ms)", "Fixed", "As recorded"];
+                current-index <=> root.pause-mode;
+                selected => {
+                    root.pause-changed();
+                }
+            }
+
+            if root.pause-mode == 1: SpinBox {
+                minimum: 0;
+                maximum: 10000;
+                step-size: 10;
+                value <=> root.pause-ms;
+                edited => {
+                    root.pause-changed();
+                }
+            }
+            if root.pause-mode == 1: Text {
+                text: "ms";
+                vertical-alignment: center;
+            }
         }
 
         TextEdit {
             text <=> root.events;
             min-height: 120px;
             wrap: word-wrap;
+            enabled: !root.recording;
+            edited => {
+                root.events-edited();
+            }
         }
 
         Text {
@@ -1103,6 +1204,13 @@ export component AppWindow inherits Window {
     callback macro-new();
     callback macro-save();
     callback macro-delete();
+    in property <bool> recording;
+    in-out property <int> pause-mode: 2;
+    in-out property <int> pause-ms: 100;
+    callback record();
+    callback stop-recording();
+    callback pause-changed();
+    callback events-edited();
 
     // settings
     in-out property <bool> block-shift-tab;
@@ -1328,6 +1436,21 @@ export component AppWindow inherits Window {
                     delete => {
                         root.macro-delete();
                     }
+                    recording: root.recording;
+                    pause-mode <=> root.pause-mode;
+                    pause-ms <=> root.pause-ms;
+                    record => {
+                        root.record();
+                    }
+                    stop-recording => {
+                        root.stop-recording();
+                    }
+                    pause-changed => {
+                        root.pause-changed();
+                    }
+                    events-edited => {
+                        root.events-edited();
+                    }
                 }
             }
         }
@@ -1379,7 +1502,7 @@ export component AppWindow inherits Window {
 
         HorizontalBox {
             Text {
-                text: root.busy ? "Working …" : root.status;
+                text: root.busy && !root.recording ? "Working …" : root.status;
                 color: root.status-error && !root.busy ? #d03030 : Palette.alternate-foreground;
                 wrap: word-wrap;
                 horizontal-stretch: 1;

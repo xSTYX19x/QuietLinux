@@ -146,6 +146,31 @@ impl Backend {
         }
     }
 
+    /// Record a macro with the keyboard's own recording until `keep_going`
+    /// (called with the number of events so far) returns `false`.
+    pub fn record(
+        &mut self,
+        keep_going: impl FnMut(usize) -> bool,
+    ) -> Result<Vec<macros::Recorded>, String> {
+        match self {
+            Self::Hardware { usb_path } => {
+                let (_, mut session) =
+                    device::open(usb_path.as_deref(), false).map_err(|e| e.to_string())?;
+                session.open_session().map_err(|e| e.to_string())?;
+                macros::record(&mut session, keep_going).map_err(|e| e.to_string())
+            }
+            Self::Demo(kb) => {
+                // the simulated keyboard "types" hello
+                kb.recording = [0x0b, 0x08, 0x0f, 0x0f, 0x12]
+                    .into_iter()
+                    .flat_map(|usage| [(p::MACRO_KEY_DOWN, usage), (p::MACRO_KEY_UP, usage)])
+                    .collect();
+                let mut session = Session::new(&mut **kb, false).map_err(|e| e.to_string())?;
+                macros::record(&mut session, keep_going).map_err(|e| e.to_string())
+            }
+        }
+    }
+
     /// Only whether game mode is on (`07:04`): cheap enough to ask every few seconds.
     pub fn game_mode_on(&mut self) -> Result<Option<bool>, String> {
         match self {
@@ -444,6 +469,12 @@ mod tests {
             kb.game_mode_on = true; // Fn+Pause
         }
         assert_eq!(backend.game_mode_on(), Ok(Some(true)));
+        let recorded = backend.record(|n| n < 10).unwrap();
+        let events = macros::from_recording(&recorded, macros::Pause::Fixed(100));
+        assert_eq!(
+            macros::events_text(&events, 100),
+            "KeyH KeyE KeyL KeyL KeyO"
+        );
         let red = quietlinux_core::Rgb::new(255, 0, 0);
         backend.set_leds(&[Led::new(0x57, red)]).unwrap();
         if let Backend::Demo(kb) = &backend {

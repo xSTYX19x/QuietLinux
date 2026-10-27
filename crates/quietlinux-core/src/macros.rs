@@ -7,6 +7,7 @@
 
 use std::fmt::Write as _;
 use std::str::FromStr;
+use std::time::Duration;
 
 use crate::device::{Error, Session, Transport};
 use crate::info::{self, Action, Macro};
@@ -189,6 +190,153 @@ pub fn events_text(events: &[MacroEvent], delay_ms: u16) -> String {
             let _ = write!(out, " {}ms", shown.delay_ms);
         }
         i += 1;
+    }
+    out
+}
+
+// --- recording ----------------------------------------------------------------------
+
+/// The pause "none" stands for: IO Center's shortest.
+pub const NO_PAUSE_MS: u16 = 50;
+
+/// An input event the keyboard reported while recording (`12:05`), and when.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Recorded {
+    /// `02` key down, `03` key up, `01` modifiers changed (data: bit mask).
+    pub kind: u8,
+    pub data: u8,
+    /// Time since the recording started.
+    pub at: Duration,
+}
+
+/// The pauses between recorded events.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Pause {
+    /// The same pause after every event, in ms ("no pause" is [`NO_PAUSE_MS`]).
+    Fixed(u16),
+    /// The pauses as they were typed.
+    Recorded,
+}
+
+/// Record with the keyboard's own recording until `keep_going` (called with the
+/// number of events so far, at least every 50 ms) returns `false`. The session
+/// is kept open with keep-alives meanwhile.
+pub fn record<T: Transport>(
+    session: &mut Session<T>,
+    mut keep_going: impl FnMut(usize) -> bool,
+) -> Result<Vec<Recorded>, Error> {
+    const KEEP_ALIVE: Duration = Duration::from_millis(1500);
+    session.start_recording()?;
+    let start = std::time::Instant::now();
+    let mut last_alive = start;
+    let mut recorded = Vec::new();
+    while keep_going(recorded.len()) {
+        if let Some((kind, data)) = session.next_input_event(Duration::from_millis(50))? {
+            recorded.push(Recorded {
+                kind,
+                data,
+                at: start.elapsed(),
+            });
+        }
+        if last_alive.elapsed() >= KEEP_ALIVE {
+            session.keep_alive()?;
+            last_alive = std::time::Instant::now();
+        }
+    }
+    Ok(recorded)
+}
+
+/// Leave out the Enter that stopped a recording (pressed last, maybe released).
+pub fn drop_stopping_enter(recorded: &mut Vec<Recorded>) {
+    const ENTER: [u8; 2] = [0x28, 0x58]; // Enter, numpad Enter
+    for kind in [p::MACRO_KEY_UP, p::MACRO_KEY_DOWN] {
+        if recorded
+            .last()
+            .is_some_and(|r| r.kind == kind && ENTER.contains(&r.data))
+        {
+            recorded.pop();
+        }
+    }
+}
+
+/// How a recording's pauses are given on the command line: `none`, `recorded`
+/// or a number of ms.
+impl FromStr for Pause {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "none" => Ok(Pause::Fixed(NO_PAUSE_MS)),
+            "recorded" => Ok(Pause::Recorded),
+            ms => ms
+                .strip_suffix("ms")
+                .unwrap_or(ms)
+                .parse()
+                .map(Pause::Fixed)
+                .map_err(|_| format!("invalid pause {s:?}: none, recorded or a number of ms")),
+        }
+    }
+}
+
+/// Turn a recording into macro events:
+/// - modifier masks (`01`) become presses and releases of the modifier keys;
+/// - releases of keys pressed before the recording started are left out (the
+///   Enter that started it), and keys still held at the end are released;
+/// - every event gets the pause `pause`, the last one none.
+pub fn from_recording(recorded: &[Recorded], pause: Pause) -> Vec<MacroEvent> {
+    let mut events: Vec<(MacroEvent, Duration)> = Vec::new();
+    let mut held: Vec<u8> = Vec::new();
+    let mut modifiers = 0u8;
+    let mut push = |kind: u8, usage: u8, at: Duration, held: &mut Vec<u8>| {
+        match kind {
+            p::MACRO_KEY_DOWN if !held.contains(&usage) => held.push(usage),
+            p::MACRO_KEY_UP => {
+                let Some(i) = held.iter().position(|u| *u == usage) else {
+                    return; // pressed before the recording
+                };
+                held.remove(i);
+            }
+            _ => return, // repeated press while held
+        }
+        events.push((event(kind, usage, 0), at));
+    };
+    for r in recorded {
+        match r.kind {
+            p::MACRO_KEY_DOWN | p::MACRO_KEY_UP => push(r.kind, r.data, r.at, &mut held),
+            p::INPUT_MODIFIERS => {
+                let changed = modifiers ^ r.data;
+                for bit in 0..8u8 {
+                    if changed & (1 << bit) != 0 {
+                        let kind = if r.data & (1 << bit) != 0 {
+                            p::MACRO_KEY_DOWN
+                        } else {
+                            p::MACRO_KEY_UP
+                        };
+                        push(kind, FIRST_MODIFIER + bit, r.at, &mut held);
+                    }
+                }
+                modifiers = r.data;
+            }
+            // other kinds (consumer keys, mouse) cannot be macro events yet
+            _ => {}
+        }
+    }
+    let end = recorded.last().map_or(Duration::ZERO, |r| r.at);
+    for usage in held.into_iter().rev() {
+        events.push((event(p::MACRO_KEY_UP, usage, 0), end));
+    }
+    let times: Vec<Duration> = events.iter().map(|(_, at)| *at).collect();
+    let mut out: Vec<MacroEvent> = events.into_iter().map(|(e, _)| e).collect();
+    let count = out.len();
+    for (i, e) in out.iter_mut().enumerate() {
+        e.delay_ms = match pause {
+            _ if i + 1 == count => 0,
+            Pause::Fixed(ms) => ms,
+            Pause::Recorded => {
+                let gap = times[i + 1].saturating_sub(times[i]).as_millis();
+                u16::try_from(gap).unwrap_or(u16::MAX)
+            }
+        };
     }
     out
 }
@@ -509,6 +657,76 @@ mod tests {
             kb.macros[&1],
             Macro::new(1, "Makro 1", vec![event(DOWN, 4, 0)])
         );
+    }
+
+    fn rec(kind: u8, data: u8, ms: u64) -> Recorded {
+        Recorded {
+            kind,
+            data,
+            at: Duration::from_millis(ms),
+        }
+    }
+
+    #[test]
+    fn recordings_become_macros() {
+        let typed = [
+            rec(UP, 0x28, 5), // the Enter that started it
+            rec(DOWN, 0x04, 100),
+            rec(UP, 0x04, 180),
+            rec(p::INPUT_MODIFIERS, 0x02, 400), // left Shift down
+            rec(DOWN, 0x05, 420),
+            rec(DOWN, 0x05, 450), // repeated while held
+            rec(UP, 0x05, 500),
+            rec(p::INPUT_MODIFIERS, 0x00, 520), // Shift up
+            rec(DOWN, 0x06, 900),               // still held at the end
+            rec(0x06, 0xe9, 950),               // a consumer key: left out
+        ];
+        let steps = |pause| steps(&from_recording(&typed, pause));
+        assert_eq!(
+            steps(Pause::Recorded),
+            [
+                (DOWN, 0x04, 80),
+                (UP, 0x04, 220),
+                (DOWN, 0xe1, 20),
+                (DOWN, 0x05, 80),
+                (UP, 0x05, 20),
+                (UP, 0xe1, 380),
+                (DOWN, 0x06, 50),
+                (UP, 0x06, 0)
+            ]
+        );
+        let fixed = steps(Pause::Fixed(NO_PAUSE_MS));
+        assert!(fixed[..7].iter().all(|s| s.2 == 50) && fixed[7].2 == 0);
+        assert_eq!(
+            events_text(&from_recording(&typed, Pause::Fixed(100)), 100),
+            "KeyA +shift KeyB -shift KeyC"
+        );
+        assert_eq!(from_recording(&[], Pause::Recorded), []);
+        // the Enter that stopped it
+        let mut stopped = vec![
+            rec(DOWN, 0x04, 1),
+            rec(UP, 0x04, 2),
+            rec(DOWN, 0x28, 3),
+            rec(UP, 0x28, 4),
+        ];
+        drop_stopping_enter(&mut stopped);
+        assert_eq!(stopped.len(), 2);
+        assert_eq!("none".parse(), Ok(Pause::Fixed(NO_PAUSE_MS)));
+        assert_eq!("recorded".parse(), Ok(Pause::Recorded));
+        assert_eq!("120ms".parse(), Ok(Pause::Fixed(120)));
+        assert!("often".parse::<Pause>().is_err());
+    }
+
+    #[test]
+    fn recording_on_a_simulated_keyboard() {
+        let mut kb = FakeKeyboard::tested();
+        kb.recording = vec![(DOWN, 0x0b), (UP, 0x0b), (DOWN, 0x0c), (UP, 0x0c)];
+        let mut session = Session::new(&mut kb, false).unwrap();
+        // stop once all four arrived
+        let recorded = record(&mut session, |n| n < 4).unwrap();
+        let got: Vec<(u8, u8)> = recorded.iter().map(|r| (r.kind, r.data)).collect();
+        assert_eq!(got, [(DOWN, 0x0b), (UP, 0x0b), (DOWN, 0x0c), (UP, 0x0c)]);
+        assert!(kb.commands().contains(&"12:09".to_owned()));
     }
 
     #[test]

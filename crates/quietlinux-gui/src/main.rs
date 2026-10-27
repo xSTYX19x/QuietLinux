@@ -57,7 +57,7 @@ struct Cli {
     /// Draw the window of the demo mode into an image (PPM) and quit; for the docs
     #[arg(long, value_name = "FILE", hide = true)]
     screenshot: Option<PathBuf>,
-    /// Tab for --screenshot: 0 lighting, 1 per key, 2 keys, 3 macros, 4 settings
+    /// View for --screenshot: 0 lighting effect, 1 lighting per key, 2 keys, 3 macros, 4 settings
     #[arg(long, default_value_t = 0, hide = true)]
     page: i32,
     /// Theme for --screenshot: 0 system, 1 light, 2 dark

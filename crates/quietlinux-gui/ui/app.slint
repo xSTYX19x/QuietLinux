@@ -908,6 +908,118 @@ component SettingsPage inherits VerticalBox {
     }
 }
 
+// A row of choices, one of them selected (like tabs, but inside a page).
+component Segmented inherits Rectangle {
+    in property <[string]> items;
+    in-out property <int> current;
+    callback chosen(index: int);
+    height: 32px;
+    border-radius: 6px;
+    border-width: 1px;
+    border-color: Palette.border;
+    background: Palette.alternate-background;
+
+    HorizontalLayout {
+        padding: 2px;
+        spacing: 2px;
+        for item[i] in root.items: Rectangle {
+            border-radius: 4px;
+            min-width: label.preferred-width + 28px;
+            background: i == root.current
+                ? Palette.accent-background
+                : (touch.has-hover ? Palette.control-background : transparent);
+
+            label := Text {
+                text: item;
+                color: i == root.current ? Palette.accent-foreground : Palette.foreground;
+                font-weight: i == root.current ? 600 : 400;
+            }
+
+            touch := TouchArea {
+                clicked => {
+                    root.current = i;
+                    root.chosen(i);
+                }
+            }
+        }
+    }
+}
+
+// Three positions, system / light / dark, chosen by clicking one of them.
+component ThemeSwitch inherits Rectangle {
+    // 0 the system's, 1 light, 2 dark
+    in-out property <int> value;
+    callback chosen();
+    property <length> cell: 30px;
+    width: 3 * self.cell + 4px;
+    height: self.cell + 4px;
+    border-radius: self.height / 2;
+    border-width: 1px;
+    border-color: Palette.border;
+    background: Palette.alternate-background;
+
+    Rectangle {
+        x: 2px + root.value * root.cell;
+        y: 2px;
+        width: root.cell;
+        height: root.cell;
+        border-radius: root.cell / 2;
+        background: Palette.accent-background;
+        animate x {
+            duration: 150ms;
+            easing: ease-out;
+        }
+    }
+
+    for icon[i] in [@image-url("icons/system.svg"), @image-url("icons/sun.svg"), @image-url("icons/moon.svg")]: Rectangle {
+        x: 2px + i * root.cell;
+        y: 2px;
+        width: root.cell;
+        height: root.cell;
+
+        Image {
+            source: icon;
+            width: 17px;
+            height: 17px;
+            colorize: i == root.value ? Palette.accent-foreground : Palette.foreground;
+        }
+
+        TouchArea {
+            clicked => {
+                root.value = i;
+                root.chosen();
+            }
+        }
+    }
+}
+
+// A small button with an icon.
+component IconButton inherits Rectangle {
+    in property <image> icon;
+    in property <bool> active;
+    callback clicked();
+    width: 34px;
+    height: 34px;
+    border-radius: 6px;
+    background: root.active
+        ? Palette.accent-background
+        : (touch.has-hover ? Palette.alternate-background : transparent);
+
+    Image {
+        source: root.icon;
+        width: 20px;
+        height: 20px;
+        colorize: root.active ? Palette.accent-foreground : Palette.foreground;
+    }
+
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
 export component AppWindow inherits Window {
     title: "QuietLinux";
     icon: @image-url("icon.svg");
@@ -923,6 +1035,10 @@ export component AppWindow inherits Window {
     in property <bool> busy;
     in property <bool> connected;
     in-out property <int> page;
+    // lighting tab: 0 effect, 1 per key
+    in-out property <int> lighting-view;
+    // the settings are shown instead of the tabs
+    in-out property <bool> settings-open;
     // game mode: 0 unknown, 1 off, 2 on
     in property <int> game-mode;
     // 0 the system's, 1 light, 2 dark
@@ -1043,12 +1159,13 @@ export component AppWindow inherits Window {
                 }
             }
 
-            ComboBox {
-                width: 170px;
-                model: ["System theme", "Light", "Dark"];
-                current-index <=> root.theme;
-                selected => {
-                    root.theme-chosen();
+            VerticalLayout {
+                alignment: center;
+                ThemeSwitch {
+                    value <=> root.theme;
+                    chosen => {
+                        root.theme-chosen();
+                    }
                 }
             }
 
@@ -1059,89 +1176,107 @@ export component AppWindow inherits Window {
                     root.refresh();
                 }
             }
+
+            VerticalLayout {
+                alignment: center;
+                IconButton {
+                    icon: @image-url("icons/gear.svg");
+                    active: root.settings-open;
+                    clicked => {
+                        root.settings-open = !root.settings-open;
+                    }
+                }
+            }
         }
 
-        TabWidget {
+        if !root.settings-open: TabWidget {
             current-index <=> root.page;
 
             Tab {
                 title: "Lighting";
-                LightingPage {
-                    effects: root.effects;
-                    directions: root.directions;
-                    wheel: root.wheel;
-                    reactive-index: root.reactive-index;
-                    effect-index <=> root.effect-index;
-                    color-mode <=> root.color-mode;
-                    color1 <=> root.color1;
-                    color2 <=> root.color2;
-                    brightness <=> root.brightness;
-                    speed <=> root.speed;
-                    direction-index <=> root.direction-index;
-                    enabled: root.can-write;
-                    swatch(hex) => {
-                        return root.swatch(hex);
+                VerticalLayout {
+                    HorizontalBox {
+                        alignment: start;
+                        Segmented {
+                            items: ["Effect", "Per key"];
+                            current <=> root.lighting-view;
+                        }
                     }
-                    wheel-pick(x, y, v) => {
-                        return root.wheel-pick(x, y, v);
-                    }
-                    wheel-find(hex) => {
-                        return root.wheel-find(hex);
-                    }
-                    store-effect => {
-                        root.store-effect();
-                    }
-                    colors-changed => {
-                        root.colors-changed();
-                    }
-                    light-off => {
-                        root.light-off();
-                    }
-                    light-on => {
-                        root.light-on();
-                    }
-                }
-            }
 
-            Tab {
-                title: "Per key";
-                PerKeyPage {
-                    keys: root.keys;
-                    keyboard-width: root.keyboard-width;
-                    keyboard-height: root.keyboard-height;
-                    wheel: root.wheel;
-                    brush <=> root.brush;
-                    top <=> root.zone-top;
-                    left-strip <=> root.zone-left;
-                    right-strip <=> root.zone-right;
-                    enabled: root.can-write;
-                    swatch(hex) => {
-                        return root.swatch(hex);
-                    }
-                    wheel-pick(x, y, v) => {
-                        return root.wheel-pick(x, y, v);
-                    }
-                    wheel-find(hex) => {
-                        return root.wheel-find(hex);
-                    }
-                    paint(code) => {
-                        root.paint-key(code);
-                    }
-                    erase(code) => {
-                        root.erase-key(code);
-                    }
-                    all-keys => {
-                        root.paint-all();
-                    }
-                    clear => {
-                        root.paint-clear();
-                    }
-                    zones-changed => {
-                        root.zones-changed();
-                    }
-                    back-to-effect => {
-                        root.back-to-effect();
-                    }
+                    if root.lighting-view == 0: LightingPage {
+                            effects: root.effects;
+                            directions: root.directions;
+                            wheel: root.wheel;
+                            reactive-index: root.reactive-index;
+                            effect-index <=> root.effect-index;
+                            color-mode <=> root.color-mode;
+                            color1 <=> root.color1;
+                            color2 <=> root.color2;
+                            brightness <=> root.brightness;
+                            speed <=> root.speed;
+                            direction-index <=> root.direction-index;
+                            enabled: root.can-write;
+                            swatch(hex) => {
+                                return root.swatch(hex);
+                            }
+                            wheel-pick(x, y, v) => {
+                                return root.wheel-pick(x, y, v);
+                            }
+                            wheel-find(hex) => {
+                                return root.wheel-find(hex);
+                            }
+                            store-effect => {
+                                root.store-effect();
+                            }
+                            colors-changed => {
+                                root.colors-changed();
+                            }
+                            light-off => {
+                                root.light-off();
+                            }
+                            light-on => {
+                                root.light-on();
+                            }
+                        }
+
+                    if root.lighting-view == 1: PerKeyPage {
+                            keys: root.keys;
+                            keyboard-width: root.keyboard-width;
+                            keyboard-height: root.keyboard-height;
+                            wheel: root.wheel;
+                            brush <=> root.brush;
+                            top <=> root.zone-top;
+                            left-strip <=> root.zone-left;
+                            right-strip <=> root.zone-right;
+                            enabled: root.can-write;
+                            swatch(hex) => {
+                                return root.swatch(hex);
+                            }
+                            wheel-pick(x, y, v) => {
+                                return root.wheel-pick(x, y, v);
+                            }
+                            wheel-find(hex) => {
+                                return root.wheel-find(hex);
+                            }
+                            paint(code) => {
+                                root.paint-key(code);
+                            }
+                            erase(code) => {
+                                root.erase-key(code);
+                            }
+                            all-keys => {
+                                root.paint-all();
+                            }
+                            clear => {
+                                root.paint-clear();
+                            }
+                            zones-changed => {
+                                root.zones-changed();
+                            }
+                            back-to-effect => {
+                                root.back-to-effect();
+                            }
+                        }
                 }
             }
 
@@ -1199,10 +1334,27 @@ export component AppWindow inherits Window {
                     }
                 }
             }
+        }
 
-            Tab {
-                title: "Settings";
-                SettingsPage {
+        if root.settings-open: VerticalLayout {
+            HorizontalBox {
+                Text {
+                    text: "Settings";
+                    font-size: 15px;
+                    font-weight: 600;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                }
+
+                Button {
+                    text: "Back";
+                    clicked => {
+                        root.settings-open = false;
+                    }
+                }
+            }
+
+            SettingsPage {
                     block-shift-tab <=> root.block-shift-tab;
                     block-alt-f4 <=> root.block-alt-f4;
                     block-win <=> root.block-win;
@@ -1226,7 +1378,6 @@ export component AppWindow inherits Window {
                         root.apply-file();
                     }
                 }
-            }
         }
 
         HorizontalBox {

@@ -35,8 +35,17 @@ pub fn run(path: &Path, page: i32, theme: i32) -> Result<(), Box<dyn Error>> {
     });
     let outcome = Backend::demo().handle(Request::Refresh);
     with_controller(|c, ui| c.apply(ui, outcome));
-    ui.set_page(page);
     ui.set_theme(theme);
+    // views: lighting effect, lighting per key, keys, macros, settings
+    let (tab, lighting_view) = match page {
+        0 | 1 => (0, page),
+        2 => (1, 0),
+        3 => (2, 0),
+        _ => (0, 0),
+    };
+    ui.set_page(tab);
+    ui.set_lighting_view(lighting_view);
+    ui.set_settings_open(page == 4);
     match page {
         1 => with_controller(|c, ui| {
             // a few painted keys

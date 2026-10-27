@@ -18,8 +18,10 @@ The title line shows whether **game mode** is on. Game mode is switched on the
 keyboard with Fn+Pause, so the window asks for it every 2 seconds (a read-only
 request; not while a change is being sent).
 
-The box next to **Reload** chooses the light or dark theme, or the system's.
-The choice is saved in `~/.config/quietlinux/gui.toml`.
+The switch next to **Reload** chooses the theme: the system's (half circle),
+light (sun) or dark (moon); click a position. The choice is saved in
+`~/.config/quietlinux/gui.toml`. The gear in the corner opens the
+[settings](#settings).
 
 The window does not support screen readers yet (see [todo.md](todo.md)); the
 command line tool does everything it does.
@@ -29,6 +31,12 @@ On a firmware version QuietLinux was not tested with, the title says
 `--allow-unknown-firmware`.
 
 ## Lighting
+
+The switch at the top of the tab chooses what to edit: **Effect** (stored in the
+keyboard) or **Per key** (colors for single keys). Switching changes only the
+view, not the keyboard.
+
+### Effect
 
 ![The lighting tab](images/gui-lighting.png)
 
@@ -49,9 +57,9 @@ On a firmware version QuietLinux was not tested with, the title says
 - **Off** / **On** switch the lighting off and on, like IO Center's switch. The
   effect stays stored.
 
-## Per key
+### Per key
 
-![The per key tab](images/gui-per-key.png)
+![Per-key colors](images/gui-per-key.png)
 
 Colors for single keys, like `quietlinux light set`:
 
@@ -62,7 +70,7 @@ Colors for single keys, like `quietlinux light set`:
   empty means off.
 - Changes show on the keyboard at once (realtime mode).
 - These colors are **not stored** in the keyboard: unplugging it ends them,
-  and so do **Back to effect** or applying an effect in the Lighting tab. A
+  and so do **Back to effect** or applying an effect. A
   background service that keeps them is planned ([todo.md](todo.md)).
 
 ## Keys
@@ -106,7 +114,10 @@ keyboard has no other way), as described in
 
 ## Settings
 
-![The settings tab](images/gui-settings.png)
+![The settings](images/gui-settings.png)
+
+The gear in the top right corner shows the settings instead of the tabs; the
+gear again or **Back** returns.
 
 - **Game mode**: the shortcuts game mode blocks, as `quietlinux game-mode
   --block`. Fn+Pause switches game mode on and off.

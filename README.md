@@ -26,9 +26,7 @@ Not affiliated with or endorsed by be quiet!. See [Safety](#safety).
 | Game mode: which shortcuts it blocks | ✅ |
 | Per-LED colors by zone (keys, top bar, knob, side strips) or by key (volatile) | ✅ |
 | Key map with layout-independent key names, legends for UK, German and French ISO | ✅ |
-| Macros, open file/folder/website, profiles | planned |
-| Macros | planned |
-| Profiles, quick tap | planned |
+| Macros, open file/folder/website, profiles, polling rate, per-key stored lighting | planned |
 | Graphical interface | planned |
 | Firmware updates | **never**, see [Safety](#safety) |
 

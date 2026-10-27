@@ -462,6 +462,38 @@ pub fn reassemble(packets: &[Packet]) -> Option<Message> {
     })
 }
 
+// --- 01:01: OpenSession -----------------------------------------------------------
+
+/// `01:01` as IO Center Web sends it: a random connection ID, no client type. [cap]
+pub fn open_session(connection_id: u32, request_id: u8) -> Packet {
+    short_frame(
+        OPEN_SESSION,
+        &connection_id.to_le_bytes(),
+        request_id,
+        SESSION_NONE,
+    )
+}
+
+/// `01:01` reply: `[connection ID u32][session ID][state][timeout]`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SessionInfo {
+    pub connection_id: u32,
+    /// Session byte for the following requests.
+    pub session: u8,
+    pub state: u8,
+    pub timeout: u8,
+}
+
+pub fn parse_open_session(data: &[u8]) -> Option<SessionInfo> {
+    let id = data.get(..4)?;
+    Some(SessionInfo {
+        connection_id: u32::from_le_bytes([id[0], id[1], id[2], id[3]]),
+        session: *data.get(4)?,
+        state: data.get(5).copied().unwrap_or_default(),
+        timeout: data.get(6).copied().unwrap_or_default(),
+    })
+}
+
 // --- 03:01 / 03:02: identification ------------------------------------------
 // IO Center sends both before opening a session (01:01), with session byte 00.
 

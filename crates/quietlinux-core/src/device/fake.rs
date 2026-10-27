@@ -99,6 +99,12 @@ impl FakeKeyboard {
                 }
             }
             p::SET_LAYER_CONFIG => self.reply(&fragments[0], &[]),
+            p::OPEN_SESSION => {
+                // like the reference keyboard: echo the connection ID, session 2, timeout 3
+                let mut data = msg.data.get(..4).unwrap_or(&[0; 4]).to_vec();
+                data.extend_from_slice(&[0x02, 0x00, 0x03]);
+                self.reply(&fragments[0], &data);
+            }
             cmd if self.answers.contains_key(&cmd) => {
                 let request = fragments[0];
                 let packets = p::message(

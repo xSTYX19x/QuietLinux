@@ -95,7 +95,7 @@ see below); that answer is the authority. The reference keyboard (firmware
 version 1. [cap]
 
 Observations with QuietLinux on the reference keyboard, without opening a
-session (session byte `01`) [cap]:
+session (session byte `01`; `quietlinux info` now opens one first) [cap]:
 
 | Request | Answer |
 |---|---|
@@ -103,17 +103,24 @@ session (session byte `01`) [cap]:
 | `10:05` GetLayerConfig, layer 0 | a single byte `00` |
 | `10:0f` GetCalibration, `07:06` GetSnapTapConfig | status INVALID_STATE |
 
-INVALID_STATE probably means that these need a session opened with `01:01`.
+INVALID_STATE probably means that these need a session opened with `01:01`
+(to be checked; IO Center Web does not send them when connecting).
 
-### What IO Center Web does when it connects to a Light Mount [web]
+### What IO Center Web does when it connects to a Light Mount [cap]
 
-1. `03:02` serial number, `01:05` QLink version, `03:01` device info
-   (firmware older than 1.0.1 must be updated first), `01:04` supported features.
-2. `07:02` game mode flags, `07:01` layout, `06:01` polling rate, `10:01` lighting mode.
-3. **If the lighting mode is above 1, it switches to `01` general** (`10:02`):
+Captured from IO Center Web and replayed in the tests (`connect-web.hex`):
+
+1. With session `00`: `03:02` serial number, `01:05` QLink version, `03:01`
+   device info (sent twice; IO Center requires firmware 1.0.1 or later),
+   `01:04` supported features, then `01:01` OpenSession.
+2. With the new session (`02`): `07:02` game mode flags, `07:01` layout,
+   `06:01` polling rate, `10:01` lighting mode.
+3. **If the lighting mode is above 1, it switches to `01` general** (`10:02`) [web]:
    this is why an IO Center session clears custom and realtime colors.
-4. `10:05` layer 0, `11:01` bindings (repeated until all are read), `11:04`
-   bindings enabled, `07:04` game mode state (firmware 1.2.0 and later).
+4. `10:05` layer 0 (the answer is a single `00`; IO Center then shows its
+   defaults), `11:01` bindings from index 0, `11:04` bindings enabled,
+   `07:04` game mode state.
+5. While connected: `01:06` GetActiveSessionInfo from time to time.
 
 ### Factory defaults of the Light Mount [web]
 
@@ -138,12 +145,12 @@ Payloads are what follows the 4-byte header. "Reply" means the data of the reply
 
 | Command | Name | Payload | Reply |
 |---|---|---|---|
-| `01:01` | OpenSession | `[random u32][client type]` (client types: 0 unspecified, 1 QControl, 2 web) | `[connection ID u32][session ID][state][timeout]` |
+| `01:01` | OpenSession | `[connection ID u32]`, optionally `[client type]` (0 unspecified, 1 QControl, 2 web); IO Center Web picks a random ID in 10000–99999 and sends no client type [cap] | `[connection ID u32][session ID][state][timeout]`; the reference keyboard echoes the ID and answers session `02`, state 0, timeout 3 [cap] |
 | `01:02` | CloseSession | | |
 | `01:03` | KeepAlive | | |
 | `01:04` | GetSupportedFeatures | | see [Features](#features) |
-| `01:05` | GetQLinkVersion | | `[patch u16][minor][major]` |
-| `01:06` | GetActiveSessionInfo | | `[session ID][timeout][client type]` |
+| `01:05` | GetQLinkVersion | | `[patch u16][minor][major]`; reference keyboard: `17 00 00 00` = 0.0.23 [cap] |
+| `01:06` | GetActiveSessionInfo | | `[session ID][timeout][client type]`; reference keyboard: `02 03 00` [cap] |
 | `01:07` | RequestStateChange | `[state]` | |
 | `01:08` | SendStateChangeDecision | `[session ID][decision: 0 reject, 1 accept, 2 wait]` | |
 
@@ -334,14 +341,24 @@ the action in the same format as in bindings. [cap] (layout matched with [web])
 |---|---|
 | `53 00 01 01 00 50` | ← (`53`), state 1, standard key, no modifiers, HID usage `50` (←) |
 | `5c 80 01 09 03` | Fn+→, backlight action 3 (IO Center's table calls 3 "previous effect", its default binding for Fn+→ is "next effect") |
+| `53 80 01 09 02` | Fn+←, backlight action 2 (so the keyboard sends 2 for ← and 3 for →) |
 | `4b 80 01 1b` | Fn alone, action type `1b` (unknown) |
+| `6e 00 01 02 01`, `6f 00 01 02 02`, `70 00 01 02 03` | knob right (volume up), left (volume down), press (mute) |
+| `71 00 01 01 00 32`, `72 00 01 01 00 64` | the ISO keys `#` (HID usage `32`) and `<` (usage `64`) |
+| `02 00 00 02 04` | M1 bound to mic mute: state byte `00` here, `01` for every other key (meaning unknown) |
+| `06 00 01 0a 02 00` | M5 bound to macro 0: then the keys of the macro follow as events, typed by the keyboard itself |
 
 The keyboard sends this notification for **every** key press, also for plain
 keys and modifiers alone (e.g. `0b 00 01 01 01 00`: left Ctrl, modifiers `01`,
 no usage), and none for releases. [cap] `quietlinux events` shows these
 notifications live.
 
-### `12` MACROS [web]
+### `12` MACROS
+
+The reference keyboard reports this feature (version 1), and a macro bound to
+M5 is **played by the keyboard itself**: its key presses arrive as `11:02`
+events. So macros are stored in the keyboard. `12:01` GetMacros without payload
+answers `02 00 01 00 02 00` (layout unknown). [cap]
 
 IO Center Web does not list this feature for the (full-size) Light Mount. For
 the TKL it uses only `12:09` StartRecording (`[count][key IDs…]`) and
@@ -361,8 +378,8 @@ Key IDs (`KEY_ID2` in IO Center) identify keys in bindings, quick tap pairs and
 key events. They are numbered column by column. The Light Mount uses this
 table: the key events captured by bbossa (`53` ←, `5c` →, `4b` Fn) match it. [cap]
 
-¹ K42 and K45 are the two extra ISO keys (standard key position numbers);
-which W3C name each one gets is to be confirmed by a key event capture.
+¹ K42 and K45 are the two extra ISO keys (standard key position numbers),
+confirmed with `quietlinux events` on the German keyboard: K42 is `#`, K45 is `<`. [cap]
 
 | ID | IO Center name | Key |
 |---|---|---|

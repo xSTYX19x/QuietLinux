@@ -10,13 +10,18 @@ Reference frames used by the protocol tests. They need no keyboard.
 | `responses-03-01.hex` | firmware version replies |
 | `responses-10-01.hex` | lighting mode replies |
 | `descriptors/if0..3.bin` | HID report descriptors of the four interfaces |
+| `connect-web.hex` | IO Center Web connecting (identification, `01:01` OpenSession, reading the state), requests and replies |
 
 Format of the `.hex` files: one message per line, its 64-byte packets as hex
 separated by spaces; `#` starts a comment.
 
 ## Origin
 
-All files in this directory are copied unchanged from
+`connect-web.hex` comes from a capture of IO Center Web made for QuietLinux
+with `tools/webhid-logger.js`, extracted with `qlcap fixtures` (no serial
+number reply, no key events). Comments name the direction and the command.
+
+All other files in this directory are copied unchanged from
 [bbossa/keyboard_bequiet_lightmount_rgb](https://github.com/bbossa/keyboard_bequiet_lightmount_rgb)
 (`tests/fixtures/`, GPL-2.0-or-later). They were extracted from captures of the
 vendor software. They contain no serial number.

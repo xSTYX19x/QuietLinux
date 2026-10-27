@@ -433,6 +433,9 @@ pub struct Session<T> {
     transport: T,
     /// Request ID of the next request (never 0).
     request_id: u8,
+    /// Session ID (byte 2 of every packet): `01`, accepted without opening a session,
+    /// until `open_session` gets one from the keyboard.
+    sid: u8,
     identity: Identity,
     allow_unknown_firmware: bool,
 }
@@ -459,6 +462,7 @@ impl<T: Transport> Session<T> {
         let mut session = Self {
             transport,
             request_id,
+            sid: p::SESSION,
             identity: Identity {
                 version: Vec::new(),
             },
@@ -547,6 +551,30 @@ impl<T: Transport> Session<T> {
         }
     }
 
+    /// Open a session like IO Center Web (`01:01` with a random connection ID); the
+    /// following requests use its session ID. Some requests answer `INVALID_STATE`
+    /// without one. Changes no setting.
+    pub fn open_session(&mut self) -> Result<p::SessionInfo> {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |d| d.subsec_nanos());
+        // IO Center Web picks 10000..=99999.
+        let connection_id = 10_000 + nanos % 90_000;
+        let id = self.next_request_id();
+        let reply = self.request(&p::open_session(connection_id, id))?;
+        let info =
+            p::parse_open_session(&reply.data).ok_or(Error::InvalidReply(p::OPEN_SESSION))?;
+        if info.session != 0 {
+            self.sid = info.session;
+        }
+        Ok(info)
+    }
+
+    /// Session byte used for requests.
+    pub fn session_id(&self) -> u8 {
+        self.sid
+    }
+
     /// Send a read-only request (one of [`p::READ_ONLY`]) and return the reply.
     /// Anything else is refused without sending.
     pub fn query(&mut self, cmd: Command, payload: &[u8]) -> Result<Message> {
@@ -556,7 +584,7 @@ impl<T: Transport> Session<T> {
             )));
         }
         let id = self.next_request_id();
-        let packet = p::frame(cmd, payload, id, p::SESSION)?;
+        let packet = p::frame(cmd, payload, id, self.sid)?;
         self.request(&packet)
     }
 
@@ -583,7 +611,7 @@ impl<T: Transport> Session<T> {
     /// Current lighting mode (`10:01`), read like IO Center does before any change.
     pub fn lighting_mode(&mut self) -> Result<LightingMode> {
         let id = self.next_request_id();
-        let reply = self.request(&p::get_lighting_mode(id, p::SESSION))?;
+        let reply = self.request(&p::get_lighting_mode(id, self.sid))?;
         reply
             .data
             .first()
@@ -603,7 +631,7 @@ impl<T: Transport> Session<T> {
 
     fn send_lighting_mode(&mut self, mode: u8) -> Result<()> {
         let id = self.next_request_id();
-        self.send(&[p::set_lighting_mode(mode, id, p::SESSION)])?;
+        self.send(&[p::set_lighting_mode(mode, id, self.sid)])?;
         sleep(MODE_SWITCH_DELAY);
         Ok(())
     }
@@ -615,7 +643,7 @@ impl<T: Transport> Session<T> {
         if self.lighting_mode()? != LightingMode::Realtime {
             self.send_lighting_mode(p::MODE_REALTIME)?;
         }
-        for message in p::update(leds, self.request_id, p::SESSION) {
+        for message in p::update(leds, self.request_id, self.sid) {
             self.next_request_id();
             self.send(&message)?;
             sleep(LED_MESSAGE_DELAY);
@@ -633,7 +661,7 @@ impl<T: Transport> Session<T> {
         self.check_writable()?;
         self.send_lighting_mode(p::MODE_GENERAL)?;
         let id = self.next_request_id();
-        self.request(&p::static_color(color, brightness, id, p::SESSION))?;
+        self.request(&p::static_color(color, brightness, id, self.sid))?;
         Ok(())
     }
 }
@@ -799,6 +827,19 @@ mod tests {
             (event.cmd, event.request_id, event.data.as_slice()),
             (p::ACTION_FIRED, 0, &[0x5c, 0x80, 0x01, 0x09, 0x03][..])
         );
+    }
+
+    #[test]
+    fn open_session_switches_the_session_byte() {
+        let mut kb = FakeKeyboard::new(&KNOWN, p::MODE_GENERAL);
+        let mut session = Session::with_request_id(&mut kb, false, 1).unwrap();
+        assert_eq!(session.session_id(), p::SESSION);
+        let info = session.open_session().unwrap();
+        assert_eq!((info.session, info.timeout), (2, 3));
+        session.lighting_mode().unwrap();
+        assert_eq!(kb.commands(), ["03:01", "01:01", "10:01"]);
+        assert_eq!(kb.received[1][2], p::SESSION_NONE);
+        assert_eq!(kb.received[2][2], 2);
     }
 
     #[test]

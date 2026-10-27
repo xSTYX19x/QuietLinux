@@ -551,11 +551,25 @@ pub fn usage_name(usage: u8) -> Option<String> {
         0x2a => "Backspace".to_owned(),
         0x2b => "Tab".to_owned(),
         0x2c => "Space".to_owned(),
+        0x2d => "-".to_owned(),
+        0x2e => "=".to_owned(),
+        0x2f => "[".to_owned(),
+        0x30 => "]".to_owned(),
+        0x31 => "\\".to_owned(),
+        0x32 => "ISO #".to_owned(),
+        0x33 => ";".to_owned(),
+        0x34 => "'".to_owned(),
+        0x35 => "`".to_owned(),
+        0x36 => ",".to_owned(),
+        0x37 => ".".to_owned(),
+        0x38 => "/".to_owned(),
+        0x39 => "Caps Lock".to_owned(),
         0x3a..=0x45 => format!("F{}", usage - 0x39),
         0x4f => "→".to_owned(),
         0x50 => "←".to_owned(),
         0x51 => "↓".to_owned(),
         0x52 => "↑".to_owned(),
+        0x64 => "ISO \\".to_owned(),
         0x68..=0x73 => format!("F{}", usage - 0x68 + 13),
         _ => return None,
     })
@@ -878,6 +892,8 @@ mod tests {
         assert_eq!(action(&[0x01, 0x05, 0x06]), "key LCtrl+LAlt+C");
         assert_eq!(action(&[0x01, 0x01, 0x00]), "key LCtrl"); // a modifier alone
         assert_eq!(action(&[0x01, 0x00, 0x68]), "key F13");
+        assert_eq!(action(&[0x01, 0x00, 0x32]), "key ISO #");
+        assert_eq!(action(&[0x01, 0x00, 0x64]), "key ISO \\");
         assert_eq!(
             action(&[0x03, 1, 0x41, 0]),
             "mouse: right button, while pressed"

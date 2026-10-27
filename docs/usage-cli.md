@@ -42,11 +42,13 @@ Lighting modes:
 
 ## `info`
 
-Reads everything the keyboard reports, with read-only requests only:
+Opens a session like IO Center does (`01:01`, changes no setting), then reads
+everything the keyboard reports, with read-only requests only:
 
 ```console
 $ quietlinux info
 Light Mount:    USB 1-2 (/dev/hidraw6)
+Session:        2 (timeout 3)
 Model:          Light Mount (0x0002), revision 1
 Firmware:       2.3.0 (tested)
 QLink:          …

@@ -481,3 +481,114 @@ fn garbage_does_not_panic() {
         let _ = p::parse_leds(&[raw]);
     }
 }
+
+// --- IO Center Web connecting (capture made for QuietLinux, connect-web.hex) --------
+
+/// Messages with the direction from the fixture comment (`out` or `in`).
+fn connect_web() -> Vec<(String, Packet)> {
+    let path = format!(
+        "{}/tests/fixtures/connect-web.hex",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    std::fs::read_to_string(&path)
+        .unwrap()
+        .lines()
+        .filter(|l| !l.starts_with('#') && !l.trim().is_empty())
+        .map(|l| {
+            let (hex, comment) = l.split_once('#').unwrap();
+            let dir = comment.split_whitespace().next().unwrap().to_owned();
+            (dir, parse_packet(hex.trim()))
+        })
+        .collect()
+}
+
+fn reply_data(cmd: Command) -> Vec<u8> {
+    let (_, raw) = connect_web()
+        .into_iter()
+        .find(|(dir, raw)| dir == "in" && p::command_of(raw) == cmd)
+        .unwrap_or_else(|| panic!("no reply to {cmd}"));
+    p::data(&raw).to_vec()
+}
+
+#[test]
+fn connect_web_requests_are_reproduced() {
+    let messages = connect_web();
+    assert!(messages.len() > 20);
+    for (dir, raw) in &messages {
+        assert!(p::crc_ok(raw), "{raw:02x?}");
+        assert_eq!(p::status_of(raw), p::STATUS_SUCCESS);
+        if dir == "out" {
+            let (cmd, data, id, session) = fields(raw);
+            assert_eq!(p::frame(cmd, &data, id, session).unwrap(), *raw, "{cmd}");
+        }
+    }
+}
+
+#[test]
+fn connect_web_open_session() {
+    let (_, request) = connect_web()
+        .into_iter()
+        .find(|(dir, raw)| dir == "out" && p::command_of(raw) == p::OPEN_SESSION)
+        .unwrap();
+    assert_eq!(p::open_session(0xfd68, 7), request);
+    let info = p::parse_open_session(&reply_data(p::OPEN_SESSION)).unwrap();
+    assert_eq!(
+        info,
+        p::SessionInfo {
+            connection_id: 0xfd68,
+            session: 2,
+            state: 0,
+            timeout: 3
+        }
+    );
+    // every request after the session was opened uses its session byte
+    let after: Vec<u8> = connect_web()
+        .iter()
+        .filter(|(dir, raw)| dir == "out" && p::request_id_of(raw) > 7)
+        .map(|(_, raw)| raw[2])
+        .collect();
+    assert!(after.iter().all(|&s| s == 2), "{after:?}");
+}
+
+#[test]
+fn connect_web_replies_decode() {
+    use quietlinux_core::info;
+
+    assert_eq!(
+        info::parse_qlink_version(&reply_data(p::GET_QLINK_VERSION)).unwrap(),
+        "0.0.23"
+    );
+    let features = info::parse_features(&reply_data(p::GET_SUPPORTED_FEATURES)).unwrap();
+    assert_eq!(
+        features.iter().map(|f| f.0).collect::<Vec<_>>(),
+        [0x01, 0x02, 0x03, 0x04, 0x06, 0x07, 0x10, 0x11, 0x12]
+    );
+    assert!(features.iter().all(|f| f.1 == 1));
+    let layout = info::Layout::parse(&reply_data(p::GET_LAYOUT)).unwrap();
+    assert_eq!(
+        (layout.physical_name(), layout.visual_name()),
+        (Some("ISO"), Some("German"))
+    );
+    assert_eq!(reply_data(p::GET_POLLING_RATE), [0xe8, 0x03]); // 1000 Hz
+    assert_eq!(reply_data(p::GET_LIGHTING_MODE), [p::MODE_GENERAL]);
+    assert_eq!(reply_data(p::GET_GAME_MODE_CONFIG), [0x1f]);
+    assert_eq!(reply_data(p::GET_GAME_MODE_STATE), [0x00]);
+    assert_eq!(reply_data(p::GET_BINDINGS_CONFIG), [0x01]);
+    assert_eq!(reply_data(p::GET_LAYER_CONFIG), [0x00]); // IO Center Web gets no layer config either
+    let (total, bindings) = info::parse_bindings(&reply_data(p::GET_BINDINGS)).unwrap();
+    let shown: Vec<String> = bindings
+        .iter()
+        .map(|b| format!("{}: {}", b.key_name(), b.action))
+        .collect();
+    assert_eq!(total, 5);
+    assert_eq!(
+        shown,
+        [
+            "M1: media: mic mute",
+            "M2: key F13",
+            "M3: media: next track",
+            "M4: media: play/pause",
+            "M5: macro 0 (action 2)"
+        ]
+    );
+}

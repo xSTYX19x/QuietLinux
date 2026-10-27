@@ -235,12 +235,14 @@ logic. Dependencies stay minimal (today: clap, rustix) and are checked in CI
 - [x] Vendor key IDs (`KEY_ID2`) in the key map, and the knob's turn left/right (`KnobLeft`, `KnobRight`)
 - [x] `quietlinux events`: show key IDs of pressed keys (read-only, from `11:02` notifications)
 - [x] Run `quietlinux events` on the reference keyboard: every key press is reported (letters, modifiers alone), with the expected key IDs; no release events
-- [ ] Confirm K42/K45 (`Backslash`/`IntlBackslash`), M1–M5, knob and Fn combinations with `quietlinux events`
+- [x] Confirm K42/K45 (`Backslash`/`IntlBackslash`), M1–M5, knob and Fn combinations with `quietlinux events` (2026-10-27)
 - [x] Read-only requests through an allowlist (`READ_ONLY`, `Session::query`), fragmented replies, `quietlinux info`
 - [x] Run `quietlinux info` on the reference keyboard (2026-10-27): device info, QLink version, features, layout, polling rate, game mode flags, bindings match the [web] layouts; `10:0f` and `07:06` answer INVALID_STATE (probably need an opened session); `10:05` with layer 0 answers a single `00`
 - [x] Use `07:01` layout to pick the keycap legends automatically (`events`, `calibrate`)
-- [ ] Capture IO Center Web's connection (`01:01` OpenSession) and check whether an opened session makes `10:0f`, `07:06` and `10:05` answer
-- [ ] Macros: the keyboard reports the macros feature and M5 is bound to macro 0, so macros are probably stored in the keyboard; capture the Windows app creating/editing a macro
+- [x] Capture IO Center Web's connection: `01:01` OpenSession and the whole connection sequence are captured and reproduced byte for byte in the tests (`connect-web.hex`)
+- [x] `quietlinux info` opens a session first
+- [ ] Check whether the opened session makes `10:03`, `10:0e`, `10:0f`, `07:06` answer
+- [ ] Macros are stored and played by the keyboard (M5 → macro 0 plays its keys as events); capture the Windows app creating/editing a macro to learn `12:01`–`12:08`
 - [ ] Protocol layer for every command confirmed in phase 2, with fixtures
 - [ ] **Read** the device state first, write afterwards
 - [ ] Backup/restore: save the complete device state to a file before writing

@@ -37,6 +37,15 @@ fn decoded(what: Option<String>, data: &[u8]) -> String {
 /// One line per finding; requests the keyboard refuses become "unavailable" lines.
 pub fn info_lines<T: Transport>(session: &mut Session<T>) -> Vec<String> {
     let mut out = Vec::new();
+    // Like IO Center: some requests answer INVALID_STATE without a session.
+    match session.open_session() {
+        Ok(s) => push(
+            &mut out,
+            "Session:",
+            format!("{} (timeout {})", s.session, s.timeout),
+        ),
+        Err(e) => push(&mut out, "Session:", unavailable(&e)),
+    }
     device_lines(session, &mut out);
     lighting_lines(session, &mut out);
     keyboard_lines(session, &mut out);
@@ -330,11 +339,12 @@ pub fn describe_notification(message: &Message, legends: keymap::Layout) -> Stri
                 .map(|code| legends.legend(code))
                 .filter(|legend| *legend != name)
                 .map_or_else(String::new, |legend| format!(" [{legend}]"));
-            let key = format!(
-                "{}{name}{legend} ({:02x})",
-                if event.fn_layer { "Fn+" } else { "" },
-                event.key_id
-            );
+            let fn_prefix = if event.fn_layer && name != "Fn" {
+                "Fn+"
+            } else {
+                ""
+            };
+            let key = format!("{fn_prefix}{name}{legend} ({:02x})", event.key_id);
             let action = event
                 .action
                 .map_or_else(|| "?".to_owned(), |a| a.to_string());
@@ -396,6 +406,7 @@ mod tests {
         let lines = info_lines(&mut session);
         let text = lines.join("\n");
         for expected in [
+            "Session:        2 (timeout 3)",
             "Model:          Light Mount (0x0002), revision 1",
             "Firmware:       2.3.0 (tested)",
             "QLink:          1.2.3",

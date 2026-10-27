@@ -243,7 +243,7 @@ logic. Dependencies stay minimal (today: clap, rustix) and are checked in CI
 - [x] `quietlinux info` opens a session first
 - [x] Check whether the opened session makes `10:03`, `10:0e`, `10:0f`, `07:06` answer: no, INVALID_STATE stays
 - [x] Captures of IO Center Web writing: effects, colors, gradient, brightness, speed (`10:06`), a media binding (`11:02`), game mode flags (`07:03`), keep-alive (`01:03`) → `writes-web.hex`, every request reproduced in the tests
-- [x] CLI: `light effect`, `bind` (media actions on M1–M5 and the knob), `game-mode --block`
+- [x] CLI: `light effect`, `bind` (media actions on M1–M5 and the knob), `game-mode --block`; tested on the reference keyboard (2026-10-27)
 - [ ] Captures: standard key and shortcut bindings, Fn layer, disable a key, binding reset of a normal key; then `bind` for all keys
 - [ ] Captures: game mode on/off (`07:05`?), polling rate (`06:02`), dual color effect, custom (per-key) lighting mode
 - [ ] Macros are stored and played by the keyboard (M5 → macro 0 plays its keys as events); capture the Windows app creating/editing a macro to learn `12:01`–`12:08`

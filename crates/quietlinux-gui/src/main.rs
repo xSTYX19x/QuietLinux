@@ -30,6 +30,7 @@ use quietlinux_core::protocol::{self as p, Led};
 use quietlinux_core::settings::{
     self, Direction, Effect, LightingAction, MediaAction, MouseButton,
 };
+use quietlinux_core::state;
 use slint::{ComponentHandle, Model, ModelRc, SharedString, StandardListViewItem, VecModel};
 
 use crate::backend::{Backend, Outcome, Request, State};
@@ -663,21 +664,7 @@ impl Controller {
             };
             return;
         }
-        let mut leds: Vec<Led> = self
-            .painted
-            .iter()
-            .map(|(&led, &rgb)| Led::new(led, rgb))
-            .collect();
-        for (zone, hex) in [
-            (Zone::Top, ui.get_zone_top()),
-            (Zone::Left, ui.get_zone_left()),
-            (Zone::Right, ui.get_zone_right()),
-        ] {
-            // empty or not yet a color: the zone stays off
-            if let Ok(rgb) = hex.trim().parse::<Rgb>() {
-                leds.extend(zone.leds().map(|led| Led::new(led, rgb)));
-            }
-        }
+        let leds = self.current_leds(ui);
         if requests.send(Job::Leds(leds)).is_ok() {
             self.paint = Paint::Sending;
         }
@@ -766,31 +753,63 @@ impl Controller {
     }
 
     /// Remember the painted keys and zones for the next start.
-    fn save_paint(&self, ui: &AppWindow) {
-        let mut prefs = prefs::load();
-        prefs.keys = self
+    /// The painted keys and the zones, as one realtime update (every LED).
+    fn current_leds(&self, ui: &AppWindow) -> Vec<Led> {
+        let mut leds: Vec<Led> = self
             .painted
             .iter()
-            .filter_map(|(led, rgb)| Some((keymap::by_led(*led)?.code.to_owned(), rgb.to_string())))
+            .map(|(&led, &rgb)| Led::new(led, rgb))
             .collect();
-        prefs.top = ui.get_zone_top().to_string();
-        prefs.left = ui.get_zone_left().to_string();
-        prefs.right = ui.get_zone_right().to_string();
-        if let Err(e) = prefs::save(&prefs) {
+        for (zone, hex) in [
+            (Zone::Top, ui.get_zone_top()),
+            (Zone::Left, ui.get_zone_left()),
+            (Zone::Right, ui.get_zone_right()),
+        ] {
+            // empty or not yet a color: the zone stays off
+            if let Ok(rgb) = hex.trim().parse::<Rgb>() {
+                leds.extend(zone.leds().map(|led| Led::new(led, rgb)));
+            }
+        }
+        leds
+    }
+
+    /// Remember the per-key colors: the window and the background service show
+    /// them again (lighting.toml).
+    fn save_paint(&self, ui: &AppWindow) {
+        let lighting = state::Lighting {
+            mode: state::Mode::PerKey,
+            leds: self
+                .current_leds(ui)
+                .iter()
+                .map(|l| (l.index, l.color))
+                .collect(),
+        };
+        if let Err(e) = state::save(&lighting) {
             show_error(ui, &format!("per-key colors not remembered: {e}"));
         }
     }
 
-    /// Fill the window with what was set last time: effect and painted keys.
-    fn restore(&mut self, ui: &AppWindow, prefs: &prefs::Prefs) {
-        self.painted = prefs
-            .keys
+    /// Fill the window with what was set last time: effect and per-key colors.
+    fn restore(&mut self, ui: &AppWindow) {
+        let lighting = state::load();
+        self.painted = lighting
+            .leds
             .iter()
-            .filter_map(|(code, hex)| Some((keymap::by_code(code)?.led, hex.parse().ok()?)))
+            .filter(|(led, _)| keymap::by_led(**led).is_some())
+            .map(|(&led, &rgb)| (led, rgb))
             .collect();
-        ui.set_zone_top(prefs.top.as_str().into());
-        ui.set_zone_left(prefs.left.as_str().into());
-        ui.set_zone_right(prefs.right.as_str().into());
+        // a zone shows a color only if all its LEDs have it
+        let zone = |zone: Zone| {
+            let colors: Vec<Option<&Rgb>> =
+                zone.leds().map(|led| lighting.leds.get(&led)).collect();
+            match colors.first() {
+                Some(Some(first)) if colors.iter().all(|c| *c == Some(*first)) => first.to_string(),
+                _ => String::new(),
+            }
+        };
+        ui.set_zone_top(zone(Zone::Top).into());
+        ui.set_zone_left(zone(Zone::Left).into());
+        ui.set_zone_right(zone(Zone::Right).into());
         if let Some(effect) = config::last_effect() {
             show_effect(ui, &effect);
         }
@@ -1250,7 +1269,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
     if !demo {
         with_controller(|c, ui| {
             c.remember = true;
-            c.restore(ui, &prefs);
+            c.restore(ui);
             c.show_keys(ui);
         });
     }

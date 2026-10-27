@@ -10,6 +10,7 @@
 //! - [`settings`]: names of effects, directions, actions, … for command lines and files.
 //! - [`macros`]: macros as text, and changing the macros stored in the keyboard.
 //! - [`config`]: the keyboard's settings as a TOML file (backup and apply).
+//! - [`state`]: what QuietLinux last showed (per-key colors), for the background service.
 //!
 //! The protocol layer is a port of
 //! [bbossa/keyboard_bequiet_lightmount_rgb](https://github.com/bbossa/keyboard_bequiet_lightmount_rgb)
@@ -25,5 +26,6 @@ pub mod layout;
 pub mod macros;
 pub mod protocol;
 pub mod settings;
+pub mod state;
 
 pub use color::Rgb;

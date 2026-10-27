@@ -15,7 +15,7 @@ use quietlinux_core::info::{Action, Colors};
 use quietlinux_core::keymap::{self, KEYS, Key, Layout};
 use quietlinux_core::layout::{self, Zone};
 use quietlinux_core::protocol::Led;
-use quietlinux_core::{config, macros, settings};
+use quietlinux_core::{config, macros, settings, state};
 
 use crate::calibrate::Answer;
 
@@ -680,10 +680,12 @@ fn run(cli: Cli) -> Result<ExitCode, Box<dyn std::error::Error>> {
         Command::Light(Light::Stored) => {
             let (_, mut session) = device::open(usb_path, cli.allow_unknown_firmware)?;
             session.show_stored_effect()?;
+            remember_mode(state::Mode::Effect);
         }
         Command::Light(Light::Off) => {
             let (_, mut session) = device::open(usb_path, cli.allow_unknown_firmware)?;
             session.set_lighting_mode(device::LightingMode::Off)?;
+            remember_mode(state::Mode::Off);
         }
         Command::Macro(command) => {
             let mut session = open_session(usb_path, cli.allow_unknown_firmware)?;
@@ -691,7 +693,15 @@ fn run(cli: Cli) -> Result<ExitCode, Box<dyn std::error::Error>> {
         }
         Command::Light(Light::Set { assignments, dim }) => {
             let (_, mut session) = device::open(usb_path, cli.allow_unknown_firmware)?;
-            session.set_leds(&leds_for(&assignments, dim))?;
+            let leds = leds_for(&assignments, dim);
+            session.set_leds(&leds)?;
+            let lighting = state::Lighting {
+                mode: state::Mode::PerKey,
+                leds: leds.iter().map(|l| (l.index, l.color)).collect(),
+            };
+            if let Err(e) = state::save(&lighting) {
+                eprintln!("note: could not remember the colors: {e}");
+            }
         }
         Command::Calibrate { start } => {
             let keys: Vec<&Key> = KEYS
@@ -739,10 +749,19 @@ fn run(cli: Cli) -> Result<ExitCode, Box<dyn std::error::Error>> {
 }
 
 /// Open the keyboard and a session, as IO Center does before changing settings.
-/// Remember the effect for the GUI and for `backup` (the keyboard does not report it).
+/// Remember the effect for the GUI (the keyboard does not report it); the
+/// lighting shows the effect now.
 fn remember_effect(e: &config::EffectSetting) {
     if let Err(err) = config::save_last_effect(e) {
         eprintln!("note: could not remember the effect: {err}");
+    }
+    remember_mode(state::Mode::Effect);
+}
+
+/// Remember what the lighting shows, for the background service.
+fn remember_mode(mode: state::Mode) {
+    if let Err(err) = state::save_mode(mode) {
+        eprintln!("note: could not remember the lighting: {err}");
     }
 }
 

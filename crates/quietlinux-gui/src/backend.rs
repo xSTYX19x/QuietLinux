@@ -13,6 +13,7 @@ use quietlinux_core::keymap::{self, Layout};
 use quietlinux_core::macros::{self, Changes, RepeatMode};
 use quietlinux_core::protocol::{self as p, Led};
 use quietlinux_core::settings::{Direction, Effect};
+use quietlinux_core::state;
 
 /// What the window asks for.
 #[derive(Debug, Clone)]
@@ -270,6 +271,7 @@ fn apply_file<T: Transport>(
         config::execute(session, &plan)?;
         if let (true, Some(effect)) = (remember, plan.effect()) {
             let _ = config::save_last_effect(effect);
+            let _ = state::save_mode(state::Mode::Effect);
         }
         format!("{count} change(s) written.")
     } else {
@@ -303,6 +305,7 @@ fn change<T: Transport>(
             // remembered for the next start (the keyboard does not report it);
             // not in the demo mode, whose effects are not real
             if remember {
+                let _ = state::save_mode(state::Mode::Effect);
                 let _ = config::save_last_effect(&config::EffectSetting {
                     effect: Effect(effect),
                     direction: Direction(direction),
@@ -315,10 +318,16 @@ fn change<T: Transport>(
         }
         Request::LightOff => {
             session.set_lighting_mode(LightingMode::Off)?;
+            if remember {
+                let _ = state::save_mode(state::Mode::Off);
+            }
             "Lighting off.".to_owned()
         }
         Request::LightOn => {
             session.show_stored_effect()?;
+            if remember {
+                let _ = state::save_mode(state::Mode::Effect);
+            }
             "Lighting on.".to_owned()
         }
         Request::Bind {

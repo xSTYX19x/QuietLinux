@@ -28,6 +28,9 @@ On a firmware version QuietLinux was not tested with, the title says
 - **Effect**, **Colors**, **Brightness**, **Speed** and **Direction** as in
   `quietlinux light effect`. Colors are six hex digits (`e63000`); "Rainbow" is
   IO Center's color gradient.
+- **Pick …** (or a click on the swatch) opens a color wheel: the hue around
+  the circle, pale colors towards the center; the slider below sets how bright
+  the color is.
 - **Apply** stores the effect in the keyboard. The Light Mount does not
   report its effect, so the tab shows what you set last, not what the keyboard
   shows.
@@ -42,8 +45,9 @@ Click a key to see what it does, normally and with Fn held. Keys with a
 highlighted border are bound to something other than their factory binding.
 The legends follow the layout the keyboard reports (German, UK or French ISO).
 
-To change a key, choose the layer (**Normal** or **With Fn**), what it should
-do, and a value, then **Apply**:
+To change a key, choose the layer (**Normal** or **With Fn**; for the knob
+**Press**, **Turn left** or **Turn right**), what it should do, and a value,
+then **Apply**:
 
 | Choice | Value |
 |---|---|
@@ -54,8 +58,7 @@ do, and a value, then **Apply**:
 | Disabled | (none) |
 
 Fn cannot be bound. Enter can only be changed with the command line
-(`quietlinux bind --force Enter …`), so that it is not changed by mistake. The
-knob's turns are `KnobLeft` and `KnobRight` in the command line.
+(`quietlinux bind --force Enter …`), so that it is not changed by mistake.
 
 ## Macros
 
@@ -73,7 +76,20 @@ Every change writes all macros again and reads them back to check (the
 keyboard has no other way), as described in
 [usage-cli.md](usage-cli.md#macro-list--show--create--edit--delete).
 
+## Settings
+
+![The settings tab](images/gui-settings.png)
+
+- **Game mode**: the shortcuts game mode blocks, as `quietlinux game-mode
+  --block`. Fn+Pause switches game mode on and off.
+- **Backup**: the file of `quietlinux backup` and `apply` (key bindings, game
+  mode shortcuts, macros; see [usage-cli.md](usage-cli.md#backup-file---force)).
+  **Save backup** writes it; an existing file only with **Overwrite**.
+  **Check file** lists what applying it would change, without writing; only
+  then **Apply file** writes it. `~/` is your home folder. The file contains
+  what your macros type: keep it private.
+
 ## Not in the window yet
 
-Backup and apply, game mode shortcuts and per-key colors (`light set`): use the
-command line for now.
+Per-key colors (`light set`) and recording macros by typing them: see
+[todo.md](todo.md).

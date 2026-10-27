@@ -281,10 +281,13 @@ logic. Dependencies stay minimal (today: clap, rustix) and are checked in CI
 - [x] Keyboard view (schematic ISO layout, legends of the reported layout), click a key → its bindings
 - [x] Tabs: lighting (effect, colors, brightness, speed, direction, on/off), key bindings (both layers), macros (list, create, edit, delete)
 - [x] Demo mode (`--demo`) with the simulated keyboard; offscreen screenshots for the docs (`--screenshot`)
-- [ ] Backup and apply in the window (file chooser)
-- [ ] Game mode shortcuts, per-key colors (`light set`) in the window
+- [x] Backup and apply in the window (a file name field; check before apply)
+- [x] Game mode shortcuts in the window
+- [x] Knob: press, turn left and turn right in the key editor
+- [ ] Per-key colors (`light set`) in the window
+- [ ] A file chooser for the backup (needs the XDG desktop portal; today a file name field)
 - [ ] Live preview of an effect
-- [ ] Color wheel to pick colors (effect colors, later per-key colors), next to the hex field
+- [x] Color wheel to pick colors (effect colors; later per-key colors), next to the hex field
 - [ ] Record a macro by typing it: capture the key presses (press and release, with the pauses) and turn them into macro events; find out whether the keyboard's own recording (`12:09`/`12:0a`, `12:05` notifications, as IO Center for Windows does) or the key events of interface 2 work better
 - [x] Light and dark theme, or the system's (saved in `~/.config/quietlinux/gui.toml`)
 - [x] Own look, no imitation of be quiet! branding or logos

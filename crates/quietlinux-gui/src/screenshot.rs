@@ -9,7 +9,7 @@ use slint::platform::software_renderer::{MinimalSoftwareWindow, RepaintBufferTyp
 use slint::platform::{Platform, WindowAdapter};
 use slint::{ComponentHandle, PhysicalSize, Rgb8Pixel};
 
-use crate::backend::{Backend, Request, State};
+use crate::backend::{Backend, Request};
 use crate::{AppWindow, CONTROLLER, Controller, set_up, with_controller};
 
 const WIDTH: u32 = 1100;
@@ -31,19 +31,14 @@ pub fn run(path: &Path, page: i32, theme: i32) -> Result<(), Box<dyn Error>> {
     set_up(&ui);
     window.set_size(PhysicalSize::new(WIDTH, HEIGHT));
     CONTROLLER.with(|c| {
-        *c.borrow_mut() = Some(Controller {
-            ui: ui.as_weak(),
-            requests: None,
-            state: State::default(),
-            editor_layer: 0,
-        });
+        *c.borrow_mut() = Some(Controller::new(&ui, None));
     });
     let outcome = Backend::demo().handle(Request::Refresh);
-    with_controller(|c, ui| c.apply(ui, true, outcome));
+    with_controller(|c, ui| c.apply(ui, outcome));
     ui.set_page(page);
     ui.set_theme(theme);
     match page {
-        1 => with_controller(|c, ui| c.select_key(ui, "M5")),
+        1 => with_controller(|c, ui| c.select_key(ui, "Knob")),
         2 => {
             ui.set_macro_current(0);
             with_controller(|c, ui| c.select_macro(ui, 0));

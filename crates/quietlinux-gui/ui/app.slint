@@ -15,8 +15,16 @@ export struct KeyCap {
     w: float,
     h: float,
     round: bool,
-    // the binding differs from the factory one (normal or Fn layer)
+    // the binding differs from the factory one (on any layer)
     changed: bool,
+}
+
+// A point on the color wheel (x, y from -1 to 1, value 0 to 1) and its color.
+export struct WheelPick {
+    hex: string,
+    x: float,
+    y: float,
+    value: float,
 }
 
 component KeyboardView inherits Rectangle {
@@ -65,13 +73,23 @@ component KeyboardView inherits Rectangle {
     }
 }
 
-// A color as six hex digits, with a swatch.
+// A color as six hex digits, with a swatch and a color wheel to pick it.
 component ColorField inherits HorizontalLayout {
     in property <string> label;
     in-out property <string> hex;
     in property <color> swatch;
+    in property <image> wheel;
+    // the color at a point of the wheel; the point of a color
+    pure callback wheel-pick(x: float, y: float, value: float) -> WheelPick;
+    pure callback wheel-find(hex: string) -> WheelPick;
+    property <WheelPick> point;
     spacing: 8px;
     alignment: start;
+
+    function pick(x: length, y: length, size: length) {
+        root.point = root.wheel-pick(x / size * 2 - 1, y / size * 2 - 1, root.point.value);
+        root.hex = root.point.hex;
+    }
 
     Text {
         text: root.label;
@@ -86,19 +104,112 @@ component ColorField inherits HorizontalLayout {
         border-width: 1px;
         border-color: Palette.border;
         background: root.swatch;
+        TouchArea {
+            mouse-cursor: pointer;
+            clicked => {
+                root.point = root.wheel-find(root.hex);
+                popup.show();
+            }
+        }
     }
 
     LineEdit {
         text <=> root.hex;
         placeholder-text: "e63000";
-        input-type: text;
         width: 110px;
+    }
+
+    Button {
+        text: "Pick …";
+        clicked => {
+            root.point = root.wheel-find(root.hex);
+            popup.show();
+        }
+    }
+
+    popup := PopupWindow {
+        x: 98px;
+        y: 34px;
+        width: 244px;
+        height: 300px;
+        close-policy: PopupClosePolicy.close-on-click-outside;
+
+        Rectangle {
+            background: Palette.background;
+            border-radius: 6px;
+            border-width: 1px;
+            border-color: Palette.border;
+            drop-shadow-blur: 10px;
+            drop-shadow-color: #00000050;
+        }
+
+        VerticalLayout {
+            padding: 12px;
+            spacing: 10px;
+
+            Rectangle {
+                width: 220px;
+                height: 220px;
+
+                Image {
+                    source: root.wheel;
+                    width: parent.width;
+                    height: parent.height;
+                }
+
+                // where the color is on the wheel
+                Rectangle {
+                    x: (root.point.x + 1) / 2 * parent.width - 7px;
+                    y: (root.point.y + 1) / 2 * parent.height - 7px;
+                    width: 14px;
+                    height: 14px;
+                    border-radius: 7px;
+                    border-width: 2px;
+                    border-color: white;
+                    drop-shadow-blur: 2px;
+                    drop-shadow-color: black;
+                }
+
+                TouchArea {
+                    mouse-cursor: crosshair;
+                    pointer-event(event) => {
+                        if event.kind == PointerEventKind.down {
+                            root.pick(self.mouse-x, self.mouse-y, self.width);
+                        }
+                    }
+                    moved => {
+                        if self.pressed {
+                            root.pick(self.mouse-x, self.mouse-y, self.width);
+                        }
+                    }
+                }
+            }
+
+            HorizontalLayout {
+                spacing: 8px;
+                Text {
+                    text: "Value";
+                    vertical-alignment: center;
+                }
+
+                Slider {
+                    minimum: 0;
+                    maximum: 1;
+                    value: root.point.value;
+                    changed(v) => {
+                        root.point = root.wheel-pick(root.point.x, root.point.y, v);
+                        root.hex = root.point.hex;
+                    }
+                }
+            }
+        }
     }
 }
 
 component LightingPage inherits VerticalBox {
     in property <[string]> effects;
     in property <[string]> directions;
+    in property <image> wheel;
     in-out property <int> effect-index;
     in-out property <int> color-mode;
     in-out property <string> color1;
@@ -108,6 +219,8 @@ component LightingPage inherits VerticalBox {
     in-out property <int> direction-index;
     in property <bool> enabled;
     pure callback swatch(hex: string) -> color;
+    pure callback wheel-pick(x: float, y: float, value: float) -> WheelPick;
+    pure callback wheel-find(hex: string) -> WheelPick;
     callback store-effect();
     callback light-off();
     callback light-on();
@@ -150,11 +263,25 @@ component LightingPage inherits VerticalBox {
                 label: root.color-mode == 0 ? "Color" : "First color";
                 hex <=> root.color1;
                 swatch: root.swatch(root.color1);
+                wheel: root.wheel;
+                wheel-pick(x, y, v) => {
+                    return root.wheel-pick(x, y, v);
+                }
+                wheel-find(hex) => {
+                    return root.wheel-find(hex);
+                }
             }
             if root.color-mode == 1: ColorField {
                 label: "Second color";
                 hex <=> root.color2;
                 swatch: root.swatch(root.color2);
+                wheel: root.wheel;
+                wheel-pick(x, y, v) => {
+                    return root.wheel-pick(x, y, v);
+                }
+                wheel-find(hex) => {
+                    return root.wheel-find(hex);
+                }
             }
 
             HorizontalLayout {
@@ -258,13 +385,13 @@ component KeysPage inherits VerticalBox {
     in property <float> keyboard-height;
     in-out property <string> selected-key;
     in property <string> key-title;
-    in property <string> normal-binding;
-    in property <string> fn-binding;
+    in property <string> binding-summary;
     in property <string> key-note;
     in property <bool> key-editable;
+    in property <[string]> bind-targets;
     in property <[string]> bind-kinds;
     in property <[string]> bind-values;
-    in-out property <int> bind-layer;
+    in-out property <int> bind-target;
     in-out property <int> bind-kind;
     in-out property <int> bind-value-index;
     in-out property <string> bind-text;
@@ -297,11 +424,8 @@ component KeysPage inherits VerticalBox {
             spacing: 8px;
 
             Text {
-                text: "Normal: " + root.normal-binding;
-            }
-
-            Text {
-                text: "With Fn: " + root.fn-binding;
+                text: root.binding-summary;
+                wrap: word-wrap;
             }
 
             if root.key-note != "": Text {
@@ -314,8 +438,8 @@ component KeysPage inherits VerticalBox {
                 spacing: 8px;
 
                 ComboBox {
-                    model: ["Normal", "With Fn"];
-                    current-index <=> root.bind-layer;
+                    model: root.bind-targets;
+                    current-index <=> root.bind-target;
                     selected => {
                         root.editor-changed();
                     }
@@ -461,6 +585,137 @@ component MacrosPage inherits HorizontalBox {
     }
 }
 
+component SettingsPage inherits VerticalBox {
+    in-out property <bool> block-shift-tab;
+    in-out property <bool> block-alt-f4;
+    in-out property <bool> block-win;
+    in-out property <bool> block-alt-tab;
+    in-out property <bool> block-caps-lock;
+    in-out property <string> file;
+    in-out property <bool> overwrite;
+    in property <string> checked-file;
+    in property <string> file-details;
+    in property <bool> enabled;
+    callback apply-game-mode();
+    callback save-backup();
+    callback check-file();
+    callback apply-file();
+    alignment: start;
+
+    GroupBox {
+        title: "Game mode: shortcuts it blocks (Fn+Pause switches game mode on and off)";
+        HorizontalLayout {
+            spacing: 16px;
+            alignment: start;
+            CheckBox {
+                text: "Shift+Tab";
+                checked <=> root.block-shift-tab;
+            }
+
+            CheckBox {
+                text: "Alt+F4";
+                checked <=> root.block-alt-f4;
+            }
+
+            CheckBox {
+                text: "Win";
+                checked <=> root.block-win;
+            }
+
+            CheckBox {
+                text: "Alt+Tab";
+                checked <=> root.block-alt-tab;
+            }
+
+            CheckBox {
+                text: "Caps Lock";
+                checked <=> root.block-caps-lock;
+            }
+
+            Button {
+                text: "Apply";
+                primary: true;
+                enabled: root.enabled;
+                clicked => {
+                    root.apply-game-mode();
+                }
+            }
+        }
+    }
+
+    GroupBox {
+        title: "Backup: key bindings, game mode shortcuts and macros as a file";
+        VerticalLayout {
+            spacing: 8px;
+
+            HorizontalLayout {
+                spacing: 8px;
+                Text {
+                    text: "File";
+                    vertical-alignment: center;
+                    min-width: 40px;
+                }
+
+                LineEdit {
+                    text <=> root.file;
+                    placeholder-text: "~/lightmount.toml";
+                }
+            }
+
+            HorizontalLayout {
+                spacing: 8px;
+                alignment: start;
+                Button {
+                    text: "Save backup";
+                    enabled: root.enabled;
+                    clicked => {
+                        root.save-backup();
+                    }
+                }
+
+                CheckBox {
+                    text: "Overwrite";
+                    checked <=> root.overwrite;
+                }
+
+                Rectangle {
+                    width: 24px;
+                }
+
+                Button {
+                    text: "Check file";
+                    enabled: root.enabled;
+                    clicked => {
+                        root.check-file();
+                    }
+                }
+
+                Button {
+                    text: "Apply file";
+                    primary: true;
+                    // only what was checked can be applied
+                    enabled: root.enabled && root.checked-file != "" && root.checked-file == root.file;
+                    clicked => {
+                        root.apply-file();
+                    }
+                }
+            }
+
+            Text {
+                text: "A backup contains what your macros type: keep the file private. \"Check file\" lists what applying it would change; then \"Apply file\" writes it.";
+                color: Palette.alternate-foreground;
+                wrap: word-wrap;
+            }
+
+            if root.file-details != "": TextEdit {
+                text: root.file-details;
+                read-only: true;
+                min-height: 120px;
+            }
+        }
+    }
+}
+
 export component AppWindow inherits Window {
     title: "QuietLinux";
     icon: @image-url("icon.svg");
@@ -489,6 +744,7 @@ export component AppWindow inherits Window {
     // lighting
     in property <[string]> effects;
     in property <[string]> directions;
+    in property <image> wheel;
     in-out property <int> effect-index;
     in-out property <int> color-mode;
     in-out property <string> color1: "e63000";
@@ -497,6 +753,8 @@ export component AppWindow inherits Window {
     in-out property <float> speed: 50;
     in-out property <int> direction-index;
     pure callback swatch(hex: string) -> color;
+    pure callback wheel-pick(x: float, y: float, value: float) -> WheelPick;
+    pure callback wheel-find(hex: string) -> WheelPick;
     callback store-effect();
     callback light-off();
     callback light-on();
@@ -507,13 +765,13 @@ export component AppWindow inherits Window {
     in property <float> keyboard-height;
     in-out property <string> selected-key;
     in property <string> key-title: "Click a key";
-    in property <string> normal-binding: "–";
-    in property <string> fn-binding: "–";
+    in property <string> binding-summary;
     in property <string> key-note;
     in property <bool> key-editable;
+    in property <[string]> bind-targets;
     in property <[string]> bind-kinds;
     in property <[string]> bind-values;
-    in-out property <int> bind-layer;
+    in-out property <int> bind-target;
     in-out property <int> bind-kind;
     in-out property <int> bind-value-index;
     in-out property <string> bind-text;
@@ -531,6 +789,21 @@ export component AppWindow inherits Window {
     callback macro-new();
     callback macro-save();
     callback macro-delete();
+
+    // settings
+    in-out property <bool> block-shift-tab;
+    in-out property <bool> block-alt-f4;
+    in-out property <bool> block-win;
+    in-out property <bool> block-alt-tab;
+    in-out property <bool> block-caps-lock;
+    in-out property <string> file;
+    in-out property <bool> overwrite;
+    in property <string> checked-file;
+    in property <string> file-details;
+    callback apply-game-mode();
+    callback save-backup();
+    callback check-file();
+    callback apply-file();
 
     property <bool> can-write: root.connected && !root.busy;
 
@@ -570,6 +843,7 @@ export component AppWindow inherits Window {
                 LightingPage {
                     effects: root.effects;
                     directions: root.directions;
+                    wheel: root.wheel;
                     effect-index <=> root.effect-index;
                     color-mode <=> root.color-mode;
                     color1 <=> root.color1;
@@ -580,6 +854,12 @@ export component AppWindow inherits Window {
                     enabled: root.can-write;
                     swatch(hex) => {
                         return root.swatch(hex);
+                    }
+                    wheel-pick(x, y, v) => {
+                        return root.wheel-pick(x, y, v);
+                    }
+                    wheel-find(hex) => {
+                        return root.wheel-find(hex);
                     }
                     store-effect => {
                         root.store-effect();
@@ -601,13 +881,13 @@ export component AppWindow inherits Window {
                     keyboard-height: root.keyboard-height;
                     selected-key <=> root.selected-key;
                     key-title: root.key-title;
-                    normal-binding: root.normal-binding;
-                    fn-binding: root.fn-binding;
+                    binding-summary: root.binding-summary;
                     key-note: root.key-note;
                     key-editable: root.key-editable;
+                    bind-targets: root.bind-targets;
                     bind-kinds: root.bind-kinds;
                     bind-values: root.bind-values;
-                    bind-layer <=> root.bind-layer;
+                    bind-target <=> root.bind-target;
                     bind-kind <=> root.bind-kind;
                     bind-value-index <=> root.bind-value-index;
                     bind-text <=> root.bind-text;
@@ -644,6 +924,34 @@ export component AppWindow inherits Window {
                     }
                     delete => {
                         root.macro-delete();
+                    }
+                }
+            }
+
+            Tab {
+                title: "Settings";
+                SettingsPage {
+                    block-shift-tab <=> root.block-shift-tab;
+                    block-alt-f4 <=> root.block-alt-f4;
+                    block-win <=> root.block-win;
+                    block-alt-tab <=> root.block-alt-tab;
+                    block-caps-lock <=> root.block-caps-lock;
+                    file <=> root.file;
+                    overwrite <=> root.overwrite;
+                    checked-file: root.checked-file;
+                    file-details: root.file-details;
+                    enabled: root.can-write;
+                    apply-game-mode => {
+                        root.apply-game-mode();
+                    }
+                    save-backup => {
+                        root.save-backup();
+                    }
+                    check-file => {
+                        root.check-file();
+                    }
+                    apply-file => {
+                        root.apply-file();
                     }
                 }
             }

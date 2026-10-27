@@ -236,6 +236,10 @@ impl FakeKeyboard {
                 self.reply(&fragments[0], &[]);
             }
             p::KEEP_ALIVE => self.reply(&fragments[0], &[]),
+            p::GET_GAME_MODE_CONFIG if !self.answers.contains_key(&msg.cmd) => {
+                let flags = self.game_mode_flags;
+                self.reply(&fragments[0], &[flags]);
+            }
             // without a fixed answer: the bindings set so far, all in one reply
             p::GET_BINDINGS if !self.answers.contains_key(&msg.cmd) => {
                 let mut entries: Vec<(&(u8, u8), &Vec<u8>)> = self.bindings.iter().collect();

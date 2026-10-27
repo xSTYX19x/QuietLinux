@@ -8,6 +8,7 @@ mod backend;
 mod keyboard;
 mod prefs;
 mod screenshot;
+mod wheel;
 
 use std::cell::RefCell;
 use std::path::PathBuf;
@@ -27,6 +28,7 @@ use quietlinux_core::settings::{
 use slint::{ComponentHandle, Model, ModelRc, SharedString, StandardListViewItem, VecModel};
 
 use crate::backend::{Backend, Outcome, Request, State};
+use crate::ui::WheelPick;
 
 /// The types generated from ui/app.slint.
 mod ui {
@@ -71,13 +73,59 @@ const BIND_KINDS: [(&str, &str); 7] = [
     ("disable", "Disabled"),
 ];
 
+/// The default backup file.
+const DEFAULT_FILE: &str = "~/lightmount.toml";
+
+/// What the request on its way is, for its answer.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+enum Pending {
+    #[default]
+    Other,
+    Refresh,
+    /// Checking the file as typed in the window.
+    Check(String),
+    ApplyFile,
+}
+
 /// The window's state on the UI thread.
 struct Controller {
     ui: slint::Weak<AppWindow>,
     requests: Option<mpsc::Sender<Request>>,
     state: State,
-    /// Layer the key editor shows (to tell a layer change from a kind change).
-    editor_layer: i32,
+    pending: Pending,
+    /// Key and target the key editor shows (to tell a target change from a kind change).
+    editor_key: String,
+    editor_target: i32,
+}
+
+impl Controller {
+    fn new(ui: &AppWindow, requests: Option<mpsc::Sender<Request>>) -> Self {
+        Self {
+            ui: ui.as_weak(),
+            requests,
+            state: State::default(),
+            pending: Pending::Other,
+            editor_key: String::new(),
+            editor_target: 0,
+        }
+    }
+}
+
+/// What a key's bindings can be set for: a label, the key ID, the Fn layer.
+fn targets(code: &str) -> Vec<(&'static str, u8, bool)> {
+    if code == "Knob" {
+        return [
+            ("Press", "Knob"),
+            ("Turn left", "KnobLeft"),
+            ("Turn right", "KnobRight"),
+        ]
+        .into_iter()
+        .filter_map(|(label, code)| Some((label, keymap::key_id_for_code(code)?, false)))
+        .collect();
+    }
+    keymap::key_id_for_code(code)
+        .map(|id| vec![("Normal", id, false), ("With Fn", id, true)])
+        .unwrap_or_default()
 }
 
 thread_local! {
@@ -108,6 +156,12 @@ impl Controller {
         let Some(requests) = &self.requests else {
             return;
         };
+        self.pending = match &request {
+            Request::Refresh => Pending::Refresh,
+            Request::CheckFile(_) => Pending::Check(ui.get_file().to_string()),
+            Request::ApplyFile(_) => Pending::ApplyFile,
+            _ => Pending::Other,
+        };
         ui.set_busy(true);
         if requests.send(request).is_err() {
             ui.set_busy(false);
@@ -116,10 +170,12 @@ impl Controller {
     }
 
     /// Put an answer of the backend into the window.
-    fn apply(&mut self, ui: &AppWindow, refresh: bool, outcome: Outcome) {
+    fn apply(&mut self, ui: &AppWindow, outcome: Outcome) {
         ui.set_busy(false);
+        let pending = std::mem::take(&mut self.pending);
         match outcome {
-            Ok((state, message)) => {
+            Ok(reply) => {
+                let state = reply.state;
                 ui.set_connected(true);
                 let title = if state.writable {
                     state.title.clone()
@@ -128,7 +184,22 @@ impl Controller {
                 };
                 ui.set_device_title(title.into());
                 ui.set_status_error(false);
-                ui.set_status(message.into());
+                ui.set_status(reply.message.into());
+                if let Some(details) = reply.details {
+                    ui.set_file_details(details.into());
+                }
+                match pending {
+                    Pending::Check(file) => ui.set_checked_file(file.into()),
+                    // check again before the next apply
+                    Pending::ApplyFile => ui.set_checked_file("".into()),
+                    Pending::Refresh | Pending::Other => {}
+                }
+                let flags = state.game_mode_flags;
+                ui.set_block_shift_tab(flags & 0x01 != 0);
+                ui.set_block_alt_f4(flags & 0x02 != 0);
+                ui.set_block_win(flags & 0x04 != 0);
+                ui.set_block_alt_tab(flags & 0x08 != 0);
+                ui.set_block_caps_lock(flags & 0x10 != 0);
                 self.state = state;
                 self.show_keys(ui);
                 self.show_macros(ui);
@@ -138,7 +209,7 @@ impl Controller {
                 }
             }
             Err(e) => {
-                if refresh {
+                if pending == Pending::Refresh {
                     ui.set_connected(false);
                     ui.set_device_title("No Light Mount connected".into());
                 }
@@ -163,9 +234,9 @@ impl Controller {
         let caps: Vec<KeyCap> = keyboard::caps()
             .into_iter()
             .map(|c| {
-                let changed = keymap::key_id_for_code(c.code).is_some_and(|id| {
-                    self.binding(id, false).is_some() || self.binding(id, true).is_some()
-                });
+                let changed = targets(c.code)
+                    .iter()
+                    .any(|&(_, id, fn_layer)| self.binding(id, fn_layer).is_some());
                 KeyCap {
                     code: c.code.into(),
                     // the knob is drawn as a circle, without text
@@ -195,39 +266,48 @@ impl Controller {
             _ => code.to_owned(),
         };
         ui.set_key_title(title.into());
-        let Some(key_id) = keymap::key_id_for_code(code) else {
-            ui.set_normal_binding("–".into());
-            ui.set_fn_binding("–".into());
-            ui.set_key_editable(false);
-            ui.set_key_note("".into());
-            return;
-        };
-        ui.set_normal_binding(self.binding_text(key_id, false).into());
-        ui.set_fn_binding(self.binding_text(key_id, true).into());
+        let targets = targets(code);
+        let summary: Vec<String> = targets
+            .iter()
+            .map(|&(label, id, fn_layer)| format!("{label}: {}", self.binding_text(id, fn_layer)))
+            .collect();
+        ui.set_binding_summary(summary.join("\n").into());
         let note = match code {
             "Fn" => "The Fn key cannot be bound.",
             "Enter" => {
                 "Enter can only be changed with the command line (`quietlinux bind --force Enter …`), \
                  so that it is not changed by mistake."
             }
-            "Knob" => {
-                "Pressing the knob. Its turns are KnobLeft and KnobRight in the command line."
-            }
             _ => "",
         };
         ui.set_key_note(note.into());
-        ui.set_key_editable(code != "Fn" && code != "Enter");
+        ui.set_key_editable(!targets.is_empty() && code != "Fn" && code != "Enter");
+        ui.set_bind_targets(strings(
+            targets.iter().map(|(label, ..)| (*label).to_owned()),
+        ));
+        // another key: start with its first target
+        if self.editor_key != code {
+            code.clone_into(&mut self.editor_key);
+            ui.set_bind_target(0);
+        }
         self.load_editor(ui);
     }
 
-    /// Fill the key editor with the binding of the selected key and layer.
+    /// The target the key editor shows.
+    fn target(ui: &AppWindow) -> Option<(u8, bool)> {
+        let targets = targets(&ui.get_selected_key());
+        let (_, id, fn_layer) = *targets.get(usize::try_from(ui.get_bind_target()).ok()?)?;
+        Some((id, fn_layer))
+    }
+
+    /// Fill the key editor with the binding of the selected key and target.
     fn load_editor(&mut self, ui: &AppWindow) {
-        self.editor_layer = ui.get_bind_layer();
-        let Some(key_id) = keymap::key_id_for_code(&ui.get_selected_key()) else {
+        self.editor_target = ui.get_bind_target();
+        let Some((key_id, fn_layer)) = Self::target(ui) else {
             return;
         };
         let text = self
-            .binding(key_id, ui.get_bind_layer() == 1)
+            .binding(key_id, fn_layer)
             .map_or(Some("default".to_owned()), |b| {
                 config::action_text(&b.action)
             });
@@ -257,7 +337,7 @@ impl Controller {
     }
 
     fn editor_changed(&mut self, ui: &AppWindow) {
-        if ui.get_bind_layer() == self.editor_layer {
+        if ui.get_bind_target() == self.editor_target {
             self.kind_changed(ui);
         } else {
             self.load_editor(ui);
@@ -301,7 +381,7 @@ impl Controller {
     }
 
     fn apply_binding(&mut self, ui: &AppWindow) {
-        let Some(key_id) = keymap::key_id_for_code(&ui.get_selected_key()) else {
+        let Some((key_id, fn_layer)) = Self::target(ui) else {
             return;
         };
         let kind = usize::try_from(ui.get_bind_kind()).unwrap_or(0);
@@ -326,7 +406,6 @@ impl Controller {
         let text = format!("{word} {value}");
         match config::parse_desired(text.trim()) {
             Ok(desired) => {
-                let fn_layer = ui.get_bind_layer() == 1;
                 self.send(
                     ui,
                     Request::Bind {
@@ -461,6 +540,70 @@ impl Controller {
             },
         );
     }
+
+    fn apply_game_mode(&mut self, ui: &AppWindow) {
+        let flags = [
+            (ui.get_block_shift_tab(), 0x01),
+            (ui.get_block_alt_f4(), 0x02),
+            (ui.get_block_win(), 0x04),
+            (ui.get_block_alt_tab(), 0x08),
+            (ui.get_block_caps_lock(), 0x10),
+        ]
+        .into_iter()
+        .filter(|(on, _)| *on)
+        .fold(0, |flags, (_, bit)| flags | bit);
+        self.send(ui, Request::GameMode(flags));
+    }
+
+    /// The backup file typed in the window, `~/` expanded.
+    fn file(ui: &AppWindow) -> Option<PathBuf> {
+        let text = ui.get_file();
+        let text = text.trim();
+        if text.is_empty() {
+            show_error(ui, "type the name of a file first");
+            return None;
+        }
+        match (text.strip_prefix("~/"), std::env::var_os("HOME")) {
+            (Some(rest), Some(home)) => Some(PathBuf::from(home).join(rest)),
+            _ => Some(PathBuf::from(text)),
+        }
+    }
+
+    fn save_backup(&mut self, ui: &AppWindow) {
+        if let Some(path) = Self::file(ui) {
+            let overwrite = ui.get_overwrite();
+            self.send(ui, Request::Backup { path, overwrite });
+        }
+    }
+
+    fn check_file(&mut self, ui: &AppWindow) {
+        if let Some(path) = Self::file(ui) {
+            self.send(ui, Request::CheckFile(path));
+        }
+    }
+
+    fn apply_file(&mut self, ui: &AppWindow) {
+        if let Some(path) = Self::file(ui) {
+            self.send(ui, Request::ApplyFile(path));
+        }
+    }
+}
+
+fn wheel_pick(p: wheel::Pick) -> WheelPick {
+    WheelPick {
+        hex: p.color.to_string().into(),
+        x: p.x,
+        y: p.y,
+        value: p.value,
+    }
+}
+
+fn wheel_image() -> slint::Image {
+    let mut buffer = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::new(wheel::SIZE, wheel::SIZE);
+    for (out, [r, g, b, a]) in buffer.make_mut_slice().iter_mut().zip(wheel::pixels()) {
+        *out = slint::Rgba8Pixel { r, g, b, a };
+    }
+    slint::Image::from_rgba8(buffer)
 }
 
 fn show_error(ui: &AppWindow, message: &str) {
@@ -496,6 +639,18 @@ fn set_up(ui: &AppWindow) {
     ui.set_keyboard_width(keyboard::WIDTH);
     ui.set_keyboard_height(keyboard::HEIGHT);
     ui.on_swatch(|hex| swatch(&hex));
+    ui.set_wheel(wheel_image());
+    ui.on_wheel_pick(|x, y, value| wheel_pick(wheel::pick(x, y, value)));
+    ui.on_wheel_find(|hex| {
+        // an unreadable color: the center of the wheel, white
+        let color = hex.trim().parse::<Rgb>().unwrap_or(Rgb::new(255, 255, 255));
+        wheel_pick(wheel::find(color))
+    });
+    ui.set_file(DEFAULT_FILE.into());
+    ui.on_apply_game_mode(|| with_controller(Controller::apply_game_mode));
+    ui.on_save_backup(|| with_controller(Controller::save_backup));
+    ui.on_check_file(|| with_controller(Controller::check_file));
+    ui.on_apply_file(|| with_controller(Controller::apply_file));
     ui.on_refresh(|| with_controller(|c, ui| c.send(ui, Request::Refresh)));
     ui.on_store_effect(|| with_controller(Controller::store_effect));
     ui.on_light_off(|| with_controller(|c, ui| c.send(ui, Request::LightOff)));
@@ -521,10 +676,9 @@ fn spawn_backend(mut backend: Backend) -> mpsc::Sender<Request> {
     let (tx, rx) = mpsc::channel::<Request>();
     std::thread::spawn(move || {
         for request in rx {
-            let refresh = matches!(request, Request::Refresh);
             let outcome = backend.handle(request);
             let delivered = slint::invoke_from_event_loop(move || {
-                with_controller(|c, ui| c.apply(ui, refresh, outcome));
+                with_controller(|c, ui| c.apply(ui, outcome));
             });
             if delivered.is_err() {
                 break;
@@ -558,12 +712,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
     };
     let requests = spawn_backend(backend);
     CONTROLLER.with(|c| {
-        *c.borrow_mut() = Some(Controller {
-            ui: ui.as_weak(),
-            requests: Some(requests),
-            state: State::default(),
-            editor_layer: 0,
-        });
+        *c.borrow_mut() = Some(Controller::new(&ui, Some(requests)));
     });
     with_controller(|c, ui| c.send(ui, Request::Refresh));
     ui.run()?;

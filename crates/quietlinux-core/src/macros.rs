@@ -8,12 +8,11 @@
 use std::fmt::Write as _;
 use std::str::FromStr;
 
-use quietlinux_core::device::{Error, Session, Transport};
-use quietlinux_core::info::{self, Action, Macro};
-use quietlinux_core::keymap;
-use quietlinux_core::protocol::{self as p, MacroEvent};
+use crate::device::{Error, Session, Transport};
+use crate::info::{self, Action, Macro};
+use crate::keymap;
+use crate::protocol::{self as p, MacroEvent};
 
-use crate::report::read_bindings;
 use crate::settings::KeyCombo;
 
 /// IO Center records macros with this pause after each event.
@@ -357,7 +356,7 @@ pub fn delete<T: Transport>(
     if !ids.contains(&id) {
         return Err(format!("the keyboard has no macro {id} (macros: {ids:?})").into());
     }
-    let (total, bindings) = read_bindings(session)?;
+    let (total, bindings) = session.read_bindings()?;
     if bindings.len() != total {
         return Err("could not read all key bindings: not deleting".into());
     }
@@ -382,7 +381,7 @@ pub fn delete<T: Transport>(
 
 #[cfg(test)]
 mod tests {
-    use quietlinux_core::device::fake::FakeKeyboard;
+    use crate::device::fake::FakeKeyboard;
 
     use super::*;
 

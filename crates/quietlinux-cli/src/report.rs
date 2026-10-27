@@ -11,9 +11,6 @@ use quietlinux_core::info::{
 use quietlinux_core::keymap;
 use quietlinux_core::protocol::{self as p, Message};
 
-/// Most `11:01` requests to read all bindings (each returns as many as fit).
-const MAX_BINDING_REQUESTS: usize = 32;
-
 fn hex(data: &[u8]) -> String {
     data.iter()
         .map(|b| format!("{b:02x}"))
@@ -266,7 +263,7 @@ fn keyboard_lines<T: Transport>(session: &mut Session<T>, out: &mut Vec<String>)
     let enabled = session
         .query(p::GET_BINDINGS_CONFIG, &[])
         .map(|m| m.data.first().copied());
-    match read_bindings(session) {
+    match session.read_bindings() {
         Ok((total, bindings)) => {
             let state = match enabled {
                 Ok(Some(1)) => "on",
@@ -300,30 +297,6 @@ fn keyboard_lines<T: Transport>(session: &mut Session<T>, out: &mut Vec<String>)
         ),
         Err(e) => push(out, "Macros:", unavailable(&e)),
     }
-}
-
-/// All bindings, read in as many `11:01` requests as needed.
-pub(crate) fn read_bindings<T: Transport>(
-    session: &mut Session<T>,
-) -> Result<(usize, Vec<info::Binding>), Error> {
-    let mut all = Vec::new();
-    let mut total = 0;
-    for _ in 0..MAX_BINDING_REQUESTS {
-        let index = u16::try_from(all.len()).unwrap_or(u16::MAX);
-        let reply = session.query(p::GET_BINDINGS, &index.to_le_bytes())?;
-        let Some((reply_total, entries)) = info::parse_bindings(&reply.data) else {
-            break;
-        };
-        total = reply_total;
-        if entries.is_empty() {
-            break;
-        }
-        all.extend(entries);
-        if all.len() >= total {
-            break;
-        }
-    }
-    Ok((total, all))
 }
 
 /// Keycap legends of the layout the keyboard reports (`07:01`), if QuietLinux has them.

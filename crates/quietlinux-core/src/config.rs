@@ -9,14 +9,13 @@
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::{self, Write as _};
 
-use quietlinux_core::device::{Error, LightingMode, Session, Transport};
-use quietlinux_core::info::{self, Action, Binding, Colors, Layout, Macro, parse_action};
-use quietlinux_core::keymap;
-use quietlinux_core::protocol as p;
+use crate::device::{Error, LightingMode, Session, Transport};
+use crate::info::{self, Action, Binding, Colors, Layout, Macro, parse_action};
+use crate::keymap;
+use crate::protocol as p;
 use serde::Deserialize;
 
 use crate::macros::{self, RepeatMode};
-use crate::report::read_bindings;
 use crate::settings::{
     BindKey, Direction, DualColor, Effect, GameModeBlocks, Gradient, KeyCombo, LightingAction,
     MediaAction, MouseButton, Shortcut, rainbow,
@@ -70,7 +69,7 @@ pub fn read_snapshot<T: Transport>(session: &mut Session<T>) -> Result<Snapshot,
     let first = |m: Result<p::Message, Error>| m.ok().and_then(|m| m.data.first().copied());
     let game_mode_on = first(session.query(p::GET_GAME_MODE_STATE, &[])).map(|s| s & 1 == 1);
     let bindings_enabled = first(session.query(p::GET_BINDINGS_CONFIG, &[])).map(|e| e == 1);
-    let (_, bindings) = read_bindings(session)?;
+    let (_, bindings) = session.read_bindings()?;
     let macros = session.read_macros().ok();
     Ok(Snapshot {
         model: identity.as_ref().and_then(info::DeviceInfo::model_name),
@@ -550,7 +549,7 @@ fn effect_setting(e: EffectSection) -> Result<EffectSetting, String> {
         }
         (None, None, Some(g)) => Colors::Gradient(g.join(",").parse::<Gradient>()?.0),
         (None, None, None) if effect == Effect::STATIC => {
-            Colors::Single(quietlinux_core::Rgb::new(0xe6, 0x30, 0x00))
+            Colors::Single(crate::Rgb::new(0xe6, 0x30, 0x00))
         }
         (None, None, None) => Colors::Gradient(rainbow()),
         _ => return Err("give only one of color, dual, gradient".to_owned()),
@@ -816,8 +815,8 @@ pub fn execute<T: Transport>(
 
 #[cfg(test)]
 mod tests {
-    use quietlinux_core::device::fake::FakeKeyboard;
-    use quietlinux_core::info::parse_bindings;
+    use crate::device::fake::FakeKeyboard;
+    use crate::info::parse_bindings;
 
     use super::*;
 

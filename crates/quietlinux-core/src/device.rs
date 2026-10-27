@@ -22,6 +22,9 @@ use rustix::event::{PollFd, PollFlags, Timespec, poll};
 use crate::Rgb;
 use crate::hid_descriptor::{Usage, top_level_usage};
 use crate::info::Macro;
+
+/// Most `11:01` requests to read all bindings (each returns as many as fit).
+const MAX_BINDING_REQUESTS: usize = 32;
 use crate::protocol::{self as p, Command, Led, Message, PACKET_SIZE, Packet, ProtocolError};
 
 #[cfg(any(test, feature = "fake"))]
@@ -624,6 +627,29 @@ impl<T: Transport> Session<T> {
             .first()
             .map(|&mode| LightingMode::from(mode))
             .ok_or(Error::InvalidReply(p::GET_LIGHTING_MODE))
+    }
+
+    /// All key bindings that differ from the factory ones (`11:01`, in as many
+    /// requests as needed), with the total the keyboard reports.
+    pub fn read_bindings(&mut self) -> Result<(usize, Vec<crate::info::Binding>)> {
+        let mut all = Vec::new();
+        let mut total = 0;
+        for _ in 0..MAX_BINDING_REQUESTS {
+            let index = u16::try_from(all.len()).unwrap_or(u16::MAX);
+            let reply = self.query(p::GET_BINDINGS, &index.to_le_bytes())?;
+            let Some((reply_total, entries)) = crate::info::parse_bindings(&reply.data) else {
+                break;
+            };
+            total = reply_total;
+            if entries.is_empty() {
+                break;
+            }
+            all.extend(entries);
+            if all.len() >= total {
+                break;
+            }
+        }
+        Ok((total, all))
     }
 
     /// IDs of the macros stored in the keyboard (`12:01`).

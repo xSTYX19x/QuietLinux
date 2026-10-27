@@ -1,10 +1,7 @@
 //! `quietlinux`: command line tool for the be quiet! Light Mount keyboard.
 
 mod calibrate;
-mod config;
-mod macros;
 mod report;
-mod settings;
 
 use std::io::{self, BufRead, Write};
 use std::path::PathBuf;
@@ -18,6 +15,7 @@ use quietlinux_core::info::{Action, Colors};
 use quietlinux_core::keymap::{self, KEYS, Key, Layout};
 use quietlinux_core::layout::{self, Zone};
 use quietlinux_core::protocol::Led;
+use quietlinux_core::{config, macros, settings};
 
 use crate::calibrate::Answer;
 

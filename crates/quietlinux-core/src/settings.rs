@@ -4,9 +4,9 @@
 use std::fmt;
 use std::str::FromStr;
 
-use quietlinux_core::Rgb;
-use quietlinux_core::keymap;
-use quietlinux_core::protocol::MAX_GRADIENT_STOPS;
+use crate::Rgb;
+use crate::keymap;
+use crate::protocol::MAX_GRADIENT_STOPS;
 
 fn lookup(table: &[(&str, u8)], s: &str, what: &str) -> Result<u8, String> {
     table

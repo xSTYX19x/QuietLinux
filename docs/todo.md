@@ -261,7 +261,7 @@ logic. Dependencies stay minimal (today: clap, rustix) and are checked in CI
 - [ ] Protocol layer for every command confirmed in phase 2, with fixtures
 - [ ] **Read** the device state first, write afterwards
 - [x] Backup/restore of what the keyboard reports (bindings, game mode); the effect is not readable from the Light Mount
-- [ ] Move the config file and the name tables (`crates/quietlinux-cli/src/{config,settings}.rs`) into quietlinux-core for the GUI
+- [x] Move the config file, the name tables and the macro text (`config`, `settings`, `macros`) into quietlinux-core for the GUI
 - [ ] Fuzz the parsers (`cargo fuzz`)
 
 ### 6.3 Phase 4 – CLI

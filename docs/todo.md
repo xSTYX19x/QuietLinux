@@ -78,24 +78,24 @@ Source: reviews (guru3d, HWBusters, igor'sLAB), to be checked against the real
 Windows app and the web app in phase 2. ✔ = already known thanks to bbossa.
 
 ### 2.1 Lighting
-- [ ] Effects: static ✔, color wave, tornado, breathing, matrix, reactive, ripple, off
-- [ ] Parameters per effect: color(s) / color mode (single, rainbow, …), brightness, speed, direction
-- [ ] Zones: keys, top bar, knob, left/right side strip, separately or as one group
+- [x] Effects: static, color wave, tornado, breathing, matrix, reactive (ripple and effect "off" are TKL only); lighting off (`light off`)
+- [x] Parameters per effect: color(s) / color mode (single, dual, gradient), brightness, speed, direction
+- [x] Zones: keys, top bar, knob, left/right side strip, separately or as one group (`light set`, volatile)
 - [ ] Custom mode: color per key/LED ✔ (volatile, "realtime" mode `03`). A **stored** variant exists: lighting mode `02` "custom" with layers and layer masks [web]; layer mask format still unknown
 - [ ] Custom mode with up to 10 layers: `10:03`–`10:0a` (layers layout, config, mask, name) exist in the protocol [web]; the Windows app does not use it (its per-key lighting is realtime mode)
 - [x] LED color calibration: not offered for the Light Mount (TKL and fans)
 - [ ] Interaction with LampArray / Dynamic Lighting (interface 3)
 
 ### 2.2 Key bindings
-- [ ] Remap any key to: another key, key combination/shortcut, media command, mouse action, macro, profile switch, lighting control, disabled
-- [ ] Fn layer (second binding per key)
-- [ ] Knob: press, turn left, turn right, each assignable
-- [ ] Macro keys M1–M5
+- [x] Remap any key to: another key, key combination, media command, mouse button, macro, lighting control, disabled (profile switch: see 2.4)
+- [x] Fn layer (second binding per key)
+- [x] Knob: press, turn left, turn right, each assignable
+- [x] Macro keys M1–M5
 - [ ] **Host-side actions** (open a program, file, folder or website): the keyboard cannot do this itself. On Linux this needs a background service that reacts to the vendor key events (`11:02`).
-- [ ] Restore the factory key bindings
+- [x] Restore the factory key bindings (`bind KEY default`, `apply`)
 
 ### 2.3 Macros
-- [ ] Macro library, up to 999 events (key down/up, delays)
+- [x] Macro library: events (key down/up, delays), names, repeat modes (the keyboard's limits are not known)
 - [x] Repeat modes: once, while held, repeat [cap]
 - [x] Find out: are macros stored in the device or played back by the host? Stored and played by the keyboard; write format captured from the Windows app (`12:02`–`12:08`, see protocol.md)
 - [x] Bind a macro to a key (`bind KEY macro ID`, backup/apply); tested on the reference keyboard (2026-10-27)
@@ -110,8 +110,8 @@ Windows app and the web app in phase 2. ✔ = already known thanks to bbossa.
 - [ ] Export/import profiles as files (own documented format, e.g. TOML)
 
 ### 2.5 Product settings
-- [ ] Show the firmware version (**read-only**, see 7)
-- [ ] Game mode (block Win key, Alt+Tab, Alt+F4, …; find out what exactly is configurable)
+- [x] Show the firmware version (**read-only**, see 7)
+- [x] Game mode: blocked shortcuts (`game-mode --block`); switched with Fn+Pause
 - [x] Quick tap / SOCD: not offered for the Light Mount (TKL)
 - [x] Any other setting found in the app: none (polling rate fixed at 1000 Hz)
 
@@ -150,15 +150,15 @@ Goal: reproducible, well-labeled captures to read the protocol from.
 ### 4.2 Windows PC (IO Center.exe)
 A real Windows PC is simpler and more reliable than a VM: no USB passthrough and
 no reset problems when handing the device over.
-- [ ] Install Wireshark for Windows with **USBPcap** (included in the Wireshark installer)
-- [ ] Install IO Center, note the firmware version (read only)
-- [ ] **Disconnect the network while capturing** and never accept update prompts (section 7)
-- [ ] **Turn off Windows Dynamic Lighting** (Settings › Personalization › Dynamic Lighting), otherwise Windows takes over the lighting
-- [ ] Capture on the USBPcap root hub of the keyboard, save as `.pcapng`, transfer with a note
-- [ ] Mind bbossa's warning: IO Center sessions may reset key bindings. Note the state beforehand
+- [x] Install Wireshark for Windows with **USBPcap** (included in the Wireshark installer)
+- [x] Install IO Center, note the firmware version (read only)
+- [x] **Disconnect the network while capturing** and never accept update prompts (section 7)
+- [x] **Turn off Windows Dynamic Lighting** (Settings › Personalization › Dynamic Lighting), otherwise Windows takes over the lighting
+- [x] Capture on the USBPcap root hubs (`windows-capture.ps1`), transfer with a note
+- [x] Mind bbossa's warning: IO Center sessions may reset key bindings. Note the state beforehand (`quietlinux backup`); IO Center writes its profile when it starts
 - [x] Write the step-by-step guide as `docs/capturing.md`, so that other users can contribute captures
 - [x] `tools/windows-capture.ps1`: guided captures on Windows with USBPcapCMD (all root hubs); `qlcap` merges several files and tolerates a cut-off last packet
-- [ ] Run `windows-capture.ps1` on a real Windows PC (not tested yet: no PowerShell on the development machine)
+- [x] Run `windows-capture.ps1` on a real Windows PC (2026-10-27)
 
 ### 4.3 Analysis tools (`tools/`)
 - [x] `qlcap frames`: pcap/pcapng (usbmon, USBPcap) or WebHID log → vendor messages (direction, time, `cmd:sub`, fragments reassembled, serial redacted)
@@ -176,12 +176,12 @@ marks [web] before QuietLinux sends it, and fill the gaps (layer masks, the
 Windows app's macros and profiles).
 
 Checklist (extended while collecting):
-- [ ] Connection setup: everything the app sends when opened (expected sequence in `protocol.md`)
-- [ ] Each effect, then each parameter on its own (color, brightness, speed, direction, color mode)
+- [x] Connection setup: everything the app sends when opened (`protocol.md`)
+- [x] Each effect, then each parameter on its own (color, brightness, speed, direction, color mode)
 - [ ] Zones separate vs. together
 - [ ] Custom mode: stored vs. preview; layers
-- [ ] Remap a key to: key, combination, media, mouse, disabled, profile switch, lighting control
-- [ ] Fn layer, knob (3 actions), M1–M5
+- [x] Remap a key to: key, combination, media, mouse, disabled, profile switch, lighting control
+- [x] Fn layer, knob (3 actions), M1–M5
 - [x] Create, change, delete, assign a macro; repeat mode changed (values still to be matched to the app's options) → `windows.hex`
 - [x] IO Center for Windows starting (reads macros) → `windows.hex`
 - [x] Polling rate, quick tap, LED calibration: not offered for the Light Mount (fixed 1000 Hz; TKL and fan features)

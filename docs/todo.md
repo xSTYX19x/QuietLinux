@@ -98,7 +98,7 @@ Windows app and the web app in phase 2. ✔ = already known thanks to bbossa.
 - [ ] Macro library, up to 999 events (key down/up, delays)
 - [ ] Recording, editing, repeat modes (find out: once, n times, while held, toggle?)
 - [x] Find out: are macros stored in the device or played back by the host? Stored and played by the keyboard; write format captured from the Windows app (`12:02`–`12:08`, see protocol.md)
-- [x] Bind a macro to a key (`bind KEY macro ID`, backup/apply)
+- [x] Bind a macro to a key (`bind KEY macro ID`, backup/apply); tested on the reference keyboard (2026-10-27)
 - [ ] Read a macro (`12:03`, `12:05`, `12:07`): capture IO Center for Windows starting
 - [ ] `macro list|create|edit|delete`, only after reading works (a write replaces all macros)
 

@@ -150,7 +150,14 @@ USBPcap, so there is no need to find the keyboard's hub.
    ```
 
    `-Only win-polling,win-effects` runs only these steps; `-OutDir D:\captures`
-   saves elsewhere (default: `quietlinux-captures` on the Desktop).
+   saves elsewhere (default: `quietlinux-captures` on the Desktop);
+   `-Hubs \\.\USBPcap1` records only that root hub.
+
+   If USBPcapCMD lists no root hubs, the script tries `USBPcap1` to `USBPcap10`
+   with the first capture. If none works, it prints diagnostics: usually the
+   USBPcap driver is not loaded. On Windows 11, *Memory integrity* (Windows
+   Security › Device security › Core isolation) can block it; Wireshark then
+   lists no `USBPcapN` interfaces either.
 4. Follow the steps. Use only the mouse while a capture runs: all USB devices
    are recorded, including what is typed on any keyboard.
 

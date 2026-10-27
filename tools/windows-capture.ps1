@@ -12,6 +12,8 @@
 # Options:
 #   -OutDir <folder>          where to save (default: quietlinux-captures on the Desktop)
 #   -Only <name>,<name>,...   run only these steps, e.g. -Only win-polling,win-effects
+#   -Hubs <hub>,<hub>,...     USBPcap interfaces to record, e.g. -Hubs \\.\USBPcap1
+#                             (default: the ones USBPcapCMD lists, else USBPcap1-10 are tried)
 #
 # Privacy: the traffic of every USB device of this PC is recorded, including
 # what is typed on any keyboard. Use only the mouse while a capture runs. The
@@ -24,7 +26,8 @@
 [CmdletBinding()]
 param(
     [string]$OutDir = (Join-Path ([Environment]::GetFolderPath('Desktop')) 'quietlinux-captures'),
-    [string[]]$Only = @()
+    [string[]]$Only = @(),
+    [string[]]$Hubs = @()
 )
 
 $ErrorActionPreference = 'Stop'
@@ -51,38 +54,72 @@ $Steps = @(
 function Find-UsbPcap {
     $dirs = @($env:ProgramFiles, ${env:ProgramFiles(x86)}) | Where-Object { $_ }
     foreach ($dir in $dirs) {
-        $exe = Join-Path $dir 'USBPcap\USBPcapCMD.exe'
-        if (Test-Path $exe) { return $exe }
+        foreach ($sub in @('USBPcap', 'Wireshark\extcap')) {
+            $exe = Join-Path $dir (Join-Path $sub 'USBPcapCMD.exe')
+            if (Test-Path $exe) { return $exe }
+        }
     }
     return $null
 }
 
-function Get-RootHubs([string]$UsbPcap) {
-    # USBPcapCMD lists its capture interfaces like: interface {value=\\.\USBPcap1}{display=USBPcap1}
-    $lines = & $UsbPcap --extcap-interfaces 2>$null
-    $hubs = @()
-    foreach ($line in $lines) {
-        if ($line -match 'interface \{value=([^}]+)\}') { $hubs += $Matches[1] }
+function Invoke-Native([string]$Exe, [string[]]$Arguments) {
+    # stdout and stderr as text; a native program writing to stderr must not stop the script
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        return @(& $Exe @Arguments 2>&1 | ForEach-Object { "$_" })
     }
-    return $hubs
+    catch {
+        return @("(failed: $_)")
+    }
+    finally {
+        $ErrorActionPreference = $previous
+    }
 }
 
-function Start-Capture([string]$UsbPcap, [string[]]$Hubs, [string]$Dir, [string]$Name) {
-    $procs = @()
-    foreach ($hub in $Hubs) {
+function Get-ListedHubs([string[]]$Lines) {
+    # USBPcapCMD lists its capture interfaces like: interface {value=\\.\USBPcap1}{display=USBPcap1}
+    $found = @()
+    foreach ($line in $Lines) {
+        if ($line -match '(\\\\\.\\USBPcap\d+)') { $found += $Matches[1] }
+    }
+    return @($found | Select-Object -Unique)
+}
+
+function Show-Diagnostics([string]$UsbPcap) {
+    Write-Host ''
+    Write-Host '--- Diagnostics (please send this to the QuietLinux maintainer) ---' -ForegroundColor Yellow
+    Write-Host ('USBPcapCMD: {0}' -f $UsbPcap)
+    Write-Host 'USBPcapCMD --extcap-interfaces printed:'
+    $lines = Invoke-Native $UsbPcap @('--extcap-interfaces')
+    if ($lines.Count -eq 0) { Write-Host '  (nothing)' } else { $lines | ForEach-Object { Write-Host ('  ' + $_) } }
+    Write-Host 'sc.exe query USBPcap:'
+    Invoke-Native 'sc.exe' @('query', 'USBPcap') | ForEach-Object { Write-Host ('  ' + $_) }
+    Write-Host ('Windows: {0}' -f [Environment]::OSVersion.VersionString)
+    Write-Host '--- end ---' -ForegroundColor Yellow
+    Write-Host ''
+    Write-Host 'If the USBPcap service is not RUNNING, Windows did not load the USBPcap driver.'
+    Write-Host 'A common cause on Windows 11 is "Memory integrity": Windows Security > Device security >'
+    Write-Host 'Core isolation details. Check also whether Wireshark lists USBPcap1, USBPcap2, ... interfaces.'
+}
+
+function Start-Capture([string]$UsbPcap, [string[]]$HubList, [string]$Dir, [string]$Name) {
+    $captures = @()
+    foreach ($hub in $HubList) {
         $hubName = $hub -replace '^\\\\\.\\', ''
         $file = Join-Path $Dir ('{0}-{1}.pcap' -f $Name, $hubName)
         $arguments = @('-d', $hub, '-o', ('"{0}"' -f $file), '-A')
-        $procs += Start-Process -FilePath $UsbPcap -ArgumentList $arguments -WindowStyle Hidden -PassThru
+        $proc = Start-Process -FilePath $UsbPcap -ArgumentList $arguments -WindowStyle Hidden -PassThru
+        $captures += [PSCustomObject]@{ Hub = $hub; File = $file; Proc = $proc }
     }
-    return $procs
+    return $captures
 }
 
-function Stop-Capture($Procs) {
+function Stop-Capture($Captures) {
     # give USBPcapCMD a moment to write the last packets
     Start-Sleep -Milliseconds 700
-    foreach ($p in $Procs) {
-        if (-not $p.HasExited) { Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue }
+    foreach ($c in $Captures) {
+        if (-not $c.Proc.HasExited) { Stop-Process -Id $c.Proc.Id -Force -ErrorAction SilentlyContinue }
     }
 }
 
@@ -93,13 +130,21 @@ if (-not $UsbPcap) {
     Write-Host 'USBPcapCMD.exe not found. Install Wireshark and tick "Install USBPcap", then restart Windows.' -ForegroundColor Red
     exit 1
 }
-$Hubs = @(Get-RootHubs $UsbPcap)
-if ($Hubs.Count -eq 0) {
-    Write-Host 'USBPcap lists no USB root hubs. Restart Windows after installing USBPcap.' -ForegroundColor Red
-    exit 1
-}
 Write-Host ('USBPcap: {0}' -f $UsbPcap)
-Write-Host ('Root hubs: {0}' -f ($Hubs -join ', '))
+
+$probing = $false
+if ($Hubs.Count -eq 0) {
+    $Hubs = Get-ListedHubs (Invoke-Native $UsbPcap @('--extcap-interfaces'))
+}
+if ($Hubs.Count -eq 0) {
+    # not listed: try the usual names; those that do not exist stop at once
+    $Hubs = @(1..10 | ForEach-Object { '\\.\USBPcap{0}' -f $_ })
+    $probing = $true
+    Write-Host 'USBPcapCMD lists no root hubs; trying USBPcap1 to USBPcap10 with the first capture.' -ForegroundColor Yellow
+}
+else {
+    Write-Host ('Root hubs: {0}' -f ($Hubs -join ', '))
+}
 
 $online = @(Get-NetAdapter -Physical -ErrorAction SilentlyContinue | Where-Object { $_.Status -eq 'Up' })
 if ($online.Count -gt 0) {
@@ -141,12 +186,24 @@ try {
         Set-Content -Path (Join-Path $dir 'note.txt') -Value $step.Text
         $running = @(Start-Capture $UsbPcap $Hubs $dir $step.Name)
         Start-Sleep -Seconds 1
-        $failed = @($running | Where-Object { $_.HasExited })
-        if ($failed.Count -eq $running.Count) {
-            $codes = ($failed | ForEach-Object { $_.ExitCode }) -join ', '
-            Write-Host ('    USBPcapCMD stopped right away (exit codes: {0}). Is this PowerShell running as administrator?' -f $codes) -ForegroundColor Red
+
+        $alive = @($running | Where-Object { -not $_.Proc.HasExited })
+        foreach ($dead in @($running | Where-Object { $_.Proc.HasExited })) {
+            Remove-Item -LiteralPath $dead.File -ErrorAction SilentlyContinue
+        }
+        if ($alive.Count -eq 0) {
+            $codes = ($running | ForEach-Object { $_.Proc.ExitCode }) -join ', '
+            Write-Host ('    USBPcapCMD could not record on any root hub (exit codes: {0}).' -f $codes) -ForegroundColor Red
+            Show-Diagnostics $UsbPcap
+            $running = @()
             break
         }
+        if ($probing) {
+            $Hubs = @($alive | ForEach-Object { $_.Hub })
+            $probing = $false
+            Write-Host ('    Root hubs found: {0}' -f ($Hubs -join ', '))
+        }
+        $running = $alive
 
         Write-Host '    Recording. Make the change in IO Center now (mouse only).' -ForegroundColor Green
         [void](Read-Host '    Enter = stop and save')

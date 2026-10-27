@@ -286,6 +286,8 @@ logic. Dependencies stay minimal (today: clap, rustix) and are checked in CI
 - [x] Knob: press, turn left and turn right in the key editor
 - [ ] Per-key colors (`light set`) in the window
 - [ ] A file chooser for the backup (needs the XDG desktop portal; today a file name field)
+- [ ] Screen reader support: Slint's "accessibility" feature is off because its D-Bus stack needs quick-xml 0.38 (RUSTSEC-2026-0194/-0195); turn it on once AccessKit moves to quick-xml 0.41+
+- [ ] Remove the `cargo deny` ignores for unmaintained crates (ttf-parser, zvariant, zbus_names) when Slint/winit move on
 - [ ] Live preview of an effect
 - [x] Color wheel to pick colors (effect colors; later per-key colors), next to the hex field
 - [ ] Record a macro by typing it: capture the key presses (press and release, with the pauses) and turn them into macro events; find out whether the keyboard's own recording (`12:09`/`12:0a`, `12:05` notifications, as IO Center for Windows does) or the key events of interface 2 work better

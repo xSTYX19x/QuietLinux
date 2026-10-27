@@ -82,6 +82,8 @@ component ColorField inherits HorizontalLayout {
     // the color at a point of the wheel; the point of a color
     pure callback wheel-pick(x: float, y: float, value: float) -> WheelPick;
     pure callback wheel-find(hex: string) -> WheelPick;
+    // the color was chosen (wheel or slider let go, or typed)
+    callback committed();
     property <WheelPick> point;
     spacing: 8px;
     alignment: start;
@@ -117,6 +119,9 @@ component ColorField inherits HorizontalLayout {
         text <=> root.hex;
         placeholder-text: "e63000";
         width: 110px;
+        edited => {
+            root.committed();
+        }
     }
 
     Button {
@@ -176,6 +181,9 @@ component ColorField inherits HorizontalLayout {
                         if event.kind == PointerEventKind.down {
                             root.pick(self.mouse-x, self.mouse-y, self.width);
                         }
+                        if event.kind == PointerEventKind.up {
+                            root.committed();
+                        }
                     }
                     moved => {
                         if self.pressed {
@@ -199,6 +207,9 @@ component ColorField inherits HorizontalLayout {
                     changed(v) => {
                         root.point = root.wheel-pick(root.point.x, root.point.y, v);
                         root.hex = root.point.hex;
+                    }
+                    released => {
+                        root.committed();
                     }
                 }
             }
@@ -224,6 +235,8 @@ component LightingPage inherits VerticalBox {
     pure callback wheel-pick(x: float, y: float, value: float) -> WheelPick;
     pure callback wheel-find(hex: string) -> WheelPick;
     callback store-effect();
+    // a color changed: applied right away
+    callback colors-changed();
     callback light-off();
     callback light-on();
     alignment: start;
@@ -258,6 +271,9 @@ component LightingPage inherits VerticalBox {
                 ComboBox {
                     model: ["One color", "Two colors", "Rainbow"];
                     current-index <=> root.color-mode;
+                    selected => {
+                        root.colors-changed();
+                    }
                 }
             }
 
@@ -273,6 +289,9 @@ component LightingPage inherits VerticalBox {
                 wheel-find(hex) => {
                     return root.wheel-find(hex);
                 }
+                committed => {
+                    root.colors-changed();
+                }
             }
             if root.color-mode == 1: ColorField {
                 label: root.effect-index == root.reactive-index ? "Background" : "Second color";
@@ -284,6 +303,9 @@ component LightingPage inherits VerticalBox {
                 }
                 wheel-find(hex) => {
                     return root.wheel-find(hex);
+                }
+                committed => {
+                    root.colors-changed();
                 }
             }
 
@@ -762,6 +784,7 @@ export component AppWindow inherits Window {
     pure callback wheel-pick(x: float, y: float, value: float) -> WheelPick;
     pure callback wheel-find(hex: string) -> WheelPick;
     callback store-effect();
+    callback colors-changed();
     callback light-off();
     callback light-on();
 
@@ -888,6 +911,9 @@ export component AppWindow inherits Window {
                     }
                     store-effect => {
                         root.store-effect();
+                    }
+                    colors-changed => {
+                        root.colors-changed();
                     }
                     light-off => {
                         root.light-off();

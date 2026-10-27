@@ -6,6 +6,15 @@ targets = ["x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu"]
 
 [advisories]
 yanked = "deny"
+# Unmaintained crates deep inside the GUI's dependencies, without a maintained
+# release to move to. No vulnerability is reported for them; check again when
+# Slint or winit update. Vulnerabilities are never ignored here.
+ignore = [
+    { id = "RUSTSEC-2026-0192", reason = "ttf-parser: winit's window decorations (sctk-adwaita) read fonts with it; no newer release" },
+    { id = "RUSTSEC-2026-0370", reason = "zvariant: part of zbus 5, which Slint's winit backend uses for desktop settings; merged into zbus 6, which Slint does not use yet" },
+    { id = "RUSTSEC-2026-0371", reason = "zbus_names: as zvariant, merged into zbus 6" },
+    { id = "RUSTSEC-2026-0372", reason = "zvariant_derive: as zvariant, merged into zbus 6" },
+]
 
 [licenses]
 # Licenses in use, all compatible with GPL-3.0-or-later. Add others (e.g. BSD,

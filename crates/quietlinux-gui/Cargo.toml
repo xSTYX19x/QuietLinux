@@ -19,12 +19,14 @@ quietlinux-core = { workspace = true, features = ["fake"] }
 clap.workspace = true
 toml.workspace = true
 # Software renderer: no GPU or OpenGL needed, little memory for a small window.
+# "accessibility" (screen readers through AT-SPI) is off for now: its D-Bus
+# stack pulls in quick-xml 0.38, which has open advisories (RUSTSEC-2026-0194,
+# -0195). Turn it on again once AccessKit uses quick-xml 0.41 or later.
 slint = { version = "1.18.1", default-features = false, features = [
     "std",
     "compat-1-2",
     "backend-winit",
     "renderer-software",
-    "accessibility",
 ] }
 
 [build-dependencies]

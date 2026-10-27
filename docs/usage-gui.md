@@ -21,6 +21,9 @@ request; not while a change is being sent).
 The box next to **Reload** chooses the light or dark theme, or the system's.
 The choice is saved in `~/.config/quietlinux/gui.toml`.
 
+The window does not support screen readers yet (see [todo.md](todo.md)); the
+command line tool does everything it does.
+
 On a firmware version QuietLinux was not tested with, the title says
 "read-only" and every change is refused, like the command line without
 `--allow-unknown-firmware`.
@@ -37,7 +40,10 @@ On a firmware version QuietLinux was not tested with, the title says
 - **Pick …** (or a click on the swatch) opens a color wheel: the hue around
   the circle, pale colors towards the center; the slider below sets how bright
   the color is.
-- **Apply** stores the effect in the keyboard. The Light Mount does not
+- **Colors are applied right away**: when you let go of the color wheel or its
+  slider, choose another color mode, or have typed six hex digits (after a
+  short pause, so that a drag does not write to the keyboard many times).
+- **Apply** stores the effect with the other settings in the keyboard. The Light Mount does not
   report its effect, so the tab shows what you set last, not what the keyboard
   shows.
 - **Off** / **On** switch the lighting off and on, like IO Center's switch. The

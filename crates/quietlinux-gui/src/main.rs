@@ -74,6 +74,10 @@ const BIND_KINDS: [(&str, &str); 7] = [
     ("disable", "Disabled"),
 ];
 
+/// A changed color is applied this long after the last change: the effect is
+/// stored in the keyboard, so not every step of a drag is written.
+const COLOR_DELAY: Duration = Duration::from_millis(400);
+
 /// How often the window asks whether game mode is on (Fn+Pause switches it).
 const GAME_MODE_POLL: Duration = Duration::from_secs(2);
 
@@ -107,6 +111,8 @@ struct Controller {
     pending: Pending,
     /// A game mode poll is on its way.
     polling: bool,
+    /// Applies changed colors after [`COLOR_DELAY`].
+    color_timer: slint::Timer,
     /// Key and target the key editor shows (to tell a target change from a kind change).
     editor_key: String,
     editor_target: i32,
@@ -120,6 +126,7 @@ impl Controller {
             state: State::default(),
             pending: Pending::Other,
             polling: false,
+            color_timer: slint::Timer::default(),
             editor_key: String::new(),
             editor_target: 0,
         }
@@ -531,7 +538,30 @@ impl Controller {
         }
     }
 
+    /// A color changed: apply the effect soon, unless more changes follow.
+    fn colors_changed(&mut self, _: &AppWindow) {
+        self.color_timer
+            .start(slint::TimerMode::SingleShot, COLOR_DELAY, || {
+                with_controller(|c, ui| {
+                    if !ui.get_connected() {
+                        return;
+                    }
+                    if ui.get_busy() {
+                        // the last change is not lost: try again later
+                        c.colors_changed(ui);
+                    } else {
+                        c.apply_effect(ui, true);
+                    }
+                });
+            });
+    }
+
     fn store_effect(&mut self, ui: &AppWindow) {
+        self.apply_effect(ui, false);
+    }
+
+    /// Store the effect. `quiet`: a color still being typed is no error.
+    fn apply_effect(&mut self, ui: &AppWindow, quiet: bool) {
         let index = |i: i32| usize::try_from(i).unwrap_or(0);
         let Some(effect) = Effect::all().get(index(ui.get_effect_index())).copied() else {
             return;
@@ -554,7 +584,9 @@ impl Controller {
         let colors = match colors {
             Ok(colors) => colors,
             Err(e) => {
-                show_error(ui, &e);
+                if !quiet {
+                    show_error(ui, &e);
+                }
                 return;
             }
         };
@@ -703,6 +735,7 @@ fn set_up(ui: &AppWindow) {
     ui.on_apply_file(|| with_controller(Controller::apply_file));
     ui.on_refresh(|| with_controller(|c, ui| c.send(ui, Request::Refresh)));
     ui.on_store_effect(|| with_controller(Controller::store_effect));
+    ui.on_colors_changed(|| with_controller(Controller::colors_changed));
     ui.on_light_off(|| with_controller(|c, ui| c.send(ui, Request::LightOff)));
     ui.on_light_on(|| with_controller(|c, ui| c.send(ui, Request::LightOn)));
     ui.on_key_clicked(|code| with_controller(|c, ui| c.select_key(ui, &code)));

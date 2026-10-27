@@ -306,7 +306,8 @@ logic. Dependencies stay minimal (today: clap, rustix) and are checked in CI
 - [ ] Other host-side actions: open file/folder (`04`/`05`, not captured), profile keys (`08`: switch between backup files?)
 - [x] Reapply after replug/resume: `quietlinux-daemon` shows the per-key colors (or "off") from `lighting.toml` again; polls sysfs every 2 s, detects sleep by wall vs. monotonic clock
 - [x] systemd user service (`packaging/systemd/quietlinux-daemon.service`)
-- [ ] Test the daemon on the reference keyboard (replug, suspend)
+- [x] Daemon tested on the reference keyboard (2026-10-27): per-key colors shown again after replugging, website key opens the browser
+- [ ] Test the daemon after suspend/resume
 
 ### 6.6 Phase 7 – Release
 - [ ] Docs: `README.md`, `docs/installation.md` ✔, `docs/usage-cli.md` ✔, `docs/usage-gui.md` ✔, `docs/protocol.md` ✔, `docs/troubleshooting.md`, `docs/contributing.md` (including how to capture for another firmware version or layout)

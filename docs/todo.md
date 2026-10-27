@@ -103,7 +103,8 @@ Windows app and the web app in phase 2. ✔ = already known thanks to bbossa.
 - [x] `macro list|show|create|edit|delete`; every write is read back and compared; tested on the reference keyboard (2026-10-27), with `light off`
 - [x] Macros in `backup`/`apply`
 - [x] Recording a macro on the keyboard (`12:09` as IO Center sends it, `12:05` notifications): `macro record`, GUI Record/Stop; pauses none (50 ms), fixed or as recorded
-- [ ] Test the recording on the reference keyboard: modifiers (kind `01`?), whether recording ends with the session
+- [x] Recording tested on the reference keyboard (2026-10-27): keys, Shift and the pauses come through; macros recorded this way play back
+- [ ] Find out whether the recording ends with the session (no `12:0a` is sent)
 
 ### 2.4 Profiles
 - [x] Find out how many profiles the device holds: none. IO Center for Windows keeps profiles on the PC and writes all settings when switching [cap]

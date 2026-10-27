@@ -38,6 +38,8 @@ pub struct FakeKeyboard {
     pub bindings: HashMap<(u8, u8), Vec<u8>>,
     /// Game mode flags set with `07:03`.
     pub game_mode_flags: u8,
+    /// Game mode on (`07:04`; on the keyboard, Fn+Pause switches it).
+    pub game_mode_on: bool,
     /// Stored macros by ID (`12:01`–`12:08`).
     pub macros: BTreeMap<u16, Macro>,
     fragments: Vec<Packet>,
@@ -55,6 +57,7 @@ impl FakeKeyboard {
             layer_config: None,
             bindings: HashMap::new(),
             game_mode_flags: 0,
+            game_mode_on: false,
             macros: BTreeMap::new(),
             fragments: Vec::new(),
         }
@@ -236,6 +239,10 @@ impl FakeKeyboard {
                 self.reply(&fragments[0], &[]);
             }
             p::KEEP_ALIVE => self.reply(&fragments[0], &[]),
+            p::GET_GAME_MODE_STATE if !self.answers.contains_key(&msg.cmd) => {
+                let on = u8::from(self.game_mode_on);
+                self.reply(&fragments[0], &[on]);
+            }
             p::GET_GAME_MODE_CONFIG if !self.answers.contains_key(&msg.cmd) => {
                 let flags = self.game_mode_flags;
                 self.reply(&fragments[0], &[flags]);

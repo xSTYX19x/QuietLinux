@@ -14,6 +14,10 @@ reads it again). While a change is being sent, the status line at the bottom
 says "Working …"; errors appear there in red. The window does not watch key
 presses.
 
+The title line shows whether **game mode** is on. Game mode is switched on the
+keyboard with Fn+Pause, so the window asks for it every 2 seconds (a read-only
+request; not while a change is being sent).
+
 The box next to **Reload** chooses the light or dark theme, or the system's.
 The choice is saved in `~/.config/quietlinux/gui.toml`.
 
@@ -28,6 +32,8 @@ On a firmware version QuietLinux was not tested with, the title says
 - **Effect**, **Colors**, **Brightness**, **Speed** and **Direction** as in
   `quietlinux light effect`. Colors are six hex digits (`e63000`); "Rainbow" is
   IO Center's color gradient.
+- With "Two colors", the reactive effect lights a pressed key in the first
+  color ("Key press") on the second ("Background").
 - **Pick …** (or a click on the swatch) opens a color wheel: the hue around
   the circle, pale colors towards the center; the slider below sets how bright
   the color is.

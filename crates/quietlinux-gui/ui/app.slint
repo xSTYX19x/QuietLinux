@@ -213,6 +213,8 @@ component LightingPage inherits VerticalBox {
     in-out property <int> effect-index;
     in-out property <int> color-mode;
     in-out property <string> color1;
+    // index of the reactive effect in `effects`: its two colors have other names
+    in property <int> reactive-index;
     in-out property <string> color2;
     in-out property <float> brightness;
     in-out property <float> speed;
@@ -260,7 +262,8 @@ component LightingPage inherits VerticalBox {
             }
 
             if root.color-mode <= 1: ColorField {
-                label: root.color-mode == 0 ? "Color" : "First color";
+                label: root.color-mode == 0 ? "Color"
+                    : root.effect-index == root.reactive-index ? "Key press" : "First color";
                 hex <=> root.color1;
                 swatch: root.swatch(root.color1);
                 wheel: root.wheel;
@@ -272,7 +275,7 @@ component LightingPage inherits VerticalBox {
                 }
             }
             if root.color-mode == 1: ColorField {
-                label: "Second color";
+                label: root.effect-index == root.reactive-index ? "Background" : "Second color";
                 hex <=> root.color2;
                 swatch: root.swatch(root.color2);
                 wheel: root.wheel;
@@ -731,6 +734,8 @@ export component AppWindow inherits Window {
     in property <bool> busy;
     in property <bool> connected;
     in-out property <int> page;
+    // game mode: 0 unknown, 1 off, 2 on
+    in property <int> game-mode;
     // 0 the system's, 1 light, 2 dark
     in-out property <int> theme;
     callback theme-chosen();
@@ -747,6 +752,7 @@ export component AppWindow inherits Window {
     in property <image> wheel;
     in-out property <int> effect-index;
     in-out property <int> color-mode;
+    in property <int> reactive-index;
     in-out property <string> color1: "e63000";
     in-out property <string> color2: "ffffff";
     in-out property <float> brightness: 100;
@@ -817,6 +823,24 @@ export component AppWindow inherits Window {
                 horizontal-stretch: 1;
             }
 
+            if root.game-mode > 0: VerticalLayout {
+                alignment: center;
+                Rectangle {
+                    height: 26px;
+                    width: game-mode-text.preferred-width + 24px;
+                    border-radius: 13px;
+                    background: root.game-mode == 2 ? Palette.accent-background : Palette.alternate-background;
+                    border-width: 1px;
+                    border-color: root.game-mode == 2 ? Palette.accent-background : Palette.border;
+
+                    game-mode-text := Text {
+                        text: root.game-mode == 2 ? "Game mode: on" : "Game mode: off";
+                        color: root.game-mode == 2 ? Palette.accent-foreground : Palette.alternate-foreground;
+                        font-weight: root.game-mode == 2 ? 600 : 400;
+                    }
+                }
+            }
+
             ComboBox {
                 width: 170px;
                 model: ["System theme", "Light", "Dark"];
@@ -844,6 +868,7 @@ export component AppWindow inherits Window {
                     effects: root.effects;
                     directions: root.directions;
                     wheel: root.wheel;
+                    reactive-index: root.reactive-index;
                     effect-index <=> root.effect-index;
                     color-mode <=> root.color-mode;
                     color1 <=> root.color1;

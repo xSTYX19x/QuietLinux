@@ -14,6 +14,7 @@ use std::cell::RefCell;
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::mpsc;
+use std::time::Duration;
 
 use clap::Parser;
 use quietlinux_core::Rgb;
@@ -73,6 +74,17 @@ const BIND_KINDS: [(&str, &str); 7] = [
     ("disable", "Disabled"),
 ];
 
+/// How often the window asks whether game mode is on (Fn+Pause switches it).
+const GAME_MODE_POLL: Duration = Duration::from_secs(2);
+
+/// Work for the backend thread.
+#[derive(Debug)]
+enum Job {
+    Request(Request),
+    /// Read only whether game mode is on; answered quietly.
+    PollGameMode,
+}
+
 /// The default backup file.
 const DEFAULT_FILE: &str = "~/lightmount.toml";
 
@@ -90,21 +102,24 @@ enum Pending {
 /// The window's state on the UI thread.
 struct Controller {
     ui: slint::Weak<AppWindow>,
-    requests: Option<mpsc::Sender<Request>>,
+    requests: Option<mpsc::Sender<Job>>,
     state: State,
     pending: Pending,
+    /// A game mode poll is on its way.
+    polling: bool,
     /// Key and target the key editor shows (to tell a target change from a kind change).
     editor_key: String,
     editor_target: i32,
 }
 
 impl Controller {
-    fn new(ui: &AppWindow, requests: Option<mpsc::Sender<Request>>) -> Self {
+    fn new(ui: &AppWindow, requests: Option<mpsc::Sender<Job>>) -> Self {
         Self {
             ui: ui.as_weak(),
             requests,
             state: State::default(),
             pending: Pending::Other,
+            polling: false,
             editor_key: String::new(),
             editor_target: 0,
         }
@@ -163,9 +178,29 @@ impl Controller {
             _ => Pending::Other,
         };
         ui.set_busy(true);
-        if requests.send(request).is_err() {
+        if requests.send(Job::Request(request)).is_err() {
             ui.set_busy(false);
             show_error(ui, "the backend thread stopped");
+        }
+    }
+
+    /// Ask whether game mode is on, unless the window is busy or not connected.
+    fn poll_game_mode(&mut self, ui: &AppWindow) {
+        let Some(requests) = &self.requests else {
+            return;
+        };
+        if self.polling || ui.get_busy() || !ui.get_connected() {
+            return;
+        }
+        self.polling = requests.send(Job::PollGameMode).is_ok();
+    }
+
+    /// `state` as [`game_mode_code`] gives it; `None`: the poll failed, which is
+    /// not shown (the next request reports the error).
+    fn game_mode_polled(&mut self, ui: &AppWindow, state: Option<i32>) {
+        self.polling = false;
+        if let Some(state) = state {
+            ui.set_game_mode(state);
         }
     }
 
@@ -194,6 +229,7 @@ impl Controller {
                     Pending::ApplyFile => ui.set_checked_file("".into()),
                     Pending::Refresh | Pending::Other => {}
                 }
+                ui.set_game_mode(game_mode_code(state.game_mode_on));
                 let flags = state.game_mode_flags;
                 ui.set_block_shift_tab(flags & 0x01 != 0);
                 ui.set_block_alt_f4(flags & 0x02 != 0);
@@ -606,6 +642,15 @@ fn wheel_image() -> slint::Image {
     slint::Image::from_rgba8(buffer)
 }
 
+/// The window's game mode state: 0 unknown, 1 off, 2 on.
+fn game_mode_code(on: Option<bool>) -> i32 {
+    match on {
+        None => 0,
+        Some(false) => 1,
+        Some(true) => 2,
+    }
+}
+
 fn show_error(ui: &AppWindow, message: &str) {
     ui.set_status_error(true);
     ui.set_status(message.into());
@@ -627,6 +672,11 @@ fn set_up(ui: &AppWindow) {
             .filter_map(Effect::name)
             .map(str::to_owned),
     ));
+    let reactive = Effect::all()
+        .iter()
+        .position(|e| e.name() == Some("reactive"))
+        .and_then(|i| i32::try_from(i).ok());
+    ui.set_reactive_index(reactive.unwrap_or(-1));
     ui.set_directions(strings(
         Direction::all()
             .into_iter()
@@ -672,14 +722,24 @@ fn set_up(ui: &AppWindow) {
 }
 
 /// Start the backend thread; its answers go back to the UI thread.
-fn spawn_backend(mut backend: Backend) -> mpsc::Sender<Request> {
-    let (tx, rx) = mpsc::channel::<Request>();
+fn spawn_backend(mut backend: Backend) -> mpsc::Sender<Job> {
+    let (tx, rx) = mpsc::channel::<Job>();
     std::thread::spawn(move || {
-        for request in rx {
-            let outcome = backend.handle(request);
-            let delivered = slint::invoke_from_event_loop(move || {
-                with_controller(|c, ui| c.apply(ui, outcome));
-            });
+        for job in rx {
+            let delivered = match job {
+                Job::Request(request) => {
+                    let outcome = backend.handle(request);
+                    slint::invoke_from_event_loop(move || {
+                        with_controller(|c, ui| c.apply(ui, outcome));
+                    })
+                }
+                Job::PollGameMode => {
+                    let state = backend.game_mode_on().ok().map(game_mode_code);
+                    slint::invoke_from_event_loop(move || {
+                        with_controller(|c, ui| c.game_mode_polled(ui, state));
+                    })
+                }
+            };
             if delivered.is_err() {
                 break;
             }
@@ -715,6 +775,10 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         *c.borrow_mut() = Some(Controller::new(&ui, Some(requests)));
     });
     with_controller(|c, ui| c.send(ui, Request::Refresh));
+    let poll = slint::Timer::default();
+    poll.start(slint::TimerMode::Repeated, GAME_MODE_POLL, || {
+        with_controller(Controller::poll_game_mode);
+    });
     ui.run()?;
     Ok(())
 }

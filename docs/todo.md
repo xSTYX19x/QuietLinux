@@ -282,7 +282,7 @@ logic. Dependencies stay minimal (today: clap, rustix) and are checked in CI
 - [x] Tabs: lighting (effect, colors, brightness, speed, direction, on/off), key bindings (both layers), macros (list, create, edit, delete)
 - [x] Demo mode (`--demo`) with the simulated keyboard; offscreen screenshots for the docs (`--screenshot`)
 - [x] Backup and apply in the window (a file name field; check before apply)
-- [x] Game mode shortcuts in the window
+- [x] Game mode shortcuts in the window; game mode on/off shown in the title line (read every 2 s)
 - [x] Knob: press, turn left and turn right in the key editor
 - [ ] Per-key colors (`light set`) in the window
 - [ ] A file chooser for the backup (needs the XDG desktop portal; today a file name field)

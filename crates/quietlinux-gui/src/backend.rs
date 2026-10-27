@@ -64,6 +64,8 @@ pub struct State {
     pub macros: Option<Vec<Macro>>,
     /// Shortcuts game mode blocks.
     pub game_mode_flags: u8,
+    /// Game mode on or off, if the keyboard reported it.
+    pub game_mode_on: Option<bool>,
 }
 
 /// What a request did.
@@ -123,6 +125,27 @@ impl Backend {
             }
         }
     }
+
+    /// Only whether game mode is on (`07:04`): cheap enough to ask every few seconds.
+    pub fn game_mode_on(&mut self) -> Result<Option<bool>, String> {
+        match self {
+            Self::Hardware { usb_path } => {
+                let (_, mut session) =
+                    device::open(usb_path.as_deref(), false).map_err(|e| e.to_string())?;
+                session.open_session().map_err(|e| e.to_string())?;
+                Ok(read_game_mode(&mut session))
+            }
+            Self::Demo(kb) => {
+                let mut session = Session::new(&mut **kb, false).map_err(|e| e.to_string())?;
+                Ok(read_game_mode(&mut session))
+            }
+        }
+    }
+}
+
+fn read_game_mode<T: Transport>(session: &mut Session<T>) -> Option<bool> {
+    let reply = session.query(p::GET_GAME_MODE_STATE, &[]).ok()?;
+    reply.data.first().map(|state| state & 1 == 1)
 }
 
 fn handle<T: Transport>(session: &mut Session<T>, request: Request) -> Outcome {
@@ -315,6 +338,7 @@ fn read_state<T: Transport>(session: &mut Session<T>) -> Result<State, device::E
         .ok()
         .and_then(|m| m.data.first().copied())
         .unwrap_or(0);
+    let game_mode_on = read_game_mode(session);
     Ok(State {
         title,
         legends,
@@ -322,6 +346,7 @@ fn read_state<T: Transport>(session: &mut Session<T>) -> Result<State, device::E
         bindings,
         macros,
         game_mode_flags,
+        game_mode_on,
     })
 }
 
@@ -367,6 +392,12 @@ mod tests {
         // macro 1 is bound to M5
         assert!(backend.handle(Request::DeleteMacro(1)).is_err());
         assert_eq!(state.game_mode_flags, 0x0f);
+        assert_eq!(state.game_mode_on, Some(false));
+        assert_eq!(backend.game_mode_on(), Ok(Some(false)));
+        if let Backend::Demo(kb) = &mut backend {
+            kb.game_mode_on = true; // Fn+Pause
+        }
+        assert_eq!(backend.game_mode_on(), Ok(Some(true)));
         let reply = backend.handle(Request::GameMode(0x04)).unwrap();
         assert_eq!(reply.state.game_mode_flags, 0x04);
     }

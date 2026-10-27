@@ -176,7 +176,7 @@ quietlinux light effect tornado --gradient ff0000@0,ffff00@30,0000ff@100
 |---|---|---|
 | `EFFECT` | `static`, `color-wave`, `tornado`, `breathing`, `reactive`, `matrix` | |
 | `--color` | one color, `rrggbb` | static: `e63000` (factory color); others: rainbow |
-| `--dual` | two colors, `rrggbb,rrggbb` | |
+| `--dual` | two colors, `rrggbb,rrggbb`; for `reactive` the first lights a pressed key, the second is the background | |
 | `--gradient` | 2–12 colors, evenly spread or with positions `@0`–`@100` | |
 | `--brightness` | 0–100 | 100 |
 | `--speed` | 0–100 | 50 |

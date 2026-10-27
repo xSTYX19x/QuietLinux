@@ -292,7 +292,9 @@ the keyboard by either app; it needs a program that keeps running.
   breathing): `ff0000@0 ffff00@17 00ff00@33 00ffff@50 0000ff@67 ff00ff@83 ff0000@100`. [cap]
 - Color modes and their colors [web] (single, dual, gradient [cap]):
   - `0` single color: `[R][G][B]`
-  - `1` dual color: `[R][G][B][R][G][B]`
+  - `1` dual color: `[R][G][B][R][G][B]`; with the reactive effect the first
+    color lights a pressed key, the second is the background (tested on the
+    reference keyboard)
   - `2` gradient: `[count]` then `count × [R][G][B][position]`
   - `3` oriented gradient: `[type: 0 linear, 1 radial, 2 conic][angle u16][count]` then `count × [R][G][B][position]`
 - Ripple only, at the end: `[width][range][fade-out]` (IO Center's defaults: 5, 7, 0). [web]

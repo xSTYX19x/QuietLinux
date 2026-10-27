@@ -98,10 +98,16 @@ pub fn read_pcap(buf: &[u8]) -> Result<Vec<Record>, String> {
     let mut records = Vec::new();
     let mut at = 24;
     while at < buf.len() {
-        let secs = f64::from(r.u32(at).ok_or_else(truncated)?);
-        let frac = f64::from(r.u32(at + 4).ok_or_else(truncated)?);
-        let len = r.usize(at + 8).ok_or_else(truncated)?;
-        let data = buf.get(at + 16..at + 16 + len).ok_or_else(truncated)?;
+        // A capture tool stopped while writing leaves an incomplete last record: keep
+        // the complete ones.
+        let (Some(secs), Some(frac), Some(len)) = (r.u32(at), r.u32(at + 4), r.usize(at + 8))
+        else {
+            break;
+        };
+        let Some(data) = buf.get(at + 16..at + 16 + len) else {
+            break;
+        };
+        let (secs, frac) = (f64::from(secs), f64::from(frac));
         let time = secs * 1e3 + if nanos { frac / 1e6 } else { frac / 1e3 };
         records.push(Record {
             time,
@@ -142,8 +148,12 @@ pub fn read_pcapng(buf: &[u8]) -> Result<Vec<Record>, String> {
         }
         let kind = r.u32(at).ok_or_else(truncated)?;
         let len = r.usize(at + 4).ok_or_else(truncated)?;
-        if len < 12 || len % 4 != 0 || at + len > buf.len() {
+        if len < 12 || len % 4 != 0 {
             return Err(truncated());
+        }
+        if at + len > buf.len() {
+            // incomplete last block (capture stopped while writing): keep the others
+            break;
         }
         let body = at + 8..at + len - 4;
         match kind {
@@ -270,6 +280,10 @@ pub mod tests {
         }
         file.extend_from_slice(b"hi");
         assert_eq!(detect(&file), Format::Pcap);
+        // a last record cut short (capture stopped while writing) is dropped
+        let mut cut = file.clone();
+        cut.extend_from_slice(&[1, 0, 0, 0, 0, 0]);
+        assert_eq!(read_pcap(&cut).unwrap().len(), 1);
         let records = read_pcap(&file).unwrap();
         assert_eq!(
             records,
@@ -287,7 +301,10 @@ pub mod tests {
         for cut in 0..file.len() {
             let _ = read_pcapng(&file[..cut]);
         }
-        assert!(read_pcapng(&file[..file.len() - 2]).is_err());
+        // an incomplete last block is dropped, the complete ones are kept
+        assert_eq!(read_pcapng(&file[..file.len() - 2]).unwrap(), []);
+        let two = pcapng(220, &[(0, b"abc"), (1, b"def")]);
+        assert_eq!(read_pcapng(&two[..two.len() - 1]).unwrap().len(), 1);
         assert_eq!(detect(b"12.5 out 373f:0002 0 00"), Format::Text);
     }
 }

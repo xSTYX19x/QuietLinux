@@ -31,8 +31,10 @@ struct Cli {
 enum Command {
     /// Print the vendor messages of a capture, one per line
     Frames {
-        /// Capture file: .pcapng/.pcap (usbmon, USBPcap) or WebHID log
-        file: PathBuf,
+        /// Capture files: .pcapng/.pcap (usbmon, USBPcap) or WebHID logs; several files
+        /// (e.g. one per USB root hub) are merged by time
+        #[arg(required = true)]
+        files: Vec<PathBuf>,
         /// Device to decode as BUS.ADDRESS (default: the one with the most vendor packets)
         #[arg(long)]
         device: Option<String>,
@@ -42,7 +44,8 @@ enum Command {
     },
     /// Print the vendor messages as test fixture lines (hex); serial number and key events left out
     Fixtures {
-        file: PathBuf,
+        #[arg(required = true)]
+        files: Vec<PathBuf>,
         #[arg(long)]
         device: Option<String>,
     },
@@ -69,6 +72,17 @@ fn load(path: &Path) -> Result<Vec<Event>, String> {
                 .collect()
         }
     };
+    Ok(events)
+}
+
+/// Events of several files, merged by time. USBPcap writes one file per root hub;
+/// their device names (`hub.address`) do not collide.
+fn load_all(paths: &[PathBuf]) -> Result<Vec<Event>, String> {
+    let mut events = Vec::new();
+    for path in paths {
+        events.extend(load(path)?);
+    }
+    events.sort_by(|a, b| a.time().total_cmp(&b.time()));
     Ok(events)
 }
 
@@ -107,11 +121,11 @@ fn choose_device(events: &[Event], wanted: Option<&str>) -> Result<String, Strin
 fn run(cli: Cli) -> Result<(), String> {
     match cli.command {
         Command::Frames {
-            file,
+            files,
             device,
             no_key_events,
         } => {
-            let events = load(&file)?;
+            let events = load_all(&files)?;
             let device = choose_device(&events, device.as_deref())?;
             let start = decode::start_time(&events);
             for line in decode::lines(&events, &device) {
@@ -120,13 +134,15 @@ fn run(cli: Cli) -> Result<(), String> {
                 }
             }
         }
-        Command::Fixtures { file, device } => {
-            let events = load(&file)?;
+        Command::Fixtures { files, device } => {
+            let events = load_all(&files)?;
             let device = choose_device(&events, device.as_deref())?;
-            let name = file
-                .file_name()
+            let name = files
+                .iter()
+                .filter_map(|f| f.file_name())
                 .map(|n| n.to_string_lossy().into_owned())
-                .unwrap_or_default();
+                .collect::<Vec<_>>()
+                .join(", ");
             println!("# Extracted from {name} with qlcap (anonymized).");
             for line in decode::lines(&events, &device) {
                 if let Some(text) = decode::fixture(&line) {
@@ -201,6 +217,46 @@ mod tests {
             "{}",
             lines[1]
         );
+    }
+
+    #[test]
+    fn usbpcap_files_of_several_hubs_are_merged() {
+        let on_hub = |hub: u16, packet: Vec<u8>| {
+            let mut packet = packet;
+            packet[17..19].copy_from_slice(&hub.to_le_bytes());
+            packet
+        };
+        let dir = std::env::temp_dir().join(format!("qlcap-merge-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mouse = pcapng(
+            249,
+            &[(0, &on_hub(1, usbpcap_packet(true, 0x81, 5, &[0; 4])))],
+        );
+        let request = p::get_device_info(4);
+        let reply = p::frame(p::GET_DEVICE_INFO, &[2, 0, 1, 1, 0, 0, 3, 2], 4, 0).unwrap();
+        let keyboard = pcapng(
+            249,
+            &[
+                (2_000_000, &on_hub(2, usbpcap_packet(true, 0x83, 5, &reply))),
+                (
+                    1_000_000,
+                    &on_hub(2, usbpcap_packet(false, 0x04, 5, &request)),
+                ),
+            ],
+        );
+        let paths = [dir.join("hub1.pcap"), dir.join("hub2.pcap")];
+        std::fs::write(&paths[0], mouse).unwrap();
+        std::fs::write(&paths[1], keyboard).unwrap();
+        let events = load_all(&paths).unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert_eq!(choose_device(&events, None).unwrap(), "2.5");
+        let start = decode::start_time(&events);
+        let lines: Vec<String> = decode::lines(&events, "2.5")
+            .iter()
+            .filter_map(|l| decode::format(l, start, true))
+            .collect();
+        assert_eq!(lines.len(), 2);
+        assert!(lines[0].contains("→  03:01"), "{lines:?}");
     }
 
     #[test]

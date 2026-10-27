@@ -129,7 +129,39 @@ a virtual machine (no USB passthrough, no resets when handing the device over).
    Lighting › Use Dynamic Lighting on my devices: Off*. Otherwise Windows
    controls the lighting instead of IO Center.
 
-### Every capture session
+### Every capture session, with the script (recommended)
+
+[`tools/windows-capture.ps1`](../tools/windows-capture.ps1) guides you through a
+list of captures (connection, polling rate, effects, per-key lighting, macros,
+bindings, profiles, game mode, quick tap, calibration): Enter starts a capture,
+you make the change in IO Center, Enter stops and saves it; `s` skips a step,
+`q` quits. It records every USB root hub with `USBPcapCMD.exe`, which comes with
+USBPcap, so there is no need to find the keyboard's hub.
+
+1. Copy `tools/windows-capture.ps1` to the Windows PC (download it from GitHub
+   or use a USB stick).
+2. **Disconnect the network**, then start IO Center.
+3. Open PowerShell **as administrator** (right-click the Start button ›
+   *Terminal (Admin)* or *Windows PowerShell (Admin)*), go to the folder of the
+   script and run:
+
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File .\windows-capture.ps1
+   ```
+
+   `-Only win-polling,win-effects` runs only these steps; `-OutDir D:\captures`
+   saves elsewhere (default: `quietlinux-captures` on the Desktop).
+4. Follow the steps. Use only the mouse while a capture runs: all USB devices
+   are recorded, including what is typed on any keyboard.
+
+Each step gets a folder with one `.pcap` file per root hub and a `note.txt`.
+Decode a step by giving `qlcap` all its files; it finds the keyboard itself:
+
+```sh
+qlcap frames captures/quietlinux-captures/win-polling/*.pcap
+```
+
+### Every capture session, with Wireshark
 
 1. **Disconnect the network** (airplane mode, or unplug the cable / turn off
    Wi-Fi), then start IO Center. Keep it offline while capturing, so it cannot
@@ -151,8 +183,9 @@ a virtual machine (no USB passthrough, no resets when handing the device over).
 
 ### Afterwards
 
-Copy the `.pcapng` files and notes to the Linux machine (USB stick, network
-share, …) into `captures/<area>/` of your QuietLinux checkout, then decode them.
+Copy the capture files and notes (or the script's `quietlinux-captures` folder)
+to the Linux machine (USB stick, network share, …) into `captures/` of your
+QuietLinux checkout, then decode them.
 Reconnect the Windows PC to the network only after closing IO Center.
 
 ## Decoding
@@ -178,6 +211,10 @@ status name if the keyboard reported an error, data.
 
 - `--no-key-events` hides key presses (`11:02`).
 - `--device BUS.ADDRESS` picks a device if several are found (`qlcap` says so).
+- Several files (e.g. one per USB root hub) are merged by time:
+  `qlcap frames step/*.pcap`.
+- A file whose last packet was cut off (capture stopped while writing) is read
+  up to that packet.
 - The serial number is always redacted.
 
 To compare two captures, decode both and diff them:

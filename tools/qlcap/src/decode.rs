@@ -19,7 +19,8 @@ pub enum Event {
 }
 
 impl Event {
-    fn time(&self) -> f64 {
+    /// Capture time in milliseconds.
+    pub fn time(&self) -> f64 {
         match self {
             Event::Transfer(t) => t.time,
             Event::Note { time, .. } => *time,

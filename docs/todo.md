@@ -151,6 +151,8 @@ no reset problems when handing the device over.
 - [ ] Capture on the USBPcap root hub of the keyboard, save as `.pcapng`, transfer with a note
 - [ ] Mind bbossa's warning: IO Center sessions may reset key bindings. Note the state beforehand
 - [x] Write the step-by-step guide as `docs/capturing.md`, so that other users can contribute captures
+- [x] `tools/windows-capture.ps1`: guided captures on Windows with USBPcapCMD (all root hubs); `qlcap` merges several files and tolerates a cut-off last packet
+- [ ] Run `windows-capture.ps1` on a real Windows PC (not tested yet: no PowerShell on the development machine)
 
 ### 4.3 Analysis tools (`tools/`)
 - [x] `qlcap frames`: pcap/pcapng (usbmon, USBPcap) or WebHID log → vendor messages (direction, time, `cmd:sub`, fragments reassembled, serial redacted)

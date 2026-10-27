@@ -253,15 +253,12 @@ component LightingPage inherits VerticalBox {
     pure callback swatch(hex: string) -> color;
     pure callback wheel-pick(x: float, y: float, value: float) -> WheelPick;
     pure callback wheel-find(hex: string) -> WheelPick;
-    callback store-effect();
-    // a color changed: applied right away
-    callback colors-changed();
-    callback light-off();
-    callback light-on();
+    // something changed: applied right away
+    callback effect-changed();
     alignment: start;
 
     GroupBox {
-        title: "Effect (stored in the keyboard)";
+        title: "Effect (stored in the keyboard; changes apply at once)";
         VerticalLayout {
             spacing: 10px;
 
@@ -276,6 +273,9 @@ component LightingPage inherits VerticalBox {
                 ComboBox {
                     model: root.effects;
                     current-index <=> root.effect-index;
+                    selected => {
+                        root.effect-changed();
+                    }
                 }
             }
 
@@ -291,7 +291,7 @@ component LightingPage inherits VerticalBox {
                     model: ["One color", "Two colors", "Rainbow"];
                     current-index <=> root.color-mode;
                     selected => {
-                        root.colors-changed();
+                        root.effect-changed();
                     }
                 }
             }
@@ -309,7 +309,7 @@ component LightingPage inherits VerticalBox {
                     return root.wheel-find(hex);
                 }
                 committed => {
-                    root.colors-changed();
+                    root.effect-changed();
                 }
             }
             if root.color-mode == 1: ColorField {
@@ -324,7 +324,7 @@ component LightingPage inherits VerticalBox {
                     return root.wheel-find(hex);
                 }
                 committed => {
-                    root.colors-changed();
+                    root.effect-changed();
                 }
             }
 
@@ -340,6 +340,9 @@ component LightingPage inherits VerticalBox {
                     minimum: 0;
                     maximum: 100;
                     value <=> root.brightness;
+                    changed => {
+                        root.effect-changed();
+                    }
                 }
 
                 Text {
@@ -361,6 +364,9 @@ component LightingPage inherits VerticalBox {
                     minimum: 0;
                     maximum: 100;
                     value <=> root.speed;
+                    changed => {
+                        root.effect-changed();
+                    }
                 }
 
                 Text {
@@ -381,44 +387,12 @@ component LightingPage inherits VerticalBox {
                 ComboBox {
                     model: root.directions;
                     current-index <=> root.direction-index;
-                }
-            }
-
-            HorizontalLayout {
-                alignment: start;
-                spacing: 8px;
-                Button {
-                    text: "Apply";
-                    primary: true;
-                    enabled: root.enabled;
-                    clicked => {
-                        root.store-effect();
+                    selected => {
+                        root.effect-changed();
                     }
                 }
             }
-        }
-    }
 
-    GroupBox {
-        title: "Lighting";
-        HorizontalLayout {
-            alignment: start;
-            spacing: 8px;
-            Button {
-                text: "Off";
-                enabled: root.enabled;
-                clicked => {
-                    root.light-off();
-                }
-            }
-
-            Button {
-                text: "On";
-                enabled: root.enabled;
-                clicked => {
-                    root.light-on();
-                }
-            }
         }
     }
 }
@@ -787,6 +761,7 @@ component SettingsPage inherits VerticalBox {
     in-out property <bool> overwrite;
     in property <string> checked-file;
     in property <string> file-details;
+    in property <string> device-title;
     in property <bool> enabled;
     callback apply-game-mode();
     callback save-backup();
@@ -906,6 +881,14 @@ component SettingsPage inherits VerticalBox {
             }
         }
     }
+
+    GroupBox {
+        title: "Device";
+        Text {
+            text: root.device-title != "" ? root.device-title : "Not connected";
+            color: Palette.alternate-foreground;
+        }
+    }
 }
 
 // A row of choices, one of them selected (like tabs, but inside a page).
@@ -945,13 +928,15 @@ component Segmented inherits Rectangle {
     }
 }
 
-// Three positions, system / light / dark, chosen by clicking one of them.
-component ThemeSwitch inherits Rectangle {
-    // 0 the system's, 1 light, 2 dark
+// A row of icons, one of them chosen by clicking it; a knob slides to it.
+component IconSwitch inherits Rectangle {
+    in property <[image]> icons;
     in-out property <int> value;
+    in property <bool> enabled: true;
     callback chosen();
     property <length> cell: 30px;
-    width: 3 * self.cell + 4px;
+    width: root.icons.length * self.cell + 4px;
+    opacity: root.enabled ? 1 : 0.5;
     height: self.cell + 4px;
     border-radius: self.height / 2;
     border-width: 1px;
@@ -971,7 +956,7 @@ component ThemeSwitch inherits Rectangle {
         }
     }
 
-    for icon[i] in [@image-url("icons/system.svg"), @image-url("icons/sun.svg"), @image-url("icons/moon.svg")]: Rectangle {
+    for icon[i] in root.icons: Rectangle {
         x: 2px + i * root.cell;
         y: 2px;
         width: root.cell;
@@ -985,6 +970,8 @@ component ThemeSwitch inherits Rectangle {
         }
 
         TouchArea {
+            enabled: root.enabled;
+            mouse-cursor: pointer;
             clicked => {
                 root.value = i;
                 root.chosen();
@@ -1029,7 +1016,9 @@ export component AppWindow inherits Window {
     min-height: 520px;
     background: Palette.background;
 
-    in property <string> device-title: "Looking for the keyboard …";
+    // model and firmware (settings), and a note for the title line
+    in property <string> device-title;
+    in property <string> device-note: "Looking for the keyboard …";
     in property <string> status;
     in property <bool> status-error;
     in property <bool> busy;
@@ -1066,10 +1055,10 @@ export component AppWindow inherits Window {
     pure callback swatch(hex: string) -> color;
     pure callback wheel-pick(x: float, y: float, value: float) -> WheelPick;
     pure callback wheel-find(hex: string) -> WheelPick;
-    callback store-effect();
-    callback colors-changed();
-    callback light-off();
-    callback light-on();
+    callback effect-changed();
+    // lighting: 0 off, 1 on; chosen in the title line
+    in-out property <int> lighting-on: 1;
+    callback lighting-chosen();
 
     // per key
     in-out property <string> brush: "e63000";
@@ -1133,10 +1122,21 @@ export component AppWindow inherits Window {
 
     VerticalLayout {
         HorizontalBox {
+            VerticalLayout {
+                alignment: center;
+                IconSwitch {
+                    icons: [@image-url("icons/bulb-off.svg"), @image-url("icons/bulb-on.svg")];
+                    value <=> root.lighting-on;
+                    enabled: root.can-write;
+                    chosen => {
+                        root.lighting-chosen();
+                    }
+                }
+            }
+
             Text {
-                text: root.device-title;
-                font-size: 16px;
-                font-weight: 600;
+                text: root.device-note;
+                color: Palette.alternate-foreground;
                 vertical-alignment: center;
                 horizontal-stretch: 1;
             }
@@ -1161,7 +1161,8 @@ export component AppWindow inherits Window {
 
             VerticalLayout {
                 alignment: center;
-                ThemeSwitch {
+                IconSwitch {
+                    icons: [@image-url("icons/system.svg"), @image-url("icons/sun.svg"), @image-url("icons/moon.svg")];
                     value <=> root.theme;
                     chosen => {
                         root.theme-chosen();
@@ -1225,17 +1226,8 @@ export component AppWindow inherits Window {
                             wheel-find(hex) => {
                                 return root.wheel-find(hex);
                             }
-                            store-effect => {
-                                root.store-effect();
-                            }
-                            colors-changed => {
-                                root.colors-changed();
-                            }
-                            light-off => {
-                                root.light-off();
-                            }
-                            light-on => {
-                                root.light-on();
+                            effect-changed => {
+                                root.effect-changed();
                             }
                         }
 
@@ -1338,19 +1330,19 @@ export component AppWindow inherits Window {
 
         if root.settings-open: VerticalLayout {
             HorizontalBox {
+                alignment: start;
+                IconButton {
+                    icon: @image-url("icons/arrow-left.svg");
+                    clicked => {
+                        root.settings-open = false;
+                    }
+                }
+
                 Text {
                     text: "Settings";
                     font-size: 15px;
                     font-weight: 600;
                     vertical-alignment: center;
-                    horizontal-stretch: 1;
-                }
-
-                Button {
-                    text: "Back";
-                    clicked => {
-                        root.settings-open = false;
-                    }
                 }
             }
 
@@ -1364,6 +1356,7 @@ export component AppWindow inherits Window {
                     overwrite <=> root.overwrite;
                     checked-file: root.checked-file;
                     file-details: root.file-details;
+                    device-title: root.device-title;
                     enabled: root.can-write;
                     apply-game-mode => {
                         root.apply-game-mode();

@@ -77,9 +77,9 @@ const BIND_KINDS: [(&str, &str); 7] = [
     ("disable", "Disabled"),
 ];
 
-/// A changed color is applied this long after the last change: the effect is
-/// stored in the keyboard, so not every step of a drag is written.
-const COLOR_DELAY: Duration = Duration::from_millis(400);
+/// A changed effect is applied this long after the last change: it is stored
+/// in the keyboard, so not every step of a drag or slider is written.
+const EFFECT_DELAY: Duration = Duration::from_millis(400);
 
 /// Painted keys are sent this long after the last click, so that quick clicks
 /// go out together. Per-key colors are volatile: no flash memory is written.
@@ -129,7 +129,7 @@ struct Controller {
     pending: Pending,
     /// A game mode poll is on its way.
     polling: bool,
-    /// Applies changed colors after [`COLOR_DELAY`].
+    /// Applies a changed effect after [`EFFECT_DELAY`].
     color_timer: slint::Timer,
     /// Per-key colors painted in the window, by LED index.
     painted: BTreeMap<u8, Rgb>,
@@ -251,12 +251,16 @@ impl Controller {
             Ok(reply) => {
                 let state = reply.state;
                 ui.set_connected(true);
-                let title = if state.writable {
-                    state.title.clone()
+                ui.set_device_title(state.title.as_str().into());
+                let note = if !state.writable {
+                    "Read-only: firmware not tested"
+                } else if self.remember {
+                    ""
                 } else {
-                    format!("{} (read-only: firmware not tested)", state.title)
+                    "Demo: simulated keyboard"
                 };
-                ui.set_device_title(title.into());
+                ui.set_device_note(note.into());
+                ui.set_lighting_on(i32::from(state.lighting_mode != Some(LightingMode::Off)));
                 ui.set_status_error(false);
                 ui.set_status(reply.message.into());
                 if let Some(details) = reply.details {
@@ -293,7 +297,8 @@ impl Controller {
             Err(e) => {
                 if pending == Pending::Refresh {
                     ui.set_connected(false);
-                    ui.set_device_title("No Light Mount connected".into());
+                    ui.set_device_title("".into());
+                    ui.set_device_note("No Light Mount connected".into());
                 }
                 show_error(ui, &e);
             }
@@ -714,17 +719,17 @@ impl Controller {
         }
     }
 
-    /// A color changed: apply the effect soon, unless more changes follow.
-    fn colors_changed(&mut self, _: &AppWindow) {
+    /// The effect changed: apply it soon, unless more changes follow.
+    fn effect_changed(&mut self, _: &AppWindow) {
         self.color_timer
-            .start(slint::TimerMode::SingleShot, COLOR_DELAY, || {
+            .start(slint::TimerMode::SingleShot, EFFECT_DELAY, || {
                 with_controller(|c, ui| {
                     if !ui.get_connected() {
                         return;
                     }
                     if ui.get_busy() {
                         // the last change is not lost: try again later
-                        c.colors_changed(ui);
+                        c.effect_changed(ui);
                     } else {
                         c.apply_effect(ui, true);
                     }
@@ -732,8 +737,16 @@ impl Controller {
             });
     }
 
-    fn store_effect(&mut self, ui: &AppWindow) {
-        self.apply_effect(ui, false);
+    /// The lighting switch in the title line: off, or on with what the Lighting
+    /// tab shows (the stored effect, or the painted keys).
+    fn lighting_chosen(&mut self, ui: &AppWindow) {
+        if ui.get_lighting_on() == 0 {
+            self.send(ui, Request::LightOff);
+        } else if ui.get_lighting_view() == 1 && !self.painted.is_empty() {
+            self.send_paint(ui);
+        } else {
+            self.send(ui, Request::LightOn);
+        }
     }
 
     /// Store the effect. `quiet`: a color still being typed is no error.
@@ -960,16 +973,14 @@ fn set_up(ui: &AppWindow) {
     ui.on_check_file(|| with_controller(Controller::check_file));
     ui.on_apply_file(|| with_controller(Controller::apply_file));
     ui.on_refresh(|| with_controller(|c, ui| c.send(ui, Request::Refresh)));
-    ui.on_store_effect(|| with_controller(Controller::store_effect));
-    ui.on_colors_changed(|| with_controller(Controller::colors_changed));
+    ui.on_effect_changed(|| with_controller(Controller::effect_changed));
+    ui.on_lighting_chosen(|| with_controller(Controller::lighting_chosen));
     ui.on_paint_key(|code| with_controller(|c, ui| c.paint_key(ui, &code, false)));
     ui.on_erase_key(|code| with_controller(|c, ui| c.paint_key(ui, &code, true)));
     ui.on_paint_all(|| with_controller(Controller::paint_all));
     ui.on_paint_clear(|| with_controller(Controller::paint_clear));
     ui.on_zones_changed(|| with_controller(|c, _| c.schedule_paint()));
     ui.on_back_to_effect(|| with_controller(|c, ui| c.send(ui, Request::LightOn)));
-    ui.on_light_off(|| with_controller(|c, ui| c.send(ui, Request::LightOff)));
-    ui.on_light_on(|| with_controller(|c, ui| c.send(ui, Request::LightOn)));
     ui.on_key_clicked(|code| with_controller(|c, ui| c.select_key(ui, &code)));
     ui.on_editor_changed(|| with_controller(Controller::editor_changed));
     ui.on_apply_binding(|| with_controller(Controller::apply_binding));
@@ -1037,7 +1048,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         });
     });
     let backend = if cli.demo {
-        ui.set_device_title("Demo: simulated Light Mount".into());
+        ui.set_device_note("Demo: simulated keyboard".into());
         Backend::demo()
     } else {
         Backend::Hardware {

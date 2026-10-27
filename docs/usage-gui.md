@@ -14,7 +14,12 @@ reads it again). While a change is being sent, the status line at the bottom
 says "Working …"; errors appear there in red. The window does not watch key
 presses.
 
-The title line shows whether **game mode** is on. Game mode is switched on the
+The switch at the left of the title line turns the **lighting off and on**
+(bulb off, bulb on): on shows the stored effect, or the painted keys if the
+Lighting tab shows **Per key**. Next to it, a note appears when no keyboard is
+connected or its firmware is untested (read-only).
+
+The title line also shows whether **game mode** is on. Game mode is switched on the
 keyboard with Fn+Pause, so the window asks for it every 2 seconds (a read-only
 request; not while a change is being sent).
 
@@ -23,12 +28,11 @@ light (sun) or dark (moon); click a position. The choice is saved in
 `~/.config/quietlinux/gui.toml`. The gear in the corner opens the
 [settings](#settings).
 
+On a firmware version QuietLinux was not tested with, every change is refused,
+like the command line without `--allow-unknown-firmware`.
+
 The window does not support screen readers yet (see [todo.md](todo.md)); the
 command line tool does everything it does.
-
-On a firmware version QuietLinux was not tested with, the title says
-"read-only" and every change is refused, like the command line without
-`--allow-unknown-firmware`.
 
 ## Lighting
 
@@ -48,16 +52,14 @@ view, not the keyboard.
 - **Pick …** (or a click on the swatch) opens a color wheel: the hue around
   the circle, pale colors towards the center; the slider below sets how bright
   the color is.
-- **Colors are applied right away**: when you let go of the color wheel or its
-  slider, choose another color mode, or have typed six hex digits (after a
-  short pause, so that a drag does not write to the keyboard many times).
-- **Apply** stores the effect with the other settings in the keyboard.
+- **Every change applies at once** and is stored in the keyboard: a choice in a
+  list, a slider, a color from the wheel (when you let go) or six typed hex
+  digits. A short pause (0.4 s) after the last change keeps a drag from
+  writing to the keyboard many times.
 - The Light Mount does not report its effect. QuietLinux remembers the last
   effect it set (window or command line) in `~/.config/quietlinux/last-effect.toml`
   and fills the fields with it when the window opens. An effect set with IO
   Center is not known to it.
-- **Off** / **On** switch the lighting off and on, like IO Center's switch. The
-  effect stays stored.
 
 ### Per key
 
@@ -123,7 +125,7 @@ keyboard has no other way), as described in
 ![The settings](images/gui-settings.png)
 
 The gear in the top right corner shows the settings instead of the tabs; the
-gear again or **Back** returns.
+arrow at the top left (or the gear again) returns to the tabs.
 
 - **Game mode**: the shortcuts game mode blocks, as `quietlinux game-mode
   --block`. Fn+Pause switches game mode on and off.
@@ -133,6 +135,7 @@ gear again or **Back** returns.
   **Check file** lists what applying it would change, without writing; only
   then **Apply file** writes it. `~/` is your home folder. The file contains
   what your macros type: keep it private.
+- **Device**: model and firmware version of the keyboard.
 
 ## Not in the window yet
 

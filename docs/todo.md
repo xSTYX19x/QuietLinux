@@ -232,7 +232,7 @@ crates/
     config.rs          backup/apply file (serde, TOML)
   quietlinux-cli/      binary `quietlinux` (clap)
   quietlinux-gui/      binary `quietlinux-gui` (Slint, software renderer; `--demo` with the simulated keyboard)
-  quietlinux-daemon/   binary `quietlinux-daemon`: per-key colors again after replug/resume; (planned) host-side actions
+  quietlinux-daemon/   binary `quietlinux-daemon`: per-key colors again after replug/resume, website keys
 tools/qlcap/           capture decoder (pcap, pcapng, WebHID logs)
 tools/webhid-logger.js DevTools snippet that logs WebHID reports
 packaging/udev/        udev rule

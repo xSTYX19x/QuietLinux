@@ -5,22 +5,16 @@
 targets = ["x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu"]
 
 [advisories]
-version = 2
 yanked = "deny"
 
 [licenses]
-version = 2
-# Licenses compatible with GPL-3.0-or-later.
+# Licenses in use, all compatible with GPL-3.0-or-later. Add others (e.g. BSD,
+# ISC, Zlib) only when a new dependency needs them.
 allow = [
     "Apache-2.0",
-    "Apache-2.0 WITH LLVM-exception",
-    "BSD-2-Clause",
-    "BSD-3-Clause",
     "GPL-3.0-or-later",
-    "ISC",
     "MIT",
     "Unicode-3.0",
-    "Zlib",
 ]
 
 [bans]

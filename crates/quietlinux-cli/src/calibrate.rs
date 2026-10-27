@@ -138,7 +138,7 @@ mod tests {
         let mut session = Session::new(&mut kb, false).unwrap();
         let report = calibrate(&mut session, &keys, |_| answers.next().unwrap()).unwrap();
         assert_eq!(report.checked, 1);
-        assert!(report.mismatches.is_empty());
+        assert_eq!(report.mismatches.len(), 0);
         assert!(kb.leds.values().all(|&c| c == OFF));
     }
 

@@ -11,7 +11,7 @@ repository = "https://github.com/xSTYX19x/QuietLinux"
 authors = ["xSTYX19x"]
 
 [workspace.dependencies]
-quietlinux-core = { path = "crates/quietlinux-core" }
+quietlinux-core = { path = "crates/quietlinux-core", version = "0.1.0" }
 clap = { version = "4.5", features = ["derive"] }
 rustix = { version = "1.0", default-features = false, features = ["std", "event"] }
 

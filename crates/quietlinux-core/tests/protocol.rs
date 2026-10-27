@@ -80,7 +80,7 @@ fn series(messages: Vec<Vec<Packet>>) -> Vec<Vec<Vec<Packet>>> {
             out.push(std::mem::take(&mut current));
         }
     }
-    assert!(current.is_empty(), "update without its last message");
+    assert_eq!(current.len(), 0, "update without its last message");
     out
 }
 
@@ -88,9 +88,9 @@ fn series(messages: Vec<Vec<Packet>>) -> Vec<Vec<Vec<Packet>>> {
 
 #[test]
 fn fixtures_present() {
-    assert!(!frames().is_empty());
+    assert_ne!(frames().len(), 0);
     assert_eq!(leds().len(), 39);
-    assert!(!mode_responses().is_empty());
+    assert_ne!(mode_responses().len(), 0);
 }
 
 // --- CRC -------------------------------------------------------------------------
@@ -159,7 +159,7 @@ fn static_color() {
                 && r[12] == p::COLOR_MODE_SINGLE
         })
         .collect();
-    assert!(!statics.is_empty());
+    assert_ne!(statics.len(), 0);
     for raw in statics {
         let (_, _, seq, session) = fields(&raw);
         assert_eq!(
@@ -191,7 +191,7 @@ fn get_mode_request() {
         .into_iter()
         .filter(|r| p::command_of(r) == p::GET_MODE)
         .collect();
-    assert!(!requests.is_empty());
+    assert_ne!(requests.len(), 0);
     for raw in requests {
         let (_, _, seq, session) = fields(&raw);
         assert_eq!(p::get_mode(seq, session), raw);
@@ -224,7 +224,7 @@ fn identification_requests() {
     for raw in info_requests() {
         let (cmd, data, seq, session) = fields(&raw);
         assert!(cmd == p::GET_VERSION || cmd == p::GET_SERIAL);
-        assert!(data.is_empty());
+        assert_eq!(data.len(), 0);
         assert_eq!(p::frame(cmd, &[], seq, session).unwrap(), raw);
     }
 }
@@ -250,7 +250,7 @@ fn web_identification_requests() {
 
 #[test]
 fn version_replies() {
-    assert!(!version_responses().is_empty());
+    assert_ne!(version_responses().len(), 0);
     for resp in version_responses() {
         assert_eq!(
             p::version_of(&resp),
@@ -380,7 +380,7 @@ fn seq_wraps() {
 
 #[test]
 fn empty_update() {
-    assert!(p::update(&[], 0, p::SESSION).is_empty());
+    assert_eq!(p::update(&[], 0, p::SESSION).len(), 0);
 }
 
 // --- fragmentation ---------------------------------------------------------------------

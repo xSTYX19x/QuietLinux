@@ -19,7 +19,8 @@ use std::time::Duration;
 
 use clap::Parser;
 use quietlinux_core::Rgb;
-use quietlinux_core::config;
+use quietlinux_core::config::{self, EffectSetting};
+use quietlinux_core::device::LightingMode;
 use quietlinux_core::info::Colors;
 use quietlinux_core::keymap::{self, KEYS, Layout};
 use quietlinux_core::layout::Zone;
@@ -111,6 +112,15 @@ enum Pending {
     ApplyFile,
 }
 
+/// Painted colors on their way to the keyboard.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Paint {
+    Idle,
+    Sending,
+    /// Sending, and painted again since: send once more when done.
+    SendingChanged,
+}
+
 /// The window's state on the UI thread.
 struct Controller {
     ui: slint::Weak<AppWindow>,
@@ -125,9 +135,11 @@ struct Controller {
     painted: BTreeMap<u8, Rgb>,
     /// Sends the painted colors after [`PAINT_DELAY`].
     paint_timer: slint::Timer,
-    /// Painted colors are on their way; `paint_again`: changed since.
-    painting: bool,
-    paint_again: bool,
+    paint: Paint,
+    /// Save what is set for the next start (not in the demo mode).
+    remember: bool,
+    /// The lighting view was chosen from the keyboard's mode (on the first answer).
+    view_chosen: bool,
     /// Key and target the key editor shows (to tell a target change from a kind change).
     editor_key: String,
     editor_target: i32,
@@ -144,8 +156,9 @@ impl Controller {
             color_timer: slint::Timer::default(),
             painted: BTreeMap::new(),
             paint_timer: slint::Timer::default(),
-            painting: false,
-            paint_again: false,
+            paint: Paint::Idle,
+            remember: false,
+            view_chosen: false,
             editor_key: String::new(),
             editor_target: 0,
         }
@@ -256,6 +269,13 @@ impl Controller {
                     Pending::Refresh | Pending::Other => {}
                 }
                 ui.set_game_mode(game_mode_code(state.game_mode_on));
+                // the first answer: show what the keyboard shows
+                if !self.view_chosen
+                    && let Some(mode) = state.lighting_mode
+                {
+                    self.view_chosen = true;
+                    ui.set_lighting_view(i32::from(mode == LightingMode::Realtime));
+                }
                 let flags = state.game_mode_flags;
                 ui.set_block_shift_tab(flags & 0x01 != 0);
                 ui.set_block_alt_f4(flags & 0x02 != 0);
@@ -611,8 +631,15 @@ impl Controller {
         let Some(requests) = &self.requests else {
             return;
         };
-        if self.painting || ui.get_busy() {
-            self.paint_again = true;
+        if self.paint != Paint::Idle || ui.get_busy() {
+            self.paint = match self.paint {
+                Paint::Idle => {
+                    // busy with another request: try again shortly
+                    self.schedule_paint();
+                    Paint::Idle
+                }
+                _ => Paint::SendingChanged,
+            };
             return;
         }
         let mut leds: Vec<Led> = self
@@ -630,13 +657,19 @@ impl Controller {
                 leds.extend(zone.leds().map(|led| Led::new(led, rgb)));
             }
         }
-        self.painting = requests.send(Job::Leds(leds)).is_ok();
+        if requests.send(Job::Leds(leds)).is_ok() {
+            self.paint = Paint::Sending;
+        }
     }
 
     fn painted(&mut self, ui: &AppWindow, result: Result<(), String>) {
-        self.painting = false;
+        let again = self.paint == Paint::SendingChanged;
+        self.paint = Paint::Idle;
         match result {
             Ok(()) => {
+                if self.remember {
+                    self.save_paint(ui);
+                }
                 ui.set_status_error(false);
                 ui.set_status(
                     "Per-key colors shown (until the keyboard is unplugged or an effect is applied)."
@@ -645,8 +678,39 @@ impl Controller {
             }
             Err(e) => show_error(ui, &e),
         }
-        if std::mem::take(&mut self.paint_again) {
+        if again {
             self.send_paint(ui);
+        }
+    }
+
+    /// Remember the painted keys and zones for the next start.
+    fn save_paint(&self, ui: &AppWindow) {
+        let mut prefs = prefs::load();
+        prefs.keys = self
+            .painted
+            .iter()
+            .filter_map(|(led, rgb)| Some((keymap::by_led(*led)?.code.to_owned(), rgb.to_string())))
+            .collect();
+        prefs.top = ui.get_zone_top().to_string();
+        prefs.left = ui.get_zone_left().to_string();
+        prefs.right = ui.get_zone_right().to_string();
+        if let Err(e) = prefs::save(&prefs) {
+            show_error(ui, &format!("per-key colors not remembered: {e}"));
+        }
+    }
+
+    /// Fill the window with what was set last time: effect and painted keys.
+    fn restore(&mut self, ui: &AppWindow, prefs: &prefs::Prefs) {
+        self.painted = prefs
+            .keys
+            .iter()
+            .filter_map(|(code, hex)| Some((keymap::by_code(code)?.led, hex.parse().ok()?)))
+            .collect();
+        ui.set_zone_top(prefs.top.as_str().into());
+        ui.set_zone_left(prefs.left.as_str().into());
+        ui.set_zone_right(prefs.right.as_str().into());
+        if let Some(effect) = config::last_effect() {
+            show_effect(ui, &effect);
         }
     }
 
@@ -766,6 +830,30 @@ impl Controller {
         if let Some(path) = Self::file(ui) {
             self.send(ui, Request::ApplyFile(path));
         }
+    }
+}
+
+/// Put an effect into the lighting fields.
+fn show_effect(ui: &AppWindow, e: &EffectSetting) {
+    let index = |i: Option<usize>| i.and_then(|i| i32::try_from(i).ok()).unwrap_or(0);
+    ui.set_effect_index(index(Effect::all().iter().position(|x| *x == e.effect)));
+    ui.set_direction_index(index(
+        Direction::all().iter().position(|x| *x == e.direction),
+    ));
+    ui.set_brightness(f32::from(e.brightness));
+    ui.set_speed(f32::from(e.speed));
+    match &e.colors {
+        Colors::Single(c) => {
+            ui.set_color_mode(0);
+            ui.set_color1(c.to_string().into());
+        }
+        Colors::Dual(a, b) => {
+            ui.set_color_mode(1);
+            ui.set_color1(a.to_string().into());
+            ui.set_color2(b.to_string().into());
+        }
+        // the window offers one gradient; others come from the command line
+        Colors::Gradient(_) | Colors::OrientedGradient { .. } => ui.set_color_mode(2),
     }
 }
 
@@ -937,10 +1025,13 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
     }
     let ui = AppWindow::new()?;
     set_up(&ui);
-    ui.set_theme(prefs::theme());
+    let prefs = prefs::load();
+    ui.set_theme(prefs.theme);
     ui.on_theme_chosen(|| {
         with_controller(|_, ui| {
-            if let Err(e) = prefs::save_theme(ui.get_theme()) {
+            let mut prefs = prefs::load();
+            prefs.theme = ui.get_theme();
+            if let Err(e) = prefs::save(&prefs) {
                 show_error(ui, &format!("theme not saved: {e}"));
             }
         });
@@ -954,9 +1045,18 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         }
     };
     let requests = spawn_backend(backend);
+    let demo = cli.demo;
     CONTROLLER.with(|c| {
         *c.borrow_mut() = Some(Controller::new(&ui, Some(requests)));
     });
+    // the demo keyboard starts fresh; the real one gets what was set last time
+    if !demo {
+        with_controller(|c, ui| {
+            c.remember = true;
+            c.restore(ui, &prefs);
+            c.show_keys(ui);
+        });
+    }
     with_controller(|c, ui| c.send(ui, Request::Refresh));
     let poll = slint::Timer::default();
     poll.start(slint::TimerMode::Repeated, GAME_MODE_POLL, || {

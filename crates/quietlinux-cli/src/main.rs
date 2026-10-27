@@ -490,6 +490,13 @@ fn run(cli: Cli) -> Result<ExitCode, Box<dyn std::error::Error>> {
         Command::Light(Light::Static { color, brightness }) => {
             let (_, mut session) = device::open(usb_path, cli.allow_unknown_firmware)?;
             session.set_static(color, brightness)?;
+            remember_effect(&config::EffectSetting {
+                effect: settings::Effect::STATIC,
+                direction: settings::Direction(0),
+                brightness,
+                speed: quietlinux_core::protocol::SPEED_DEFAULT,
+                colors: Colors::Single(color),
+            });
         }
         Command::Light(Light::Effect {
             effect,
@@ -511,6 +518,13 @@ fn run(cli: Cli) -> Result<ExitCode, Box<dyn std::error::Error>> {
             };
             let mut session = open_session(usb_path, cli.allow_unknown_firmware)?;
             session.set_effect(effect.0, direction.0, brightness, speed, &colors)?;
+            remember_effect(&config::EffectSetting {
+                effect,
+                direction,
+                brightness,
+                speed,
+                colors,
+            });
         }
         Command::Bind {
             fn_layer,
@@ -587,6 +601,9 @@ fn run(cli: Cli) -> Result<ExitCode, Box<dyn std::error::Error>> {
                     println!("{} change(s); nothing written (--dry-run).", plan.ops.len());
                 } else {
                     config::execute(&mut session, &plan)?;
+                    if let Some(effect) = plan.effect() {
+                        remember_effect(effect);
+                    }
                     println!("{} change(s) written.", plan.ops.len());
                 }
             }
@@ -666,6 +683,13 @@ fn run(cli: Cli) -> Result<ExitCode, Box<dyn std::error::Error>> {
 }
 
 /// Open the keyboard and a session, as IO Center does before changing settings.
+/// Remember the effect for the GUI and for `backup` (the keyboard does not report it).
+fn remember_effect(e: &config::EffectSetting) {
+    if let Err(err) = config::save_last_effect(e) {
+        eprintln!("note: could not remember the effect: {err}");
+    }
+}
+
 fn open_session(
     usb_path: Option<&str>,
     allow_unknown_firmware: bool,

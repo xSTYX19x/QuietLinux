@@ -51,9 +51,11 @@ view, not the keyboard.
 - **Colors are applied right away**: when you let go of the color wheel or its
   slider, choose another color mode, or have typed six hex digits (after a
   short pause, so that a drag does not write to the keyboard many times).
-- **Apply** stores the effect with the other settings in the keyboard. The Light Mount does not
-  report its effect, so the tab shows what you set last, not what the keyboard
-  shows.
+- **Apply** stores the effect with the other settings in the keyboard.
+- The Light Mount does not report its effect. QuietLinux remembers the last
+  effect it set (window or command line) in `~/.config/quietlinux/last-effect.toml`
+  and fills the fields with it when the window opens. An effect set with IO
+  Center is not known to it.
 - **Off** / **On** switch the lighting off and on, like IO Center's switch. The
   effect stays stored.
 
@@ -70,8 +72,12 @@ Colors for single keys, like `quietlinux light set`:
   empty means off.
 - Changes show on the keyboard at once (realtime mode).
 - These colors are **not stored** in the keyboard: unplugging it ends them,
-  and so do **Back to effect** or applying an effect. A
-  background service that keeps them is planned ([todo.md](todo.md)).
+  and so do **Back to effect** or applying an effect. The window remembers
+  them (in `~/.config/quietlinux/gui.toml`) and shows them again when it
+  opens; painting a key sends them all to the keyboard again. A background
+  service that keeps them shown is planned ([todo.md](todo.md)).
+- When the window opens, the Lighting tab shows **Per key** if the keyboard is
+  in per-key mode, else **Effect**.
 
 ## Keys
 

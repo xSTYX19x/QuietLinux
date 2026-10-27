@@ -8,6 +8,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::{self, Write as _};
+use std::path::{Path, PathBuf};
 
 use crate::device::{Error, LightingMode, Session, Transport};
 use crate::info::{self, Action, Binding, Colors, Layout, Macro, parse_action};
@@ -563,6 +564,80 @@ fn effect_setting(e: EffectSection) -> Result<EffectSetting, String> {
     })
 }
 
+// --- the last effect ------------------------------------------------------------------
+//
+// The Light Mount does not report its effect (`10:05` answers `00`), so QuietLinux
+// remembers the last one it set, in a settings file that `apply` takes as it is.
+
+/// `$XDG_CONFIG_HOME/quietlinux` (or `~/.config/quietlinux`).
+pub fn config_dir() -> Option<PathBuf> {
+    let base = std::env::var_os("XDG_CONFIG_HOME")
+        .filter(|v| !v.is_empty())
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))?;
+    Some(base.join("quietlinux"))
+}
+
+/// The file with the last effect QuietLinux set.
+pub fn last_effect_path() -> Option<PathBuf> {
+    Some(config_dir()?.join("last-effect.toml"))
+}
+
+/// An `[effect]` section, or `None` for colors a file cannot hold (oriented gradients).
+pub fn effect_section(e: &EffectSetting) -> Option<String> {
+    let hex = |c: &crate::Rgb| format!("\"{c}\"");
+    let colors = match &e.colors {
+        Colors::Single(c) => format!("color = {}", hex(c)),
+        Colors::Dual(a, b) => format!("dual = [{}, {}]", hex(a), hex(b)),
+        Colors::Gradient(stops) => {
+            let stops: Vec<String> = stops
+                .iter()
+                .map(|(c, pos)| format!("\"{c}@{pos}\""))
+                .collect();
+            format!("gradient = [{}]", stops.join(", "))
+        }
+        Colors::OrientedGradient { .. } => return None,
+    };
+    Some(format!(
+        "[effect]\neffect = \"{}\"\n{colors}\nbrightness = {}\nspeed = {}\ndirection = \"{}\"\n",
+        e.effect, e.brightness, e.speed, e.direction
+    ))
+}
+
+/// Remember `e` as the last effect, in `path`.
+pub fn save_effect(path: &Path, e: &EffectSetting) -> std::io::Result<()> {
+    let Some(section) = effect_section(e) else {
+        return Ok(());
+    };
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    let text = format!(
+        "# The last effect QuietLinux set (the keyboard does not report it).\n\
+         # `quietlinux apply` takes this file as it is.\nversion = {VERSION}\n\n{section}"
+    );
+    std::fs::write(path, text)
+}
+
+/// The effect remembered in `path`, if any.
+pub fn load_effect(path: &Path) -> Option<EffectSetting> {
+    let text = std::fs::read_to_string(path).ok()?;
+    parse(&text).ok()?.effect
+}
+
+/// Remember `e` as the last effect ([`last_effect_path`]).
+pub fn save_last_effect(e: &EffectSetting) -> std::io::Result<()> {
+    match last_effect_path() {
+        Some(path) => save_effect(&path, e),
+        None => Ok(()),
+    }
+}
+
+/// The last effect QuietLinux set, if it remembers one.
+pub fn last_effect() -> Option<EffectSetting> {
+    load_effect(&last_effect_path()?)
+}
+
 // --- applying -------------------------------------------------------------------------
 
 /// One change `apply` makes.
@@ -620,6 +695,16 @@ impl fmt::Display for Op {
 pub struct Plan {
     pub ops: Vec<Op>,
     pub notes: Vec<String>,
+}
+
+impl Plan {
+    /// The effect the plan sets, if any.
+    pub fn effect(&self) -> Option<&EffectSetting> {
+        self.ops.iter().find_map(|op| match op {
+            Op::Effect(e) => Some(e),
+            _ => None,
+        })
+    }
 }
 
 /// The changes that make the keyboard match `settings`.
@@ -1067,6 +1152,29 @@ mod tests {
             plan.notes,
             ["M1: the keyboard has no macro 7, left as it is"]
         );
+    }
+
+    #[test]
+    fn last_effect_round_trips() {
+        let dir = std::env::temp_dir().join(format!("quietlinux-last-{}", std::process::id()));
+        let path = dir.join("last-effect.toml");
+        assert_eq!(load_effect(&path), None);
+        for colors in [
+            Colors::Single(crate::Rgb::new(0xe6, 0x30, 0)),
+            Colors::Dual(crate::Rgb::new(1, 2, 3), crate::Rgb::new(4, 5, 6)),
+            Colors::Gradient(rainbow()),
+        ] {
+            let e = EffectSetting {
+                effect: Effect(4),
+                direction: Direction(3),
+                brightness: 70,
+                speed: 20,
+                colors,
+            };
+            save_effect(&path, &e).unwrap();
+            assert_eq!(load_effect(&path), Some(e));
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

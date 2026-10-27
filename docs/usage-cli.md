@@ -184,6 +184,11 @@ quietlinux light effect tornado --gradient ff0000@0,ffff00@30,0000ff@100
 
 Which directions an effect uses depends on the effect.
 
+The keyboard does not report its effect, so `light effect` and `light static`
+(and `apply` with an `[effect]`) remember the last one in
+`~/.config/quietlinux/last-effect.toml`. The graphical interface shows it
+when it opens; the file is a settings file `apply` takes as it is.
+
 ## `light stored`
 
 Leaves realtime mode: the effect stored in the keyboard shows again. Use it to

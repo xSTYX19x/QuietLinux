@@ -12,6 +12,7 @@ use quietlinux_core::info::{self, Action, Binding, Colors, Macro};
 use quietlinux_core::keymap::{self, Layout};
 use quietlinux_core::macros::{self, Changes, RepeatMode};
 use quietlinux_core::protocol::{self as p, Led};
+use quietlinux_core::settings::{Direction, Effect};
 
 /// What the window asks for.
 #[derive(Debug, Clone)]
@@ -58,6 +59,8 @@ pub struct State {
     /// Model and firmware, for the title line.
     pub title: String,
     pub legends: Option<Layout>,
+    /// Effect, per key (realtime) or off, if the keyboard reported it.
+    pub lighting_mode: Option<LightingMode>,
     pub writable: bool,
     pub bindings: Vec<Binding>,
     /// `None` if the keyboard did not report its macros.
@@ -117,11 +120,11 @@ impl Backend {
                 let (_, mut session) =
                     device::open(usb_path.as_deref(), false).map_err(|e| e.to_string())?;
                 session.open_session().map_err(|e| e.to_string())?;
-                handle(&mut session, request)
+                handle(&mut session, request, true)
             }
             Self::Demo(kb) => {
                 let mut session = Session::new(&mut **kb, false).map_err(|e| e.to_string())?;
-                handle(&mut session, request)
+                handle(&mut session, request, false)
             }
         }
     }
@@ -165,14 +168,22 @@ fn read_game_mode<T: Transport>(session: &mut Session<T>) -> Option<bool> {
     reply.data.first().map(|state| state & 1 == 1)
 }
 
-fn handle<T: Transport>(session: &mut Session<T>, request: Request) -> Outcome {
+/// `remember`: save what is set for the next start (not in the demo mode).
+fn handle<T: Transport>(session: &mut Session<T>, request: Request, remember: bool) -> Outcome {
     let (message, details) = match request {
         Request::Backup { path, overwrite } => {
             backup(session, &path, overwrite).map_err(|e| e.to_string())?
         }
-        Request::CheckFile(path) => apply_file(session, &path, false).map_err(|e| e.to_string())?,
-        Request::ApplyFile(path) => apply_file(session, &path, true).map_err(|e| e.to_string())?,
-        request => (change(session, request).map_err(|e| e.to_string())?, None),
+        Request::CheckFile(path) => {
+            apply_file(session, &path, false, false).map_err(|e| e.to_string())?
+        }
+        Request::ApplyFile(path) => {
+            apply_file(session, &path, true, remember).map_err(|e| e.to_string())?
+        }
+        request => (
+            change(session, request, remember).map_err(|e| e.to_string())?,
+            None,
+        ),
     };
     let state = read_state(session).map_err(|e| e.to_string())?;
     Ok(Reply {
@@ -218,6 +229,7 @@ fn apply_file<T: Transport>(
     session: &mut Session<T>,
     path: &std::path::Path,
     write: bool,
+    remember: bool,
 ) -> Result<Lines, Box<dyn std::error::Error>> {
     let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
     let settings = config::parse(&text).map_err(|e| format!("{}: {e}", path.display()))?;
@@ -230,6 +242,9 @@ fn apply_file<T: Transport>(
         "Nothing to change.".to_owned()
     } else if write {
         config::execute(session, &plan)?;
+        if let (true, Some(effect)) = (remember, plan.effect()) {
+            let _ = config::save_last_effect(effect);
+        }
         format!("{count} change(s) written.")
     } else {
         format!("{count} change(s); nothing written yet.")
@@ -240,6 +255,7 @@ fn apply_file<T: Transport>(
 fn change<T: Transport>(
     session: &mut Session<T>,
     request: Request,
+    remember: bool,
 ) -> Result<String, Box<dyn std::error::Error>> {
     Ok(match request {
         Request::GameMode(flags) => {
@@ -258,6 +274,17 @@ fn change<T: Transport>(
             colors,
         } => {
             session.set_effect(effect, direction, brightness, speed, &colors)?;
+            // remembered for the next start (the keyboard does not report it);
+            // not in the demo mode, whose effects are not real
+            if remember {
+                let _ = config::save_last_effect(&config::EffectSetting {
+                    effect: Effect(effect),
+                    direction: Direction(direction),
+                    brightness,
+                    speed,
+                    colors,
+                });
+            }
             "Effect stored in the keyboard.".to_owned()
         }
         Request::LightOff => {
@@ -356,9 +383,11 @@ fn read_state<T: Transport>(session: &mut Session<T>) -> Result<State, device::E
         .and_then(|m| m.data.first().copied())
         .unwrap_or(0);
     let game_mode_on = read_game_mode(session);
+    let lighting_mode = session.lighting_mode().ok();
     Ok(State {
         title,
         legends,
+        lighting_mode,
         writable: session.writable(),
         bindings,
         macros,

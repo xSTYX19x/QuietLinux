@@ -88,7 +88,7 @@ pub const ACTION_FIRED: Command = Command::new(FEATURE_BINDINGS, 0x02);
 
 /// Read-only requests (IO Center Web layouts, see `docs/protocol.md`). Only these
 /// can be sent with [`crate::device::Session::query`]: none of them changes the keyboard.
-pub const READ_ONLY: [Command; 16] = [
+pub const READ_ONLY: [Command; 17] = [
     Command::new(FEATURE_ROOT, 0x04),       // GetSupportedFeatures
     Command::new(FEATURE_ROOT, 0x05),       // GetQLinkVersion
     Command::new(FEATURE_ROOT, 0x06),       // GetActiveSessionInfo
@@ -105,6 +105,7 @@ pub const READ_ONLY: [Command; 16] = [
     Command::new(FEATURE_LIGHTINGS, 0x0f),  // GetCalibration
     Command::new(FEATURE_BINDINGS, 0x01),   // GetBindings
     Command::new(FEATURE_BINDINGS, 0x04),   // GetConfig (bindings enabled)
+    Command::new(FEATURE_MACROS, 0x01),     // GetMacros
 ];
 
 pub const GET_SUPPORTED_FEATURES: Command = READ_ONLY[0];
@@ -118,6 +119,9 @@ pub const GET_LAYER_CONFIG: Command = READ_ONLY[11];
 pub const GET_CALIBRATION: Command = READ_ONLY[13];
 pub const GET_BINDINGS: Command = READ_ONLY[14];
 pub const GET_BINDINGS_CONFIG: Command = READ_ONLY[15];
+pub const GET_LAYERS_LAYOUT: Command = READ_ONLY[10];
+pub const GET_GLOBAL_LAYERS: Command = READ_ONLY[12];
+pub const GET_MACROS: Command = READ_ONLY[16];
 
 pub fn is_read_only(cmd: Command) -> bool {
     READ_ONLY.contains(&cmd)

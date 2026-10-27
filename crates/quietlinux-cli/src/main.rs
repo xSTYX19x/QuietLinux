@@ -31,9 +31,9 @@ struct Cli {
     #[arg(long, global = true)]
     allow_unknown_firmware: bool,
 
-    /// Keycap legends to show: uk, de or fr
-    #[arg(long, global = true, default_value_t = Layout::Uk)]
-    layout: Layout,
+    /// Keycap legends to show: uk, de or fr (default: the layout the keyboard reports, else uk)
+    #[arg(long, global = true)]
+    layout: Option<Layout>,
 
     #[command(subcommand)]
     command: Command,
@@ -215,13 +215,14 @@ fn run(cli: Cli) -> Result<ExitCode, device::Error> {
             }
         }
         Command::Keys => {
-            println!("LED  {:<15} LEGEND ({})", "NAME", cli.layout);
+            let layout = cli.layout.unwrap_or_default();
+            println!("LED  {:<15} LEGEND ({layout})", "NAME");
             for key in &KEYS {
                 println!(
                     "{:02x}   {:<15} {}",
                     key.led,
                     key.code,
-                    cli.layout.legend(key.code)
+                    layout.legend(key.code)
                 );
             }
         }
@@ -258,10 +259,14 @@ fn run(cli: Cli) -> Result<ExitCode, device::Error> {
         }
         Command::Events { count } => {
             let (_, mut session) = device::open(usb_path, cli.allow_unknown_firmware)?;
+            let layout = cli
+                .layout
+                .or_else(|| report::device_legends(&mut session))
+                .unwrap_or_default();
             eprintln!(
                 "Press keys on the Light Mount (Ctrl+C to stop). Only keys the keyboard reports appear."
             );
-            report::watch(&mut session, count, |line| println!("{line}"))?;
+            report::watch(&mut session, count, layout, |line| println!("{line}"))?;
         }
         Command::Light(Light::Static { color, brightness }) => {
             let (_, mut session) = device::open(usb_path, cli.allow_unknown_firmware)?;
@@ -281,13 +286,16 @@ fn run(cli: Cli) -> Result<ExitCode, device::Error> {
                 .filter(|k| k.led >= start.unwrap_or(0))
                 .collect();
             let (_, mut session) = device::open(usb_path, cli.allow_unknown_firmware)?;
+            let layout = cli
+                .layout
+                .or_else(|| report::device_legends(&mut session))
+                .unwrap_or_default();
             println!(
                 "{} keys, one at a time ({} legends). Enter = the lit key is the one shown, \
                  otherwise type what is lit; q = stop.",
                 keys.len(),
-                cli.layout
+                layout
             );
-            let layout = cli.layout;
             let report =
                 calibrate::calibrate(&mut session, &keys, |key| ask_terminal(key, layout))?;
             for m in &report.mismatches {

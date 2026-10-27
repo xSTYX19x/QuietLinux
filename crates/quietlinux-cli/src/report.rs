@@ -129,32 +129,59 @@ fn device_lines<T: Transport>(session: &mut Session<T>, out: &mut Vec<String>) {
     }
 }
 
-/// Lighting mode, effect, color calibration.
+fn describe_layer(c: &LayerConfig) -> String {
+    let mut text = format!(
+        "{}, colors {}, brightness {}, speed {}, direction {}",
+        effect_name(c.effect).map_or_else(|| format!("effect {}", c.effect), str::to_owned),
+        c.colors,
+        c.brightness,
+        c.speed,
+        direction_name(c.direction).unwrap_or("?"),
+    );
+    if let Some([width, range, fade]) = c.ripple {
+        let _ = write!(text, ", ripple width {width} range {range} fade-out {fade}");
+    }
+    text
+}
+
+/// Lighting mode, layers, color calibration.
 fn lighting_lines<T: Transport>(session: &mut Session<T>, out: &mut Vec<String>) {
     match session.lighting_mode() {
         Ok(mode) => push(out, "Lighting mode:", mode.to_string()),
         Err(e) => push(out, "Lighting mode:", unavailable(&e)),
     }
-    match session.query(p::GET_LAYER_CONFIG, &[0]) {
-        Ok(m) => {
-            let layer = LayerConfig::parse(&m.data).map(|c| {
-                let mut text = format!(
-                    "{}, colors {}, brightness {}, speed {}, direction {}",
-                    effect_name(c.effect)
-                        .map_or_else(|| format!("effect {}", c.effect), str::to_owned),
-                    c.colors,
-                    c.brightness,
-                    c.speed,
-                    direction_name(c.direction).unwrap_or("?"),
-                );
-                if let Some([width, range, fade]) = c.ripple {
-                    let _ = write!(text, ", ripple width {width} range {range} fade-out {fade}");
+    let mut layers = vec![0];
+    for (label, cmd) in [
+        ("Layers:", p::GET_LAYERS_LAYOUT),
+        ("Global layers:", p::GET_GLOBAL_LAYERS),
+    ] {
+        match session.query(cmd, &[]) {
+            Ok(m) => {
+                let ids = info::parse_id_list(&m.data);
+                if cmd == p::GET_LAYERS_LAYOUT {
+                    if let Some(ids) = ids.as_ref().filter(|ids| !ids.is_empty()) {
+                        layers.clone_from(ids);
+                    }
                 }
-                text
-            });
-            push(out, "Effect:", decoded(layer, &m.data));
+                let text = ids.map(|ids| format!("{ids:?}"));
+                push(out, label, decoded(text, &m.data));
+            }
+            Err(e) => push(out, label, unavailable(&e)),
         }
-        Err(e) => push(out, "Effect:", unavailable(&e)),
+    }
+    for layer in layers {
+        let label = format!("Layer {layer}:");
+        match session.query(p::GET_LAYER_CONFIG, &[layer]) {
+            Ok(m) => push(
+                out,
+                &label,
+                decoded(
+                    LayerConfig::parse(&m.data).map(|c| describe_layer(&c)),
+                    &m.data,
+                ),
+            ),
+            Err(e) => push(out, &label, unavailable(&e)),
+        }
     }
     match session.query(p::GET_CALIBRATION, &[]) {
         Ok(m) => {
@@ -249,6 +276,19 @@ fn keyboard_lines<T: Transport>(session: &mut Session<T>, out: &mut Vec<String>)
         }
         Err(e) => push(out, "Key bindings:", unavailable(&e)),
     }
+    // GetMacros: layout unknown so far, shown as hex.
+    match session.query(p::GET_MACROS, &[]) {
+        Ok(m) => push(
+            out,
+            "Macros (raw):",
+            if m.data.is_empty() {
+                "(empty)".to_owned()
+            } else {
+                hex(&m.data)
+            },
+        ),
+        Err(e) => push(out, "Macros:", unavailable(&e)),
+    }
 }
 
 /// All bindings, read in as many `11:01` requests as needed.
@@ -275,14 +315,24 @@ fn read_bindings<T: Transport>(
     Ok((total, all))
 }
 
+/// Keycap legends of the layout the keyboard reports (`07:01`), if QuietLinux has them.
+pub fn device_legends<T: Transport>(session: &mut Session<T>) -> Option<keymap::Layout> {
+    let reply = session.query(p::GET_LAYOUT, &[]).ok()?;
+    Layout::parse(&reply.data)?.legends()
+}
+
 /// Describe a notification: key presses decoded, anything else as hex.
-pub fn describe_notification(message: &Message) -> String {
+pub fn describe_notification(message: &Message, legends: keymap::Layout) -> String {
     if message.cmd == p::ACTION_FIRED {
         if let Some(event) = KeyEvent::parse(&message.data) {
+            let name = event.key_name();
+            let legend = keymap::code_for_key_id(event.key_id)
+                .map(|code| legends.legend(code))
+                .filter(|legend| *legend != name)
+                .map_or_else(String::new, |legend| format!(" [{legend}]"));
             let key = format!(
-                "{}{} ({:02x})",
+                "{}{name}{legend} ({:02x})",
                 if event.fn_layer { "Fn+" } else { "" },
-                event.key_name(),
                 event.key_id
             );
             let action = event
@@ -303,12 +353,13 @@ pub fn describe_notification(message: &Message) -> String {
 pub fn watch<T: Transport>(
     session: &mut Session<T>,
     count: Option<usize>,
+    legends: keymap::Layout,
     mut print: impl FnMut(String),
 ) -> Result<(), Error> {
     let mut seen = 0;
     while count.is_none_or(|n| seen < n) {
         if let Some(message) = session.next_notification(Duration::from_secs(1))? {
-            print(describe_notification(&message));
+            print(describe_notification(&message, legends));
             seen += 1;
         }
     }
@@ -352,13 +403,15 @@ mod tests {
             "Layout:         ISO, German",
             "Polling rate:   1000 Hz",
             "Lighting mode:  effect",
-            "Effect:         static, colors e63000, brightness 100, speed 50, direction up",
+            "Layers:         unavailable",
+            "Layer 0:        static, colors e63000, brightness 100, speed 50, direction up",
             "Calibration:    unavailable",
             "Game mode:      off, blocks Win",
             "Quick tap:      no pairs",
             "Key bindings:   on, 2 of 2 decoded",
             "  M1                   media: play/pause",
             "  KnobLeft             media: volume down",
+            "Macros:         unavailable",
         ] {
             assert!(text.contains(expected), "missing {expected:?} in\n{text}");
         }
@@ -368,6 +421,21 @@ mod tests {
                 .iter()
                 .all(|c| c != "10:02" && c != "10:06" && c != "10:0d")
         );
+    }
+
+    #[test]
+    fn key_events_show_the_legend() {
+        let message = Message {
+            request_id: 0,
+            session: 1,
+            status: 0,
+            cmd: p::ACTION_FIRED,
+            data: vec![0x28, 0x00, 0x01, 0x01, 0x00, 0x1c],
+        };
+        let line = describe_notification(&message, keymap::Layout::De);
+        assert!(line.starts_with("KeyY [Z] (28)"), "{line}");
+        let line = describe_notification(&message, keymap::Layout::Uk);
+        assert!(line.starts_with("KeyY [Y] (28)"), "{line}");
     }
 
     #[test]
@@ -381,8 +449,12 @@ mod tests {
             .transport_mut()
             .notify(p::Command::new(0x07, 0x02), &[1]);
         let mut lines = Vec::new();
-        watch(&mut session, Some(2), |l| lines.push(l)).unwrap();
-        assert!(lines[0].starts_with("Fn+ArrowRight (5c)"), "{}", lines[0]);
+        watch(&mut session, Some(2), keymap::Layout::De, |l| lines.push(l)).unwrap();
+        assert!(
+            lines[0].starts_with("Fn+ArrowRight [→] (5c)"),
+            "{}",
+            lines[0]
+        );
         assert!(lines[0].contains("lighting: previous effect"));
         assert!(lines[1].starts_with("07:02 StateChanged"), "{}", lines[1]);
     }

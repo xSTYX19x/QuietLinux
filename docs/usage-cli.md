@@ -12,7 +12,7 @@ quietlinux [--usb-path PATH] [--allow-unknown-firmware] [--layout LAYOUT] <comma
 |---|---|
 | `--usb-path PATH` | Pick one keyboard when several are plugged in. `PATH` is the USB port path shown by `quietlinux status`, e.g. `1-2` or `3-1.4`. |
 | `--allow-unknown-firmware` | Allow writing to a firmware version that was never tested. Without it, such keyboards are read-only. |
-| `--layout LAYOUT` | Keycap legends to show: `uk` (default), `de` or `fr`. Only changes what is displayed. |
+| `--layout LAYOUT` | Keycap legends to show: `uk`, `de` or `fr`. Default: the layout the keyboard reports (`events`, `calibrate`), otherwise `uk`. Only changes what is displayed. |
 
 ## Key names
 
@@ -54,7 +54,9 @@ Features:       root v1, device info v1, keyboard v1, lighting v1, USB device v1
 Layout:         ISO, German
 Polling rate:   1000 Hz
 Lighting mode:  effect
-Effect:         static, colors e63000, brightness 100, speed 50, direction up
+Layers:         …
+Global layers:  …
+Layer 0:        static, colors e63000, brightness 100, speed 50, direction up
 Calibration:    …
 Game mode:      off, blocks nothing
 Quick tap:      no pairs
@@ -63,6 +65,7 @@ Key bindings:   on, 15 of 15 decoded
   KnobLeft             media: volume down
   Fn+ArrowUp           lighting: brighter
   …
+Macros (raw):   …
 ```
 
 (Values above are examples.) A line reads `unavailable (…)` when the keyboard
@@ -72,13 +75,16 @@ with the firmware version.
 ## `events [--count N]`
 
 Shows the key presses the keyboard reports on its vendor interface, with the
-key name, key ID and action, until Ctrl+C (or `N` events). Useful to check key
+key name, the legend in brackets, the key ID and the action (the HID usage the
+key sends, named like on a US keyboard), until Ctrl+C (or `N` events). The
+keyboard reports every key press, no releases. Useful to check key
 IDs and to see what the keyboard sends for special keys.
 
 ```console
 $ quietlinux events
 Press keys on the Light Mount (Ctrl+C to stop). Only keys the keyboard reports appear.
-Fn+ArrowRight (5c)       lighting: previous effect                [5c 80 01 09 03]
+KeyY [Z] (28)            key Y                                [28 00 01 01 00 1c]
+Fn+ArrowRight [→] (5c)   lighting: previous effect                [5c 80 01 09 03]
 ```
 
 It shows what you type on the Light Mount while it runs: do not type anything

@@ -64,9 +64,12 @@ Details: [installation](docs/installation.md), [command line usage](docs/usage-c
 - **No firmware update is ever sent**, and no firmware-related frame is replayed.
 - Only frames whose format is backed by captures of the vendor software are sent.
 - Writing is refused on untested firmware versions unless explicitly forced.
-- No root needed: a udev rule gives the logged-in user access to the keyboard's
-  vendor and lighting interfaces only. The interfaces that carry your key
-  presses stay root-only.
+- No root needed: a udev rule gives only the user logged in at the computer
+  (not other accounts or system services) access to the keyboard's vendor and
+  lighting interfaces. The standard keyboard interfaces stay root-only.
+  **Note:** the keyboard also reports every key press on its vendor interface,
+  so programs running as that user can read what is typed on the Light Mount.
+  See [installation](docs/installation.md#permissions-udev-rule).
 - No network access, no open ports, no background service (yet).
 - Per-LED colors are volatile and do not wear the keyboard's flash memory.
 

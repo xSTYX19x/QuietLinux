@@ -2,8 +2,9 @@
 # for the user logged in at the seat (uaccess), not for every account.
 #
 # Only interface 2 (vendor protocol) and interface 3 (LampArray) are opened up.
-# Interfaces 0 and 1 carry the normal key presses and stay root-only, so no
-# process can read what you type through them.
+# Interfaces 0 and 1 (the standard keyboard) stay root-only. Note that the
+# keyboard also reports every key press on interface 2: programs running as the
+# logged-in user can read what is typed on the Light Mount (docs/installation.md).
 #
 # The file name must sort before 73-seat-late.rules, which applies uaccess.
 

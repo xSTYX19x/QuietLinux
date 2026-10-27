@@ -31,8 +31,16 @@ gives the user logged in at the computer (not every account) access to:
 |---|---|---|
 | 0 | boot keyboard (key presses) | root only |
 | 1 | keyboard, media keys, mouse (key presses) | root only |
-| 2 | vendor protocol (lighting, key bindings, …) | logged-in user |
+| 2 | vendor protocol (lighting, key bindings, …); **also reports every key press** | logged-in user |
 | 3 | LampArray (standard lighting interface) | logged-in user |
+
+What this means: other accounts and system services cannot touch the
+keyboard, but programs running as **you** can read what you type on the Light
+Mount through interface 2, because the keyboard reports every key press there.
+On X11 such programs can read your keyboard anyway; on Wayland this is a
+real, if small, loss of isolation. The same holds for IO Center Web and any
+other tool that uses the vendor interface. A future QuietLinux background
+service may keep this access to itself (see [todo.md](todo.md)).
 
 Install it:
 

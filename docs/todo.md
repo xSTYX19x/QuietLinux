@@ -234,10 +234,13 @@ logic. Dependencies stay minimal (today: clap, rustix) and are checked in CI
 - [x] Protocol names from IO Center Web (features, commands, status codes); reply status checked; request ID never 0
 - [x] Vendor key IDs (`KEY_ID2`) in the key map, and the knob's turn left/right (`KnobLeft`, `KnobRight`)
 - [x] `quietlinux events`: show key IDs of pressed keys (read-only, from `11:02` notifications)
-- [ ] Run `quietlinux events` on the reference keyboard: confirm K42/K45 (`Backslash`/`IntlBackslash`) and which keys are reported at all
+- [x] Run `quietlinux events` on the reference keyboard: every key press is reported (letters, modifiers alone), with the expected key IDs; no release events
+- [ ] Confirm K42/K45 (`Backslash`/`IntlBackslash`), M1–M5, knob and Fn combinations with `quietlinux events`
 - [x] Read-only requests through an allowlist (`READ_ONLY`, `Session::query`), fragmented replies, `quietlinux info`
-- [ ] Run `quietlinux info` on the reference keyboard and compare with the [web] layouts in `protocol.md`
-- [ ] Use `07:01` layout to pick the keycap legends automatically
+- [x] Run `quietlinux info` on the reference keyboard (2026-10-27): device info, QLink version, features, layout, polling rate, game mode flags, bindings match the [web] layouts; `10:0f` and `07:06` answer INVALID_STATE (probably need an opened session); `10:05` with layer 0 answers a single `00`
+- [x] Use `07:01` layout to pick the keycap legends automatically (`events`, `calibrate`)
+- [ ] Capture IO Center Web's connection (`01:01` OpenSession) and check whether an opened session makes `10:0f`, `07:06` and `10:05` answer
+- [ ] Macros: the keyboard reports the macros feature and M5 is bound to macro 0, so macros are probably stored in the keyboard; capture the Windows app creating/editing a macro
 - [ ] Protocol layer for every command confirmed in phase 2, with fixtures
 - [ ] **Read** the device state first, write afterwards
 - [ ] Backup/restore: save the complete device state to a file before writing
@@ -260,6 +263,7 @@ logic. Dependencies stay minimal (today: clap, rustix) and are checked in CI
 - [ ] Own look, no imitation of be quiet! branding or logos
 
 ### 6.5 Phase 6 – Daemon (optional)
+- [ ] Evaluate keeping hidraw access to the daemon only (system service with its own user, GUI/CLI talk to it over D-Bus), so that user processes cannot read key presses from interface 2
 - [ ] Host-side actions (open program/URL, shortcuts) through vendor events
 - [ ] Reapply settings after replug/resume
 - [ ] systemd user service
@@ -281,7 +285,7 @@ logic. Dependencies stay minimal (today: clap, rustix) and are checked in CI
 
 **Security of the user's system:**
 
-7. Runs entirely without root. A single udev rule (`TAG+="uaccess"`) gives the logged-in user access to interfaces 2 and 3 of `373f:0002` only; the interfaces that carry key presses stay root-only. No setuid, no polkit rules.
+7. Runs entirely without root. A single udev rule (`TAG+="uaccess"`) gives the logged-in user access to interfaces 2 and 3 of `373f:0002` only; the standard keyboard interfaces stay root-only. No setuid, no polkit rules. Known limit: interface 2 also reports every key press (`11:02`), so processes of that user can read keystrokes from it (documented in `installation.md`).
 8. No network access, no open ports, no web/gRPC server. If GUI and daemon need to talk: a Unix socket in `$XDG_RUNTIME_DIR` with mode `0600`, or the D-Bus session bus.
 9. Start host-side actions (open program/URL) directly with an argument list, **never through a shell** (`sh -c`), so that config files cannot inject commands. Only run actions the user configured.
 10. Treat everything coming from the keyboard as untrusted: check lengths and CRC, never panic on broken frames, fuzz the parsers.

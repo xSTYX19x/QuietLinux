@@ -89,7 +89,21 @@ Features IO Center Web uses for each keyboard [web]:
 | `31` | CONTROLS | (not analyzed yet) | | ✓ |
 
 The keyboard itself reports its features with `01:04` (GetSupportedFeatures,
-see below); that answer is the authority.
+see below); that answer is the authority. The reference keyboard (firmware
+2.3.0) reports more than IO Center Web uses: root, DFU, device info,
+**storage**, USB device, keyboard, lighting, bindings and **macros**, all
+version 1. [cap]
+
+Observations with QuietLinux on the reference keyboard, without opening a
+session (session byte `01`) [cap]:
+
+| Request | Answer |
+|---|---|
+| `01:04`, `01:05`, `06:01`, `07:01`, `07:02`, `07:04`, `10:01`, `11:01`, `11:04` | as documented below (QLink version 0.0.23) |
+| `10:05` GetLayerConfig, layer 0 | a single byte `00` |
+| `10:0f` GetCalibration, `07:06` GetSnapTapConfig | status INVALID_STATE |
+
+INVALID_STATE probably means that these need a session opened with `01:01`.
 
 ### What IO Center Web does when it connects to a Light Mount [web]
 
@@ -281,6 +295,9 @@ blue 0.43, which explains why unscaled colors look greenish. [web]
 
 - Key IDs: see [Key IDs](#key-ids). Layers: `0` normal, `1` Fn.
 - A GetBindings entry is `[key ID][flags: bit 7 = Fn layer][action type][action data…]`.
+- GetBindings returns only bindings that differ from the factory defaults: the
+  reference keyboard answers with its 5 changed M keys (one of them bound to
+  macro 0, action 2). [cap]
 
 Action types and their data:
 
@@ -319,7 +336,10 @@ the action in the same format as in bindings. [cap] (layout matched with [web])
 | `5c 80 01 09 03` | Fn+→, backlight action 3 (IO Center's table calls 3 "previous effect", its default binding for Fn+→ is "next effect") |
 | `4b 80 01 1b` | Fn alone, action type `1b` (unknown) |
 
-`quietlinux events` shows these notifications live.
+The keyboard sends this notification for **every** key press, also for plain
+keys and modifiers alone (e.g. `0b 00 01 01 01 00`: left Ctrl, modifiers `01`,
+no usage), and none for releases. [cap] `quietlinux events` shows these
+notifications live.
 
 ### `12` MACROS [web]
 

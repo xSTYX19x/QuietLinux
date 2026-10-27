@@ -106,6 +106,12 @@ pub fn parse_qlink_version(data: &[u8]) -> Option<String> {
     ))
 }
 
+/// `[count]` then `count` bytes: `10:03` layers layout, `10:0e` global layers.
+pub fn parse_id_list(data: &[u8]) -> Option<Vec<u8>> {
+    let count = usize::from(*data.first()?);
+    data.get(1..1 + count).map(<[u8]>::to_vec)
+}
+
 /// `01:04` reply: `[count]` then `count × [feature][version]`.
 pub fn parse_features(data: &[u8]) -> Option<Vec<(u8, u8)>> {
     let count = usize::from(*data.first()?);
@@ -615,12 +621,12 @@ impl fmt::Display for Action {
         match self {
             Action::Disabled => f.write_str("disabled"),
             Action::StandardKey { modifiers, usage } => {
-                let mut parts = modifier_names(*modifiers).join("+");
-                if !parts.is_empty() {
-                    parts.push('+');
-                }
+                let mut parts = modifier_names(*modifiers);
                 let key = usage_name(*usage).unwrap_or_else(|| format!("usage {usage:#04x}"));
-                write!(f, "key {parts}{key}")
+                if *usage != 0 || parts.is_empty() {
+                    parts.push(&key);
+                }
+                write!(f, "key {}", parts.join("+"))
             }
             Action::Media(a) => write!(f, "media: {}", named(&MEDIA, *a)),
             Action::MediaSound(name) => write!(f, "media: sound {name:?}"),
@@ -870,6 +876,8 @@ mod tests {
     fn actions() {
         let action = |d: &[u8]| parse_action(d).unwrap().0.to_string();
         assert_eq!(action(&[0x01, 0x05, 0x06]), "key LCtrl+LAlt+C");
+        assert_eq!(action(&[0x01, 0x01, 0x00]), "key LCtrl"); // a modifier alone
+        assert_eq!(action(&[0x01, 0x00, 0x68]), "key F13");
         assert_eq!(
             action(&[0x03, 1, 0x41, 0]),
             "mouse: right button, while pressed"

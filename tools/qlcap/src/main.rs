@@ -178,8 +178,8 @@ mod tests {
 
     #[test]
     fn usbmon_capture_end_to_end() {
-        let request = p::get_mode(7, p::SESSION);
-        let reply = p::frame(p::GET_MODE, &[p::MODE_EFFECTS], 7, p::SESSION).unwrap();
+        let request = p::get_lighting_mode(7, p::SESSION);
+        let reply = p::frame(p::GET_LIGHTING_MODE, &[p::MODE_GENERAL], 7, p::SESSION).unwrap();
         let file = pcapng(
             220,
             &[
@@ -192,7 +192,7 @@ mod tests {
         let lines = decode_file(&file);
         assert_eq!(lines.len(), 2, "{lines:?}");
         assert!(
-            lines[0].contains("→  10:01 get mode") && lines[0].contains("seq 07"),
+            lines[0].contains("→  10:01 GetLightingMode") && lines[0].contains("req 07"),
             "{}",
             lines[0]
         );
@@ -205,15 +205,15 @@ mod tests {
 
     #[test]
     fn usbpcap_capture_end_to_end() {
-        let request = p::get_version(4);
+        let request = p::get_device_info(4);
         let file = pcapng(249, &[(0, &usbpcap_packet(false, 0x04, 5, &request))]);
         let lines = decode_file(&file);
-        assert!(lines[0].contains("03:01 version"), "{lines:?}");
+        assert!(lines[0].contains("03:01 GetDeviceInfo"), "{lines:?}");
     }
 
     #[test]
     fn webhid_log_end_to_end() {
-        let request = decode::hex(&p::get_version(4)).replace(' ', "");
+        let request = decode::hex(&p::get_device_info(4)).replace(' ', "");
         let log = format!(
             "# quietlinux webhid log v1\n10.0 note opened IO Center\n12.0 out 373f:0002 0 {request}\n"
         );

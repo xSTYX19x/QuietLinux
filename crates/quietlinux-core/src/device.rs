@@ -70,6 +70,13 @@ pub enum Error {
     Transport(io::Error),
     NoReply(Command),
     InvalidReply(Command),
+    /// The keyboard answered with an error status.
+    Status {
+        cmd: Command,
+        status: u8,
+    },
+    /// A request this project does not send.
+    Unsupported(String),
     UnknownFirmware(Vec<u8>),
     Protocol(ProtocolError),
 }
@@ -137,6 +144,13 @@ impl fmt::Display for Error {
             Self::InvalidReply(cmd) => {
                 write!(f, "Light Mount: invalid reply to {cmd} (CRC mismatch)")
             }
+            Self::Unsupported(what) => write!(f, "not supported: {what}"),
+            Self::Status { cmd, status } => write!(
+                f,
+                "Light Mount: {cmd} failed: {}",
+                p::status_name(*status)
+                    .map_or_else(|| format!("status {status:#04x}"), str::to_owned)
+            ),
             Self::UnknownFirmware(version) => write!(
                 f,
                 "Light Mount: untested firmware version {}, nothing written \
@@ -358,22 +372,40 @@ impl Identity {
     }
 }
 
-/// Lighting mode reported by `10:01`.
+/// Lighting mode (`10:01` / `10:02`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LightingMode {
-    /// Firmware effects (`10:06`).
-    Effects,
-    /// Per-LED colors (`10:0d`).
+    Off,
+    /// The layers' effects (`10:06`), stored in the keyboard.
+    General,
+    /// Stored per-key layers.
     Custom,
+    /// Per-LED colors (`10:0d`), volatile.
+    Realtime,
     Other(u8),
 }
 
 impl From<u8> for LightingMode {
     fn from(mode: u8) -> Self {
         match mode {
-            p::MODE_EFFECTS => Self::Effects,
+            p::MODE_OFF => Self::Off,
+            p::MODE_GENERAL => Self::General,
             p::MODE_CUSTOM => Self::Custom,
+            p::MODE_REALTIME => Self::Realtime,
             other => Self::Other(other),
+        }
+    }
+}
+
+impl LightingMode {
+    /// The value of `10:01` / `10:02`.
+    pub const fn value(self) -> u8 {
+        match self {
+            Self::Off => p::MODE_OFF,
+            Self::General => p::MODE_GENERAL,
+            Self::Custom => p::MODE_CUSTOM,
+            Self::Realtime => p::MODE_REALTIME,
+            Self::Other(mode) => mode,
         }
     }
 }
@@ -381,8 +413,10 @@ impl From<u8> for LightingMode {
 impl fmt::Display for LightingMode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Effects => f.write_str("effects"),
+            Self::Off => f.write_str("off"),
+            Self::General => f.write_str("effect"),
             Self::Custom => f.write_str("custom"),
+            Self::Realtime => f.write_str("realtime"),
             Self::Other(mode) => write!(f, "unknown ({mode:#04x})"),
         }
     }
@@ -392,37 +426,42 @@ impl fmt::Display for LightingMode {
 #[derive(Debug)]
 pub struct Session<T> {
     transport: T,
-    seq: u8,
+    /// Request ID of the next request (never 0).
+    request_id: u8,
     identity: Identity,
     allow_unknown_firmware: bool,
 }
 
-/// Start value for seq, as IO Center: changes between runs.
-fn initial_seq() -> u8 {
+/// First request ID: changes between runs, as with IO Center. Never 0.
+fn initial_request_id() -> u8 {
     let secs = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |d| d.as_secs());
-    secs.to_le_bytes()[0]
+    match secs.to_le_bytes()[0] {
+        0 => 1,
+        id => id,
+    }
 }
 
 impl<T: Transport> Session<T> {
     /// Identify the keyboard (`03:01`), as IO Center does first. Sends only read requests.
     pub fn new(transport: T, allow_unknown_firmware: bool) -> Result<Self> {
-        Self::with_seq(transport, allow_unknown_firmware, initial_seq())
+        Self::with_request_id(transport, allow_unknown_firmware, initial_request_id())
     }
 
-    fn with_seq(transport: T, allow_unknown_firmware: bool, seq: u8) -> Result<Self> {
+    fn with_request_id(transport: T, allow_unknown_firmware: bool, request_id: u8) -> Result<Self> {
+        debug_assert_ne!(request_id, 0, "request ID 0 marks notifications");
         let mut session = Self {
             transport,
-            seq,
+            request_id,
             identity: Identity {
                 version: Vec::new(),
             },
             allow_unknown_firmware,
         };
-        let seq = session.next_seq();
-        let resp = session.request(&p::get_version(seq))?;
-        session.identity.version = p::version_of(&resp).to_vec();
+        let id = session.next_request_id();
+        let resp = session.request(&p::get_device_info(id))?;
+        session.identity.version = p::device_info_of(&resp).to_vec();
         Ok(session)
     }
 
@@ -447,10 +486,10 @@ impl<T: Transport> Session<T> {
         }
     }
 
-    fn next_seq(&mut self) -> u8 {
-        let seq = self.seq;
-        self.seq = self.seq.wrapping_add(1);
-        seq
+    fn next_request_id(&mut self) -> u8 {
+        let id = self.request_id;
+        self.request_id = p::next_request_id(id);
+        id
     }
 
     fn send(&mut self, packets: &[Packet]) -> Result<()> {
@@ -460,8 +499,8 @@ impl<T: Transport> Session<T> {
         Ok(())
     }
 
-    /// Send one packet and wait for the reply with the same seq and command.
-    /// Other packets (key events) are skipped.
+    /// Send one packet and wait for the reply with the same request ID and command.
+    /// Other packets (notifications such as key events) are skipped.
     fn request(&mut self, packet: &Packet) -> Result<Packet> {
         let cmd = p::command_of(packet);
         self.send(std::slice::from_ref(packet))?;
@@ -475,10 +514,12 @@ impl<T: Transport> Session<T> {
             match resp {
                 None => return Err(Error::NoReply(cmd)),
                 Some(resp) if p::is_reply(&resp, packet) => {
-                    return if p::crc_ok(&resp) {
-                        Ok(resp)
-                    } else {
-                        Err(Error::InvalidReply(cmd))
+                    if !p::crc_ok(&resp) {
+                        return Err(Error::InvalidReply(cmd));
+                    }
+                    return match p::status_of(&resp) {
+                        p::STATUS_SUCCESS => Ok(resp),
+                        status => Err(Error::Status { cmd, status }),
                     };
                 }
                 Some(_) => {}
@@ -488,52 +529,56 @@ impl<T: Transport> Session<T> {
 
     /// Current lighting mode (`10:01`), read like IO Center does before any change.
     pub fn lighting_mode(&mut self) -> Result<LightingMode> {
-        let seq = self.next_seq();
-        let resp = self.request(&p::get_mode(seq, p::SESSION))?;
-        p::mode_of(&resp)
+        let id = self.next_request_id();
+        let resp = self.request(&p::get_lighting_mode(id, p::SESSION))?;
+        p::lighting_mode_of(&resp)
             .map(LightingMode::from)
-            .ok_or(Error::InvalidReply(p::GET_MODE))
+            .ok_or(Error::InvalidReply(p::GET_LIGHTING_MODE))
     }
 
-    fn set_mode(&mut self, mode: u8) -> Result<()> {
-        let seq = self.next_seq();
-        self.send(&[p::set_mode(mode, seq, p::SESSION)])?;
+    /// Switch the lighting mode (`10:02`). Values 1 (general) and 3 (realtime) are
+    /// captured from IO Center; 0 (off) and 2 (custom) come from IO Center Web.
+    pub fn set_lighting_mode(&mut self, mode: LightingMode) -> Result<()> {
+        self.check_writable()?;
+        if let LightingMode::Other(value) = mode {
+            return Err(Error::Unsupported(format!("lighting mode {value:#04x}")));
+        }
+        self.send_lighting_mode(mode.value())
+    }
+
+    fn send_lighting_mode(&mut self, mode: u8) -> Result<()> {
+        let id = self.next_request_id();
+        self.send(&[p::set_lighting_mode(mode, id, p::SESSION)])?;
         sleep(MODE_SWITCH_DELAY);
         Ok(())
     }
 
-    /// Per-LED colors (`10:0d`, volatile), switching to custom mode if needed.
+    /// Per-LED colors (`10:0d`, volatile), switching to realtime mode if needed.
     pub fn set_leds(&mut self, leds: &[Led]) -> Result<()> {
         self.check_writable()?;
-        // Switching to custom mode resets every LED: only do it when needed.
-        if self.lighting_mode()? != LightingMode::Custom {
-            self.set_mode(p::MODE_CUSTOM)?;
+        // Switching to realtime mode resets every LED: only do it when needed.
+        if self.lighting_mode()? != LightingMode::Realtime {
+            self.send_lighting_mode(p::MODE_REALTIME)?;
         }
-        let messages = p::update(leds, self.seq, p::SESSION);
-        // update() used one seq per message.
-        #[allow(clippy::cast_possible_truncation)]
-        {
-            self.seq = self.seq.wrapping_add(messages.len() as u8);
-        }
-        for message in messages {
+        for message in p::update(leds, self.request_id, p::SESSION) {
+            self.next_request_id();
             self.send(&message)?;
             sleep(LED_MESSAGE_DELAY);
         }
         Ok(())
     }
 
-    /// Switch to effects mode: the effect stored in the keyboard shows again.
+    /// Switch to general mode: the effect stored in the keyboard shows again.
     pub fn show_stored_effect(&mut self) -> Result<()> {
-        self.check_writable()?;
-        self.set_mode(p::MODE_EFFECTS)
+        self.set_lighting_mode(LightingMode::General)
     }
 
-    /// Static color effect (`10:06`, stored in the keyboard), after switching to effects mode.
+    /// Static color effect (`10:06`, stored in the keyboard), after switching to general mode.
     pub fn set_static(&mut self, color: Rgb, brightness: u8) -> Result<()> {
         self.check_writable()?;
-        self.set_mode(p::MODE_EFFECTS)?;
-        let seq = self.next_seq();
-        self.request(&p::static_color(color, brightness, seq, p::SESSION))?;
+        self.send_lighting_mode(p::MODE_GENERAL)?;
+        let id = self.next_request_id();
+        self.request(&p::static_color(color, brightness, id, p::SESSION))?;
         Ok(())
     }
 }
@@ -560,28 +605,28 @@ mod tests {
 
     #[test]
     fn identify_and_read_mode() {
-        let mut kb = FakeKeyboard::new(&KNOWN, p::MODE_EFFECTS);
-        let mut session = Session::with_seq(&mut kb, false, 0xfe).unwrap();
+        let mut kb = FakeKeyboard::new(&KNOWN, p::MODE_GENERAL);
+        let mut session = Session::with_request_id(&mut kb, false, 0xfe).unwrap();
         assert!(session.identity().known());
-        assert_eq!(session.lighting_mode().unwrap(), LightingMode::Effects);
+        assert_eq!(session.lighting_mode().unwrap(), LightingMode::General);
         assert_eq!(kb.commands(), ["03:01", "10:01"]);
         assert_eq!(kb.received[0][2], p::SESSION_NONE);
-        assert_eq!(p::seq_of(&kb.received[1]), 0xff);
+        assert_eq!(p::request_id_of(&kb.received[1]), 0xff);
     }
 
     #[test]
     fn key_events_are_skipped_while_waiting() {
-        let mut kb = FakeKeyboard::new(&KNOWN, p::MODE_CUSTOM);
+        let mut kb = FakeKeyboard::new(&KNOWN, p::MODE_REALTIME);
         kb.pending.push_back(
             p::frame(
-                p::KEY_EVENT,
+                p::ACTION_FIRED,
                 &[0x5c, 0x00, 0x01, 0x01, 0x00, 0x4f],
                 0,
                 p::SESSION,
             )
             .unwrap(),
         );
-        assert!(Session::with_seq(&mut kb, false, 0).is_ok());
+        assert!(Session::with_request_id(&mut kb, false, 1).is_ok());
     }
 
     #[test]
@@ -597,7 +642,7 @@ mod tests {
         }
         assert!(matches!(
             Session::new(Silent, false),
-            Err(Error::NoReply(p::GET_VERSION))
+            Err(Error::NoReply(p::GET_DEVICE_INFO))
         ));
     }
 
@@ -609,21 +654,64 @@ mod tests {
                 Ok(())
             }
             fn recv(&mut self, _: Duration) -> io::Result<Option<Packet>> {
-                let mut resp = p::frame(p::GET_VERSION, &KNOWN, 0, p::SESSION_NONE).unwrap();
+                let mut resp = p::frame(p::GET_DEVICE_INFO, &KNOWN, 1, p::SESSION_NONE).unwrap();
                 resp[10] ^= 1;
                 Ok(Some(resp))
             }
         }
         assert!(matches!(
-            Session::with_seq(Corrupt, false, 0),
-            Err(Error::InvalidReply(p::GET_VERSION))
+            Session::with_request_id(Corrupt, false, 1),
+            Err(Error::InvalidReply(p::GET_DEVICE_INFO))
         ));
     }
 
     #[test]
+    fn error_status_reply() {
+        #[derive(Debug)]
+        struct Busy;
+        impl Transport for Busy {
+            fn send(&mut self, _: &Packet) -> io::Result<()> {
+                Ok(())
+            }
+            fn recv(&mut self, _: Duration) -> io::Result<Option<Packet>> {
+                let mut resp = p::frame(p::GET_DEVICE_INFO, &[], 1, p::SESSION_NONE).unwrap();
+                resp[3] = 0x07; // BUSY
+                let crc = p::crc16_modbus(&resp[..62]).to_le_bytes();
+                resp[62..].copy_from_slice(&crc);
+                Ok(Some(resp))
+            }
+        }
+        let err = Session::with_request_id(Busy, false, 1).unwrap_err();
+        assert!(matches!(err, Error::Status { status: 0x07, .. }));
+        assert_eq!(err.to_string(), "Light Mount: 03:01 failed: BUSY");
+    }
+
+    #[test]
+    fn request_ids_skip_zero() {
+        let mut kb = FakeKeyboard::new(&KNOWN, p::MODE_GENERAL);
+        let mut session = Session::with_request_id(&mut kb, false, 0xff).unwrap();
+        session.lighting_mode().unwrap();
+        let ids: Vec<u8> = kb.received.iter().map(p::request_id_of).collect();
+        assert_eq!(ids, [0xff, 0x01]);
+    }
+
+    #[test]
+    fn set_lighting_mode() {
+        let mut kb = FakeKeyboard::new(&KNOWN, p::MODE_GENERAL);
+        let mut session = Session::with_request_id(&mut kb, false, 1).unwrap();
+        session.set_lighting_mode(LightingMode::Off).unwrap();
+        assert!(matches!(
+            session.set_lighting_mode(LightingMode::Other(9)),
+            Err(Error::Unsupported(_))
+        ));
+        assert_eq!(kb.mode, p::MODE_OFF);
+        assert_eq!(kb.commands(), ["03:01", "10:02"]);
+    }
+
+    #[test]
     fn unknown_firmware_is_read_only() {
-        let mut kb = FakeKeyboard::new(&[9, 9, 9, 9, 9, 9, 9, 9], p::MODE_EFFECTS);
-        let mut session = Session::with_seq(&mut kb, false, 0).unwrap();
+        let mut kb = FakeKeyboard::new(&[9, 9, 9, 9, 9, 9, 9, 9], p::MODE_GENERAL);
+        let mut session = Session::with_request_id(&mut kb, false, 1).unwrap();
         assert!(!session.writable());
         assert!(matches!(
             session.set_static(Rgb::new(1, 2, 3), 100),
@@ -638,22 +726,22 @@ mod tests {
 
     #[test]
     fn unknown_firmware_forced() {
-        let mut kb = FakeKeyboard::new(&[9; 8], p::MODE_EFFECTS);
-        let mut session = Session::with_seq(&mut kb, true, 0).unwrap();
+        let mut kb = FakeKeyboard::new(&[9; 8], p::MODE_GENERAL);
+        let mut session = Session::with_request_id(&mut kb, true, 1).unwrap();
         session.set_static(Rgb::new(1, 2, 3), 100).unwrap();
         assert_eq!(kb.commands(), ["03:01", "10:02", "10:06"]);
     }
 
     #[test]
     fn set_static() {
-        let mut kb = FakeKeyboard::new(&KNOWN, p::MODE_CUSTOM);
-        let mut session = Session::with_seq(&mut kb, false, 0).unwrap();
+        let mut kb = FakeKeyboard::new(&KNOWN, p::MODE_REALTIME);
+        let mut session = Session::with_request_id(&mut kb, false, 1).unwrap();
         session.set_static(Rgb::new(0xe6, 0x30, 0x00), 50).unwrap();
         assert_eq!(kb.commands(), ["03:01", "10:02", "10:06"]);
-        assert_eq!(kb.mode, p::MODE_EFFECTS);
+        assert_eq!(kb.mode, p::MODE_GENERAL);
         assert_eq!(
             kb.received[2],
-            p::static_color(Rgb::new(0xe6, 0x30, 0x00), 50, 2, p::SESSION)
+            p::static_color(Rgb::new(0xe6, 0x30, 0x00), 50, 3, p::SESSION)
         );
     }
 
@@ -663,8 +751,8 @@ mod tests {
             .map(|i| Led::new(i, Rgb::new(1, 2, 3)))
             .collect();
 
-        let mut kb = FakeKeyboard::new(&KNOWN, p::MODE_EFFECTS);
-        let mut session = Session::with_seq(&mut kb, false, 0).unwrap();
+        let mut kb = FakeKeyboard::new(&KNOWN, p::MODE_GENERAL);
+        let mut session = Session::with_request_id(&mut kb, false, 1).unwrap();
         session.set_leds(&leds).unwrap();
         assert_eq!(
             kb.commands(),
@@ -673,8 +761,8 @@ mod tests {
             ]
         );
 
-        let mut kb = FakeKeyboard::new(&KNOWN, p::MODE_CUSTOM);
-        let mut session = Session::with_seq(&mut kb, false, 0).unwrap();
+        let mut kb = FakeKeyboard::new(&KNOWN, p::MODE_REALTIME);
+        let mut session = Session::with_request_id(&mut kb, false, 1).unwrap();
         session.set_leds(&leds).unwrap();
         assert_eq!(
             kb.commands(),
@@ -687,9 +775,9 @@ mod tests {
             .received
             .iter()
             .filter(|r| p::fragment_index(r) == 0)
-            .map(p::seq_of)
+            .map(p::request_id_of)
             .collect();
-        assert_eq!(seqs, [0, 1, 2, 3, 4, 5, 6]);
+        assert_eq!(seqs, [1, 2, 3, 4, 5, 6, 7]);
     }
 
     // --- fake sysfs ------------------------------------------------------------

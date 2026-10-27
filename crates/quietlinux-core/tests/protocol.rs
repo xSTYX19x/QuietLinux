@@ -64,7 +64,7 @@ fn fields(raw: &Packet) -> (Command, Vec<u8>, u8, u8) {
     (
         p::command_of(raw),
         p::data(raw).to_vec(),
-        p::seq_of(raw),
+        p::request_id_of(raw),
         raw[2],
     )
 }
@@ -143,8 +143,16 @@ fn seq_is_one_byte() {
 
 #[test]
 fn frame_single_packet_only() {
-    assert!(p::frame(p::SET_LIGHTING, &[0; p::FIRST_CAPACITY], 0, p::SESSION).is_ok());
-    assert!(p::frame(p::SET_LIGHTING, &[0; p::FIRST_CAPACITY + 1], 0, p::SESSION).is_err());
+    assert!(p::frame(p::SET_LAYER_CONFIG, &[0; p::FIRST_CAPACITY], 0, p::SESSION).is_ok());
+    assert!(
+        p::frame(
+            p::SET_LAYER_CONFIG,
+            &[0; p::FIRST_CAPACITY + 1],
+            0,
+            p::SESSION
+        )
+        .is_err()
+    );
 }
 
 // --- lighting --------------------------------------------------------------------
@@ -154,7 +162,7 @@ fn static_color() {
     let statics: Vec<Packet> = frames()
         .into_iter()
         .filter(|r| {
-            p::command_of(r) == p::SET_LIGHTING
+            p::command_of(r) == p::SET_LAYER_CONFIG
                 && r[8] == p::EFFECT_STATIC
                 && r[12] == p::COLOR_MODE_SINGLE
         })
@@ -170,18 +178,18 @@ fn static_color() {
 }
 
 #[test]
-fn set_mode() {
+fn set_lighting_mode() {
     let modes: Vec<Packet> = frames()
         .into_iter()
-        .filter(|r| p::command_of(r) == p::SET_MODE)
+        .filter(|r| p::command_of(r) == p::SET_LIGHTING_MODE)
         .collect();
     let mut seen: Vec<u8> = modes.iter().map(|r| r[7]).collect();
     seen.sort_unstable();
     seen.dedup();
-    assert_eq!(seen, [p::MODE_EFFECTS, p::MODE_CUSTOM]);
+    assert_eq!(seen, [p::MODE_GENERAL, p::MODE_REALTIME]);
     for raw in modes {
         let (_, data, seq, session) = fields(&raw);
-        assert_eq!(p::set_mode(data[0], seq, session), raw);
+        assert_eq!(p::set_lighting_mode(data[0], seq, session), raw);
     }
 }
 
@@ -189,12 +197,12 @@ fn set_mode() {
 fn get_mode_request() {
     let requests: Vec<Packet> = frames()
         .into_iter()
-        .filter(|r| p::command_of(r) == p::GET_MODE)
+        .filter(|r| p::command_of(r) == p::GET_LIGHTING_MODE)
         .collect();
     assert_ne!(requests.len(), 0);
     for raw in requests {
         let (_, _, seq, session) = fields(&raw);
-        assert_eq!(p::get_mode(seq, session), raw);
+        assert_eq!(p::get_lighting_mode(seq, session), raw);
     }
 }
 
@@ -203,18 +211,18 @@ fn get_mode_responses() {
     // the reply echoes seq and command, the mode is the first data byte
     let mut seen = Vec::new();
     for raw in mode_responses() {
-        assert_eq!(p::command_of(&raw), p::GET_MODE);
+        assert_eq!(p::command_of(&raw), p::GET_LIGHTING_MODE);
         let (_, _, seq, session) = fields(&raw);
-        assert!(p::is_reply(&raw, &p::get_mode(seq, session)));
+        assert!(p::is_reply(&raw, &p::get_lighting_mode(seq, session)));
         assert!(!p::is_reply(
             &raw,
-            &p::get_mode(seq.wrapping_add(1), session)
+            &p::get_lighting_mode(seq.wrapping_add(1), session)
         ));
-        seen.push(p::mode_of(&raw).unwrap());
+        seen.push(p::lighting_mode_of(&raw).unwrap());
     }
     seen.sort_unstable();
     seen.dedup();
-    assert_eq!(seen, [p::MODE_EFFECTS, p::MODE_CUSTOM]);
+    assert_eq!(seen, [p::MODE_GENERAL, p::MODE_REALTIME]);
 }
 
 // --- identification ----------------------------------------------------------------
@@ -223,7 +231,7 @@ fn get_mode_responses() {
 fn identification_requests() {
     for raw in info_requests() {
         let (cmd, data, seq, session) = fields(&raw);
-        assert!(cmd == p::GET_VERSION || cmd == p::GET_SERIAL);
+        assert!(cmd == p::GET_DEVICE_INFO || cmd == p::GET_SERIAL_NUMBER);
         assert_eq!(data.len(), 0);
         assert_eq!(p::frame(cmd, &[], seq, session).unwrap(), raw);
     }
@@ -236,15 +244,15 @@ fn web_identification_requests() {
         .into_iter()
         .filter(|r| r[2] == p::SESSION_NONE)
         .collect();
-    assert!(web.iter().any(|r| p::command_of(r) == p::GET_VERSION));
-    assert!(web.iter().any(|r| p::command_of(r) == p::GET_SERIAL));
+    assert!(web.iter().any(|r| p::command_of(r) == p::GET_DEVICE_INFO));
+    assert!(web.iter().any(|r| p::command_of(r) == p::GET_SERIAL_NUMBER));
     for raw in web {
-        let build = if p::command_of(&raw) == p::GET_VERSION {
-            p::get_version
+        let build = if p::command_of(&raw) == p::GET_DEVICE_INFO {
+            p::get_device_info
         } else {
-            p::get_serial
+            p::get_serial_number
         };
-        assert_eq!(build(p::seq_of(&raw)), raw);
+        assert_eq!(build(p::request_id_of(&raw)), raw);
     }
 }
 
@@ -253,7 +261,7 @@ fn version_replies() {
     assert_ne!(version_responses().len(), 0);
     for resp in version_responses() {
         assert_eq!(
-            p::version_of(&resp),
+            p::device_info_of(&resp),
             [0x02, 0x00, 0x01, 0x01, 0x00, 0x00, 0x03, 0x02]
         );
     }
@@ -261,17 +269,17 @@ fn version_replies() {
 
 #[test]
 fn serial_of() {
-    let resp = p::frame(p::GET_SERIAL, b"\x04AB12", 7, p::SESSION_NONE).unwrap();
+    let resp = p::frame(p::GET_SERIAL_NUMBER, b"\x04AB12", 7, p::SESSION_NONE).unwrap();
     assert_eq!(p::serial_of(&resp), "AB12");
     // a length byte larger than the data is clamped
-    let resp = p::frame(p::GET_SERIAL, b"\xffAB", 7, p::SESSION_NONE).unwrap();
+    let resp = p::frame(p::GET_SERIAL_NUMBER, b"\xffAB", 7, p::SESSION_NONE).unwrap();
     assert_eq!(p::serial_of(&resp), "AB");
 }
 
 // --- key events (captured on 2026-10-15 by bbossa) ---------------------------------
 
 fn event(data: &[u8]) -> Packet {
-    p::frame(p::KEY_EVENT, data, 0x00, p::SESSION).unwrap()
+    p::frame(p::ACTION_FIRED, data, 0x00, p::SESSION).unwrap()
 }
 
 #[test]
@@ -302,9 +310,9 @@ fn plain_keys() {
 
 #[test]
 fn other_messages_are_not_fn_events() {
-    assert_eq!(p::fn_function(&p::get_mode(1, p::SESSION)), None);
+    assert_eq!(p::fn_function(&p::get_lighting_mode(1, p::SESSION)), None);
     assert_eq!(p::fn_function(&event(&[0x5c, 0x80])), None); // too short
-    let packets = p::message(p::KEY_EVENT, &[0; 70], 0, p::SESSION).unwrap();
+    let packets = p::message(p::ACTION_FIRED, &[0; 70], 0, p::SESSION).unwrap();
     assert_eq!(p::fn_function(&packets[1]), None); // continuation fragment
 }
 
@@ -316,10 +324,16 @@ fn led_messages() {
         let decoded = p::parse_leds(&msg).unwrap();
         let payload = p::leds_payload(&decoded.entries, decoded.last).unwrap();
         assert_eq!(
-            p::message(p::SET_LEDS, &payload, decoded.seq, decoded.session).unwrap(),
+            p::message(
+                p::PERFORM_REALTIME_UPDATES,
+                &payload,
+                decoded.request_id,
+                decoded.session
+            )
+            .unwrap(),
             msg,
             "seq {}",
-            decoded.seq
+            decoded.request_id
         );
     }
 }
@@ -336,10 +350,10 @@ fn complete_updates() {
             .flat_map(|m| p::parse_leds(m).unwrap().entries)
             .collect();
         assert_eq!(
-            p::update(&entries, first.seq, first.session),
+            p::update(&entries, first.request_id, first.session),
             s,
             "seq {}",
-            first.seq
+            first.request_id
         );
     }
 }
@@ -369,12 +383,14 @@ fn too_many_entries() {
 }
 
 #[test]
-fn seq_wraps() {
+fn request_id_skips_zero() {
     let entries: Vec<Led> = (0..80).map(|i| Led::new(i, Rgb::BLACK)).collect();
     let msgs = p::update(&entries, 0xff, p::SESSION);
     assert_eq!(
-        msgs.iter().map(|m| p::seq_of(&m[0])).collect::<Vec<_>>(),
-        [0xff, 0x00]
+        msgs.iter()
+            .map(|m| p::request_id_of(&m[0]))
+            .collect::<Vec<_>>(),
+        [0xff, 0x01] // 0 marks notifications
     );
 }
 
@@ -390,20 +406,36 @@ fn capacities() {
     // 55 data bytes in the first fragment, 59 in the following ones
     for (size, count) in [(0, 1), (55, 1), (56, 2), (55 + 59, 2), (55 + 59 + 1, 3)] {
         assert_eq!(
-            p::message(p::SET_LEDS, &vec![0; size], 0, p::SESSION)
+            p::message(p::PERFORM_REALTIME_UPDATES, &vec![0; size], 0, p::SESSION)
                 .unwrap()
                 .len(),
             count,
             "{size} bytes"
         );
     }
-    assert!(p::message(p::SET_LEDS, &vec![0; p::MAX_PAYLOAD], 0, p::SESSION).is_ok());
-    assert!(p::message(p::SET_LEDS, &vec![0; p::MAX_PAYLOAD + 1], 0, p::SESSION).is_err());
+    assert!(
+        p::message(
+            p::PERFORM_REALTIME_UPDATES,
+            &vec![0; p::MAX_PAYLOAD],
+            0,
+            p::SESSION
+        )
+        .is_ok()
+    );
+    assert!(
+        p::message(
+            p::PERFORM_REALTIME_UPDATES,
+            &vec![0; p::MAX_PAYLOAD + 1],
+            0,
+            p::SESSION
+        )
+        .is_err()
+    );
 }
 
 #[test]
 fn index_and_continuation() {
-    let packets = p::message(p::SET_LEDS, &[0; 200], 0x42, 0x03).unwrap();
+    let packets = p::message(p::PERFORM_REALTIME_UPDATES, &[0; 200], 0x42, 0x03).unwrap();
     assert_eq!(
         packets.iter().map(|pk| pk[1]).collect::<Vec<_>>(),
         [0x80, 0x81, 0x82, 0x03]
@@ -415,17 +447,17 @@ fn index_and_continuation() {
 #[test]
 fn reassembly() {
     let payload: Vec<u8> = (0..200).collect();
-    let packets = p::message(p::SET_LEDS, &payload, 7, p::SESSION).unwrap();
+    let packets = p::message(p::PERFORM_REALTIME_UPDATES, &payload, 7, p::SESSION).unwrap();
     let msg = p::reassemble(&packets).unwrap();
     assert_eq!(
-        (msg.seq, msg.session, msg.cmd, msg.data),
-        (7, p::SESSION, p::SET_LEDS, payload)
+        (msg.request_id, msg.session, msg.cmd, msg.data),
+        (7, p::SESSION, p::PERFORM_REALTIME_UPDATES, payload)
     );
 }
 
 #[test]
 fn reassembly_rejects_incomplete_or_shuffled() {
-    let packets = p::message(p::SET_LEDS, &[0; 200], 0, p::SESSION).unwrap();
+    let packets = p::message(p::PERFORM_REALTIME_UPDATES, &[0; 200], 0, p::SESSION).unwrap();
     assert!(p::reassemble(&[]).is_none());
     assert!(p::reassemble(&packets[..3]).is_none()); // last fragment missing
     assert!(p::reassemble(&packets[1..]).is_none()); // first fragment missing
@@ -441,9 +473,9 @@ fn garbage_does_not_panic() {
         raw[0] = len;
         let _ = (
             p::data(&raw),
-            p::version_of(&raw),
+            p::device_info_of(&raw),
             p::serial_of(&raw),
-            p::mode_of(&raw),
+            p::lighting_mode_of(&raw),
             p::fn_function(&raw),
         );
         let _ = p::parse_leds(&[raw]);

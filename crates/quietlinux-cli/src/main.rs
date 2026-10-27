@@ -52,7 +52,7 @@ enum Command {
     /// Light the keys one by one to check the key map
     ///
     /// Press Enter when the lit key is the one shown, otherwise type what is lit.
-    /// The stored effect shows again at the end.
+    /// The previous lighting mode is restored at the end.
     Calibrate {
         /// Start at this LED index (hex, see `quietlinux keys`)
         #[arg(long, value_name = "HEX", value_parser = parse_hex_u8)]
@@ -70,7 +70,7 @@ enum Light {
         #[arg(long, default_value_t = 100, value_parser = clap::value_parser!(u8).range(0..=100))]
         brightness: u8,
     },
-    /// Show the effect stored in the keyboard again (leaves custom mode)
+    /// Show the effect stored in the keyboard again (leaves realtime mode)
     Stored,
     /// Per-LED colors by zone or key (volatile: lost when the keyboard is unplugged)
     ///
@@ -272,7 +272,9 @@ fn run(cli: Cli) -> Result<ExitCode, device::Error> {
                 report.mismatches.len()
             );
             if report.colors_lost {
-                println!("Custom colors were cleared: set them again with `quietlinux light set`.");
+                println!(
+                    "Realtime colors were cleared: set them again with `quietlinux light set`."
+                );
             }
             if !report.mismatches.is_empty() {
                 return Ok(ExitCode::FAILURE);

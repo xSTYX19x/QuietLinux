@@ -160,9 +160,14 @@ fn arrow(dir: Dir) -> &'static str {
     }
 }
 
+/// Key press notifications (`11:02` with request ID 0; the same code is `SetBinding` as a request).
+fn is_key_event(message: &Message) -> bool {
+    message.is_notification() && message.cmd == p::ACTION_FIRED
+}
+
 /// Serial number replies are never printed: they identify the keyboard.
 fn is_serial_reply(dir: Dir, message: &Message) -> bool {
-    dir == Dir::In && message.cmd == p::GET_SERIAL
+    dir == Dir::In && message.cmd == p::GET_SERIAL_NUMBER
 }
 
 /// Human-readable line, or `None` if filtered out.
@@ -171,7 +176,7 @@ pub fn format(line: &Line, start: f64, key_events: bool) -> Option<String> {
         Line::Message {
             time, dir, message, ..
         } => {
-            if !key_events && message.cmd == p::KEY_EVENT {
+            if !key_events && is_key_event(message) {
                 return None;
             }
             let data = if is_serial_reply(*dir, message) {
@@ -179,13 +184,24 @@ pub fn format(line: &Line, start: f64, key_events: bool) -> Option<String> {
             } else {
                 hex(&message.data)
             };
+            let status = match message.status {
+                p::STATUS_SUCCESS => String::new(),
+                s => format!(
+                    " status {}",
+                    p::status_name(s).map_or_else(|| format!("{s:#04x}"), str::to_owned)
+                ),
+            };
+            let request = if message.is_notification() {
+                "notify".to_owned()
+            } else {
+                format!("req {:02x}", message.request_id)
+            };
             format!(
-                "{:>10.3}  {}  {} {:<12} seq {:02x} s{:02x}  {data}",
+                "{:>10.3}  {}  {} {:<22} {request} s{:02x}{status}  {data}",
                 time - start,
                 arrow(*dir),
                 message.cmd,
-                p::command_name(message.cmd).unwrap_or("?"),
-                message.seq,
+                message.name().unwrap_or("?"),
                 message.session,
             )
         }
@@ -213,7 +229,7 @@ pub fn fixture(line: &Line) -> Option<String> {
     else {
         return None;
     };
-    if is_serial_reply(*dir, message) || message.cmd == p::KEY_EVENT {
+    if is_serial_reply(*dir, message) || is_key_event(message) {
         return None;
     }
     let packets: Vec<String> = packets.iter().map(|p| hex(p).replace(' ', "")).collect();
@@ -225,7 +241,7 @@ pub fn fixture(line: &Line) -> Option<String> {
         "{}  # {dir} {} {}",
         packets.join(" "),
         message.cmd,
-        p::command_name(message.cmd).unwrap_or("?")
+        message.name().unwrap_or("?")
     ))
 }
 
@@ -247,7 +263,7 @@ mod tests {
 
     #[test]
     fn detects_vendor_packets() {
-        let packet = p::get_mode(1, p::SESSION);
+        let packet = p::get_lighting_mode(1, p::SESSION);
         assert_eq!(vendor_packet(&packet), Some(packet));
         let mut with_id = vec![0];
         with_id.extend_from_slice(&packet);
@@ -263,12 +279,12 @@ mod tests {
     fn picks_the_device_with_vendor_packets() {
         let events = [
             transfer(0.0, "1.2", Dir::In, &[0; 8]),
-            transfer(1.0, "1.3", Dir::Out, &p::get_version(1)),
+            transfer(1.0, "1.3", Dir::Out, &p::get_device_info(1)),
             transfer(
                 2.0,
                 "1.3",
                 Dir::In,
-                &p::frame(p::GET_VERSION, &[2, 0, 1, 1, 0, 0, 3, 2], 1, 0).unwrap(),
+                &p::frame(p::GET_DEVICE_INFO, &[2, 0, 1, 1, 0, 0, 3, 2], 1, 0).unwrap(),
             ),
         ];
         assert_eq!(devices(&events), [("1.3".to_owned(), 2)]);
@@ -291,7 +307,12 @@ mod tests {
                 pk,
             )
         }));
-        events.push(transfer(9.0, "1.3", Dir::In, &p::get_mode(9, p::SESSION)));
+        events.push(transfer(
+            9.0,
+            "1.3",
+            Dir::In,
+            &p::get_lighting_mode(9, p::SESSION),
+        ));
         let lines = lines(&events, "1.3");
         assert_eq!(lines.len(), 3);
         assert!(matches!(&lines[0], Line::Note { .. }));
@@ -301,7 +322,10 @@ mod tests {
         else {
             panic!("{lines:?}")
         };
-        assert_eq!((*time, m.cmd, m.seq), (1.0, p::SET_LEDS, 5));
+        assert_eq!(
+            (*time, m.cmd, m.request_id),
+            (1.0, p::PERFORM_REALTIME_UPDATES, 5)
+        );
         assert_eq!(p::parse_leds(message).unwrap().entries.len(), 40);
     }
 
@@ -320,8 +344,8 @@ mod tests {
 
     #[test]
     fn serial_is_redacted_and_key_events_filtered() {
-        let serial = p::frame(p::GET_SERIAL, b"\x0cSECRET123456", 3, 0).unwrap();
-        let key = p::frame(p::KEY_EVENT, &[0x5c, 0, 1, 1, 0, 0x4f], 0, p::SESSION).unwrap();
+        let serial = p::frame(p::GET_SERIAL_NUMBER, b"\x0cSECRET123456", 3, 0).unwrap();
+        let key = p::frame(p::ACTION_FIRED, &[0x5c, 0, 1, 1, 0, 0x4f], 0, p::SESSION).unwrap();
         let events = [
             transfer(0.0, "1.3", Dir::In, &serial),
             transfer(1.0, "1.3", Dir::In, &key),
@@ -333,7 +357,7 @@ mod tests {
             "{}",
             shown[0]
         );
-        assert!(shown[1].contains("key event"));
+        assert!(shown[1].contains("ActionFired") && shown[1].contains("notify"));
         assert_eq!(
             lines.iter().filter_map(|l| format(l, 0.0, false)).count(),
             1
@@ -348,6 +372,6 @@ mod tests {
         let line = fixture(&lines[0]).unwrap();
         let hex = line.split('#').next().unwrap().trim();
         assert_eq!(hex.len(), 128);
-        assert!(line.ends_with("# out 10:06 effect"));
+        assert!(line.ends_with("# out 10:06 SetLayerConfig"));
     }
 }

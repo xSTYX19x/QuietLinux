@@ -32,12 +32,12 @@ pub struct Mismatch {
 pub struct Report {
     pub checked: usize,
     pub mismatches: Vec<Mismatch>,
-    /// The keyboard was in custom mode before: its colors could not be restored.
+    /// The keyboard was in realtime mode before: its colors could not be restored.
     pub colors_lost: bool,
 }
 
 /// Light `keys` one at a time (everything else off) and ask about each one.
-/// Afterwards the stored effect is shown again if it was active before.
+/// Afterwards the previous lighting mode is restored (realtime colors cannot be).
 pub fn calibrate<T: Transport>(
     session: &mut Session<T>,
     keys: &[&'static Key],
@@ -50,7 +50,7 @@ pub fn calibrate<T: Transport>(
     let mut report = Report {
         checked: 0,
         mismatches: Vec::new(),
-        colors_lost: previous != LightingMode::Effects,
+        colors_lost: previous == LightingMode::Realtime,
     };
     let mut lit: Option<u8> = None;
     for &key in keys {
@@ -68,8 +68,11 @@ pub fn calibrate<T: Transport>(
     if let Some(i) = lit {
         session.set_leds(&[Led::new(i, OFF)])?;
     }
-    if previous == LightingMode::Effects {
-        session.show_stored_effect()?;
+    match previous {
+        LightingMode::Off | LightingMode::General | LightingMode::Custom => {
+            session.set_lighting_mode(previous)?;
+        }
+        LightingMode::Realtime | LightingMode::Other(_) => {}
     }
     Ok(report)
 }
@@ -127,7 +130,7 @@ mod tests {
             kb.leds.values().all(|&c| c == OFF),
             "everything off at the end"
         );
-        assert_eq!(kb.mode, p::MODE_EFFECTS);
+        assert_eq!(kb.mode, p::MODE_GENERAL);
     }
 
     #[test]
@@ -143,12 +146,24 @@ mod tests {
     }
 
     #[test]
-    fn custom_mode_colors_are_reported_lost() {
+    fn realtime_colors_are_reported_lost() {
         let mut kb = FakeKeyboard::tested();
-        kb.mode = p::MODE_CUSTOM;
+        kb.mode = p::MODE_REALTIME;
         let mut session = Session::new(&mut kb, false).unwrap();
         let report = calibrate(&mut session, &[], |_| Answer::Stop).unwrap();
         assert!(report.colors_lost);
-        assert_eq!(kb.mode, p::MODE_CUSTOM);
+        assert_eq!(kb.mode, p::MODE_REALTIME);
+    }
+
+    #[test]
+    fn previous_mode_is_restored() {
+        for mode in [p::MODE_OFF, p::MODE_CUSTOM] {
+            let mut kb = FakeKeyboard::tested();
+            kb.mode = mode;
+            let mut session = Session::new(&mut kb, false).unwrap();
+            let report = calibrate(&mut session, &[], |_| Answer::Stop).unwrap();
+            assert!(!report.colors_lost);
+            assert_eq!(kb.mode, mode);
+        }
     }
 }

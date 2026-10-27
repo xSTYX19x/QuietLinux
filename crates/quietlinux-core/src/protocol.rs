@@ -2,14 +2,16 @@
 //!
 //! Ported from `lightmount/protocol.py` of
 //! [bbossa/keyboard_bequiet_lightmount_rgb](https://github.com/bbossa/keyboard_bequiet_lightmount_rgb)
-//! (GPL-2.0-or-later). Field meanings come from captures of the vendor software;
-//! see `docs/protocol.md`.
+//! (GPL-2.0-or-later). Field and command names follow IO Center Web, which calls
+//! the protocol "QLink"; see `docs/protocol.md` for sources.
 //!
 //! ```text
-//! Packet:  [len][idx][session][body ...][CRC-16/MODBUS of bytes 0..62, little endian, at 62..64]
+//! Packet:  [len][seq][session][body ...][CRC-16/MODBUS of bytes 0..62, little endian, at 62..64]
 //!   len     index of the last meaningful byte (= 2 + body length)
-//!   idx     fragment number (bits 0..6), bit 7 set when more fragments follow
-//! The body of the first fragment starts with [00][seq][cmd][sub]: seq fits in one byte.
+//!   seq     fragment number (bits 0..6), bit 7 set when more fragments follow
+//! The body of the first fragment starts with [status][request id][feature][command].
+//!   status      0 in requests; an error code (Status) in replies
+//!   request id  1..=255, echoed by the reply; 0 marks a notification from the keyboard
 //! ```
 
 use std::fmt;
@@ -37,60 +39,162 @@ const MAX_FRAGMENTS: usize = 0x80;
 /// Largest payload a message can carry (128 fragments).
 pub const MAX_PAYLOAD: usize = FIRST_CAPACITY + (MAX_FRAGMENTS - 1) * NEXT_CAPACITY;
 
-/// A command, written `group:id` in hex like the captures (`10:0d`).
+/// A command: feature and command ID, written `feature:id` in hex like the captures (`10:0d`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Command {
-    pub group: u8,
+    pub feature: u8,
     pub id: u8,
 }
 
 impl Command {
-    pub const fn new(group: u8, id: u8) -> Self {
-        Self { group, id }
+    pub const fn new(feature: u8, id: u8) -> Self {
+        Self { feature, id }
     }
 }
 
 impl fmt::Display for Command {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:02x}:{:02x}", self.group, self.id)
+        write!(f, "{:02x}:{:02x}", self.feature, self.id)
     }
 }
 
-pub const GET_VERSION: Command = Command::new(0x03, 0x01);
-pub const GET_SERIAL: Command = Command::new(0x03, 0x02);
-/// Read the lighting mode.
-pub const GET_MODE: Command = Command::new(0x10, 0x01);
-/// Set the lighting mode. The keyboard sends no reply with the same seq.
-pub const SET_MODE: Command = Command::new(0x10, 0x02);
-/// Lighting effect, stored in the keyboard.
-pub const SET_LIGHTING: Command = Command::new(0x10, 0x06);
-/// Per-LED colors, volatile.
-pub const SET_LEDS: Command = Command::new(0x10, 0x0d);
-/// Sent by the keyboard on its own, one per key press.
-pub const KEY_EVENT: Command = Command::new(0x11, 0x02);
-/// Open a session (IO Center); format not documented yet.
-pub const OPEN_SESSION: Command = Command::new(0x01, 0x01);
+// Features (IO Center Web). Firmware updates (DFU) are out of scope: no command
+// of that feature is ever built here.
+pub const FEATURE_ROOT: u8 = 0x01;
+pub const FEATURE_DFU: u8 = 0x02;
+pub const FEATURE_DEVICE_INFO: u8 = 0x03;
+pub const FEATURE_STORAGE: u8 = 0x04;
+pub const FEATURE_USB_DEVICE: u8 = 0x06;
+pub const FEATURE_KEYBOARD: u8 = 0x07;
+pub const FEATURE_LIGHTINGS: u8 = 0x10;
+pub const FEATURE_BINDINGS: u8 = 0x11;
+pub const FEATURE_MACROS: u8 = 0x12;
+pub const FEATURE_CONTROLS: u8 = 0x31;
 
-/// Short name of a known command, for logs and capture analysis.
-pub fn command_name(cmd: Command) -> Option<&'static str> {
-    let name = match cmd {
-        OPEN_SESSION => "open session",
-        GET_VERSION => "version",
-        GET_SERIAL => "serial",
-        GET_MODE => "get mode",
-        SET_MODE => "set mode",
-        SET_LIGHTING => "effect",
-        SET_LEDS => "LEDs",
-        KEY_EVENT => "key event",
+/// Open a session; format documented, not yet captured.
+pub const OPEN_SESSION: Command = Command::new(FEATURE_ROOT, 0x01);
+/// Model ID, revision and firmware version (bbossa: "version").
+pub const GET_DEVICE_INFO: Command = Command::new(FEATURE_DEVICE_INFO, 0x01);
+pub const GET_SERIAL_NUMBER: Command = Command::new(FEATURE_DEVICE_INFO, 0x02);
+pub const GET_LIGHTING_MODE: Command = Command::new(FEATURE_LIGHTINGS, 0x01);
+/// Set the lighting mode. The keyboard sends no reply with the same request ID.
+pub const SET_LIGHTING_MODE: Command = Command::new(FEATURE_LIGHTINGS, 0x02);
+/// Effect of a lighting layer, stored in the keyboard (bbossa: "effect").
+pub const SET_LAYER_CONFIG: Command = Command::new(FEATURE_LIGHTINGS, 0x06);
+/// Per-LED colors in realtime mode, volatile (bbossa: "LEDs").
+pub const PERFORM_REALTIME_UPDATES: Command = Command::new(FEATURE_LIGHTINGS, 0x0d);
+/// Notification: a key with a host-side binding was pressed (bbossa: "key event").
+pub const ACTION_FIRED: Command = Command::new(FEATURE_BINDINGS, 0x02);
+
+/// Name of a command (or of a notification: `notification` is true for request ID 0),
+/// as IO Center Web calls it. `None` for unknown ones.
+// One arm per (feature, command): names repeat across features.
+#[allow(clippy::match_same_arms)]
+pub fn command_name(cmd: Command, notification: bool) -> Option<&'static str> {
+    let name = match (cmd.feature, cmd.id, notification) {
+        (FEATURE_ROOT, 0x01, false) => "OpenSession",
+        (FEATURE_ROOT, 0x02, false) => "CloseSession",
+        (FEATURE_ROOT, 0x03, false) => "KeepAlive",
+        (FEATURE_ROOT, 0x04, false) => "GetSupportedFeatures",
+        (FEATURE_ROOT, 0x05, false) => "GetQLinkVersion",
+        (FEATURE_ROOT, 0x06, false) => "GetActiveSessionInfo",
+        (FEATURE_ROOT, 0x07, false) => "RequestStateChange",
+        (FEATURE_ROOT, 0x08, false) => "SendStateChangeDecision",
+        (FEATURE_ROOT, 0x01, true) => "SessionStateChanged",
+        (FEATURE_ROOT, 0x02, true) => "ActiveSessionChanged",
+        (FEATURE_ROOT, 0x03, true) => "StateChangeRequested",
+        (FEATURE_ROOT, 0x04, true) => "StateChangeDecision",
+        (FEATURE_DFU, _, _) => "DFU (firmware update, never used)",
+        (FEATURE_DEVICE_INFO, 0x01, false) => "GetDeviceInfo",
+        (FEATURE_DEVICE_INFO, 0x02, false) => "GetSerialNumber",
+        (FEATURE_DEVICE_INFO, 0x05, false) => "FactoryReset",
+        (FEATURE_DEVICE_INFO, 0x01, true) => "DeviceInfoChanged",
+        (FEATURE_STORAGE, 0x01, false) => "GetStorageInfo",
+        (FEATURE_STORAGE, 0x02, false) => "WriteUserData",
+        (FEATURE_STORAGE, 0x03, false) => "ReadUserData",
+        (FEATURE_USB_DEVICE, 0x01, false) => "GetPollingRate",
+        (FEATURE_USB_DEVICE, 0x02, false) => "SetPollingRate",
+        (FEATURE_KEYBOARD, 0x01, false) => "GetLayout",
+        (FEATURE_KEYBOARD, 0x02, false) => "GetConfig",
+        (FEATURE_KEYBOARD, 0x03, false) => "SetConfig",
+        (FEATURE_KEYBOARD, 0x04, false) => "GetState",
+        (FEATURE_KEYBOARD, 0x05, false) => "SetState",
+        (FEATURE_KEYBOARD, 0x06, false) => "GetSnapTapConfig",
+        (FEATURE_KEYBOARD, 0x07, false) => "SetSnapTapConfig",
+        (FEATURE_KEYBOARD, 0x01, true) => "ConfigChanged",
+        (FEATURE_KEYBOARD, 0x02, true) => "StateChanged",
+        (FEATURE_KEYBOARD, 0x03, true) => "SnapTapConfigChanged",
+        (FEATURE_LIGHTINGS, 0x01, false) => "GetLightingMode",
+        (FEATURE_LIGHTINGS, 0x02, false) => "SetLightingMode",
+        (FEATURE_LIGHTINGS, 0x03, false) => "GetLayersLayout",
+        (FEATURE_LIGHTINGS, 0x04, false) => "SetLayersLayout",
+        (FEATURE_LIGHTINGS, 0x05, false) => "GetLayerConfig",
+        (FEATURE_LIGHTINGS, 0x06, false) => "SetLayerConfig",
+        (FEATURE_LIGHTINGS, 0x07, false) => "GetLayerMask",
+        (FEATURE_LIGHTINGS, 0x08, false) => "SetLayerMask",
+        (FEATURE_LIGHTINGS, 0x09, false) => "GetLayerName",
+        (FEATURE_LIGHTINGS, 0x0a, false) => "SetLayerName",
+        (FEATURE_LIGHTINGS, 0x0b, false) => "GetPlaybackState",
+        (FEATURE_LIGHTINGS, 0x0c, false) => "SetPlaybackState",
+        (FEATURE_LIGHTINGS, 0x0d, false) => "PerformRealtimeUpdates",
+        (FEATURE_LIGHTINGS, 0x0e, false) => "GetGlobalLayers",
+        (FEATURE_LIGHTINGS, 0x0f, false) => "GetCalibration",
+        (FEATURE_LIGHTINGS, 0x10, false) => "SetCalibration",
+        (FEATURE_BINDINGS, 0x01, false) => "GetBindings",
+        (FEATURE_BINDINGS, 0x02, false) => "SetBinding",
+        (FEATURE_BINDINGS, 0x03, false) => "ClearBinding",
+        (FEATURE_BINDINGS, 0x04, false) => "GetConfig",
+        (FEATURE_BINDINGS, 0x05, false) => "SetConfig",
+        (FEATURE_BINDINGS, 0x06, false) => "GetBinding",
+        (FEATURE_BINDINGS, 0x01, true) => "BindingChanged",
+        (FEATURE_BINDINGS, 0x02, true) => "ActionFired",
+        (FEATURE_BINDINGS, 0x03, true) => "ConfigChanged",
+        (FEATURE_MACROS, 0x01, false) => "GetMacros",
+        (FEATURE_MACROS, 0x02, false) => "SetMacros",
+        (FEATURE_MACROS, 0x03, false) => "GetMacroConfig",
+        (FEATURE_MACROS, 0x04, false) => "SetMacroConfig",
+        (FEATURE_MACROS, 0x05, false) => "GetMacroEvents",
+        (FEATURE_MACROS, 0x06, false) => "SetMacroEvents",
+        (FEATURE_MACROS, 0x07, false) => "GetMacroName",
+        (FEATURE_MACROS, 0x08, false) => "SetMacroName",
+        (FEATURE_MACROS, 0x09, false) => "StartRecording",
+        (FEATURE_MACROS, 0x0a, false) => "StopRecording",
+        (FEATURE_MACROS, 0x0b, false) => "AbortPlayback",
+        (FEATURE_MACROS, 0x05, true) => "InputEvent",
         _ => return None,
     };
     Some(name)
 }
 
-/// Lighting mode where `10:06` effects apply.
-pub const MODE_EFFECTS: u8 = 0x01;
-/// Lighting mode where `10:0d` per-LED colors apply.
-pub const MODE_CUSTOM: u8 = 0x03;
+/// Name of a reply status code.
+pub fn status_name(status: u8) -> Option<&'static str> {
+    const NAMES: [&str; 14] = [
+        "SUCCESS",
+        "INVALID_SESSION_ID",
+        "INVALID_FEATURE_ID",
+        "INVALID_COMMAND_ID",
+        "INVALID_REQUEST_ID",
+        "INVALID_PARAMETER",
+        "TIMEOUT",
+        "BUSY",
+        "NOT_AUTHORIZED",
+        "NOT_ACTIVE",
+        "INVALID_STATE",
+        "INVALID_SIZE",
+        "INSUFFICIENT_RESOURCES",
+        "NOT_SUPPORTED",
+    ];
+    NAMES.get(usize::from(status)).copied()
+}
+
+/// Lighting mode: off.
+pub const MODE_OFF: u8 = 0x00;
+/// Lighting mode where the effects of the layers apply (bbossa: "effects").
+pub const MODE_GENERAL: u8 = 0x01;
+/// Lighting mode with stored per-key layers (not yet captured).
+pub const MODE_CUSTOM: u8 = 0x02;
+/// Lighting mode where `10:0d` per-LED colors apply, volatile (bbossa: "custom").
+pub const MODE_REALTIME: u8 = 0x03;
 
 /// Key event `data[1]` when Fn is held.
 pub const FN_LAYER: u8 = 0x80;
@@ -101,7 +205,12 @@ pub const EFFECT_STATIC: u8 = 0x00;
 pub const SPEED_DEFAULT: u8 = 0x32;
 pub const COLOR_MODE_SINGLE: u8 = 0x00;
 
-const ENTRY_TAG: u8 = 0x03;
+/// Status byte of a request, and of a successful reply.
+pub const STATUS_SUCCESS: u8 = 0x00;
+
+/// Realtime update operations (`10:0d`): `[03][index u16 LE][R][G][B]` and `[00]`.
+const OP_SET_COLOR: u8 = 0x03;
+const OP_COMMIT: u8 = 0x00;
 const ENTRY_SIZE: usize = 6;
 /// IO Center's split of a full per-LED update.
 pub const ENTRIES_PER_MESSAGE: usize = 40;
@@ -188,7 +297,7 @@ pub fn message(
             #[allow(clippy::cast_possible_truncation)]
             let idx = i as u8 | if i + 1 < count { MORE_FRAGMENTS } else { 0 };
             if i == 0 {
-                let mut body = vec![0x00, seq, cmd.group, cmd.id];
+                let mut body = vec![STATUS_SUCCESS, seq, cmd.feature, cmd.id];
                 body.extend_from_slice(chunk);
                 packet(idx, session, &body)
             } else {
@@ -219,9 +328,10 @@ pub fn crc_ok(raw: &Packet) -> bool {
     u16::from_le_bytes([raw[BODY_END], raw[BODY_END + 1]]) == crc16_modbus(&raw[..BODY_END])
 }
 
-/// Reply with the same seq and command as `request`.
+/// Reply with the same request ID and command as `request`.
+/// The status byte is not compared: error replies are replies too.
 pub fn is_reply(resp: &Packet, request: &Packet) -> bool {
-    resp[3..7] == request[3..7]
+    fragment_index(resp) == 0 && resp[4..7] == request[4..7]
 }
 
 /// Fragment index (bits 0..6 of byte 1).
@@ -246,9 +356,19 @@ pub fn command_of(raw: &Packet) -> Command {
     Command::new(raw[5], raw[6])
 }
 
-/// Seq of a first fragment.
-pub fn seq_of(raw: &Packet) -> u8 {
+/// Request ID of a first fragment (0 for notifications).
+pub fn request_id_of(raw: &Packet) -> u8 {
     raw[4]
+}
+
+/// Status byte of a first fragment: 0 in requests and successful replies.
+pub fn status_of(raw: &Packet) -> u8 {
+    raw[3]
+}
+
+/// True for a notification sent by the keyboard on its own (request ID 0).
+pub fn is_notification(raw: &Packet) -> bool {
+    fragment_index(raw) == 0 && request_id_of(raw) == 0
 }
 
 /// Data of a single-packet message (after the 4-byte header).
@@ -256,11 +376,25 @@ pub fn data(raw: &Packet) -> &[u8] {
     body(raw).get(4..).unwrap_or(&[])
 }
 
+impl Message {
+    /// True for a notification sent by the keyboard on its own (request ID 0).
+    pub fn is_notification(&self) -> bool {
+        self.request_id == 0
+    }
+
+    /// Name of the command or notification, as IO Center Web calls it.
+    pub fn name(&self) -> Option<&'static str> {
+        command_name(self.cmd, self.is_notification())
+    }
+}
+
 /// A message rebuilt from its fragments.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Message {
-    pub seq: u8,
+    pub request_id: u8,
     pub session: u8,
+    /// 0 in requests and successful replies.
+    pub status: u8,
     pub cmd: Command,
     pub data: Vec<u8>,
 }
@@ -279,8 +413,9 @@ pub fn reassemble(packets: &[Packet]) -> Option<Message> {
         data.extend_from_slice(body(raw));
     }
     Some(Message {
-        seq: seq_of(first),
+        request_id: request_id_of(first),
         session: first[2],
+        status: status_of(first),
         cmd: command_of(first),
         data,
     })
@@ -289,17 +424,17 @@ pub fn reassemble(packets: &[Packet]) -> Option<Message> {
 // --- 03:01 / 03:02: identification ------------------------------------------
 // IO Center sends both before opening a session (01:01), with session byte 00.
 
-pub fn get_version(seq: u8) -> Packet {
-    short_frame(GET_VERSION, &[], seq, SESSION_NONE)
+pub fn get_device_info(seq: u8) -> Packet {
+    short_frame(GET_DEVICE_INFO, &[], seq, SESSION_NONE)
 }
 
 /// `03:01` reply data: 8 bytes, identical in every capture (firmware version, presumably).
-pub fn version_of(resp: &Packet) -> &[u8] {
+pub fn device_info_of(resp: &Packet) -> &[u8] {
     data(resp)
 }
 
-pub fn get_serial(seq: u8) -> Packet {
-    short_frame(GET_SERIAL, &[], seq, SESSION_NONE)
+pub fn get_serial_number(seq: u8) -> Packet {
+    short_frame(GET_SERIAL_NUMBER, &[], seq, SESSION_NONE)
 }
 
 /// `03:02` reply data: `[length]` then ASCII, specific to each keyboard (serial number, presumably).
@@ -314,16 +449,16 @@ pub fn serial_of(resp: &Packet) -> String {
 
 // --- 10:01 / 10:02: lighting mode -------------------------------------------
 
-pub fn get_mode(seq: u8, session: u8) -> Packet {
-    short_frame(GET_MODE, &[], seq, session)
+pub fn get_lighting_mode(seq: u8, session: u8) -> Packet {
+    short_frame(GET_LIGHTING_MODE, &[], seq, session)
 }
 
-pub fn mode_of(resp: &Packet) -> Option<u8> {
+pub fn lighting_mode_of(resp: &Packet) -> Option<u8> {
     data(resp).first().copied()
 }
 
-pub fn set_mode(mode: u8, seq: u8, session: u8) -> Packet {
-    short_frame(SET_MODE, &[mode], seq, session)
+pub fn set_lighting_mode(mode: u8, seq: u8, session: u8) -> Packet {
+    short_frame(SET_LIGHTING_MODE, &[mode], seq, session)
 }
 
 // --- 11:02: key events -------------------------------------------------------
@@ -332,7 +467,7 @@ pub fn set_mode(mode: u8, seq: u8, session: u8) -> Packet {
 
 /// Function code of an Fn-layer key event, or `None` for anything else (plain keys included).
 pub fn fn_function(raw: &Packet) -> Option<u8> {
-    if fragment_index(raw) != 0 || command_of(raw) != KEY_EVENT || raw[0] < 10 {
+    if fragment_index(raw) != 0 || command_of(raw) != ACTION_FIRED || raw[0] < 10 {
         return None;
     }
     (raw[8] == FN_LAYER).then_some(raw[10])
@@ -354,12 +489,13 @@ pub fn static_color(rgb: Rgb, brightness: u8, seq: u8, session: u8) -> Packet {
         rgb.g,
         rgb.b,
     ];
-    short_frame(SET_LIGHTING, &payload, seq, session)
+    short_frame(SET_LAYER_CONFIG, &payload, seq, session)
 }
 
-// --- 10:0d: per-LED colors ---------------------------------------------------
-//   [N] N × [03][index][00][R][G][B] [00 if last message]
-//   N = number of entries, +1 for the last message of an update
+// --- 10:0d: PerformRealtimeUpdates (per-LED colors) ---------------------------
+//   [N] then N operations: SetColor [03][index u16 LE][R][G][B], Commit [00]
+//   IO Center commits once, at the end of the last message of an update, so
+//   N = number of colors, +1 in the last message for the commit.
 
 /// One LED and its color.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -387,7 +523,7 @@ pub fn leds_payload(entries: &[Led], last: bool) -> Result<Vec<u8>, ProtocolErro
     payload.push(if last { count + 1 } else { count });
     for led in entries {
         payload.extend_from_slice(&[
-            ENTRY_TAG,
+            OP_SET_COLOR,
             led.index,
             0x00,
             led.color.r,
@@ -396,31 +532,39 @@ pub fn leds_payload(entries: &[Led], last: bool) -> Result<Vec<u8>, ProtocolErro
         ]);
     }
     if last {
-        payload.push(0x00);
+        payload.push(OP_COMMIT);
     }
     Ok(payload)
 }
 
-/// Full update: messages of 40 entries, the last one marked, seq incremented per message.
-pub fn update(entries: &[Led], seq: u8, session: u8) -> Vec<Vec<Packet>> {
+/// Full update: messages of 40 colors, the last one committed, request ID incremented per message.
+pub fn update(entries: &[Led], request_id: u8, session: u8) -> Vec<Vec<Packet>> {
     let batches: Vec<&[Led]> = entries.chunks(ENTRIES_PER_MESSAGE).collect();
     let count = batches.len();
+    let mut id = request_id;
     batches
         .into_iter()
-        .zip(0u8..)
-        .map(|(batch, i)| {
-            let last = usize::from(i) + 1 == count;
-            let payload = leds_payload(batch, last).expect("40 entries fit in one message");
-            message(SET_LEDS, &payload, seq.wrapping_add(i), session)
-                .expect("40 entries fit in one message")
+        .enumerate()
+        .map(|(i, batch)| {
+            let payload =
+                leds_payload(batch, i + 1 == count).expect("40 entries fit in one message");
+            let msg = message(PERFORM_REALTIME_UPDATES, &payload, id, session)
+                .expect("40 entries fit in one message");
+            id = next_request_id(id);
+            msg
         })
         .collect()
+}
+
+/// The request ID after `id`: 1..=255, skipping 0, which marks notifications.
+pub fn next_request_id(id: u8) -> u8 {
+    id.checked_add(1).unwrap_or(1)
 }
 
 /// A decoded `10:0d` message.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LedMessage {
-    pub seq: u8,
+    pub request_id: u8,
     pub session: u8,
     pub entries: Vec<Led>,
     pub last: bool,
@@ -429,18 +573,18 @@ pub struct LedMessage {
 /// Decode a `10:0d` message from its fragments.
 pub fn parse_leds(packets: &[Packet]) -> Option<LedMessage> {
     let msg = reassemble(packets)?;
-    if msg.cmd != SET_LEDS {
+    if msg.cmd != PERFORM_REALTIME_UPDATES {
         return None;
     }
     let (&n, rest) = msg.data.split_first()?;
     let entries: Vec<Led> = rest
         .chunks_exact(ENTRY_SIZE)
-        .take_while(|e| e[0] == ENTRY_TAG)
+        .take_while(|e| e[0] == OP_SET_COLOR)
         .map(|e| Led::new(e[1], Rgb::new(e[3], e[4], e[5])))
         .collect();
     let last = usize::from(n) == entries.len() + 1;
     Some(LedMessage {
-        seq: msg.seq,
+        request_id: msg.request_id,
         session: msg.session,
         entries,
         last,

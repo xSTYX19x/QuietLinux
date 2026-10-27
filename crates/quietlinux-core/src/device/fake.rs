@@ -41,7 +41,7 @@ impl FakeKeyboard {
 
     /// A keyboard with the tested firmware version, in effects mode.
     pub fn tested() -> Self {
-        Self::new(&KNOWN_VERSIONS[0], p::MODE_EFFECTS)
+        Self::new(&KNOWN_VERSIONS[0], p::MODE_GENERAL)
     }
 
     /// Commands of the messages received (first fragments only), like `"10:0d"`.
@@ -54,8 +54,13 @@ impl FakeKeyboard {
     }
 
     fn reply(&mut self, request: &Packet, data: &[u8]) {
-        let resp = p::frame(p::command_of(request), data, p::seq_of(request), request[2])
-            .expect("short reply");
+        let resp = p::frame(
+            p::command_of(request),
+            data,
+            p::request_id_of(request),
+            request[2],
+        )
+        .expect("short reply");
         self.pending.push_back(resp);
     }
 
@@ -70,22 +75,22 @@ impl FakeKeyboard {
             return;
         };
         match msg.cmd {
-            p::GET_VERSION => {
+            p::GET_DEVICE_INFO => {
                 let version = self.version.clone();
                 self.reply(&fragments[0], &version);
             }
-            p::GET_MODE => {
+            p::GET_LIGHTING_MODE => {
                 let mode = self.mode;
                 self.reply(&fragments[0], &[mode]);
             }
-            p::SET_MODE => {
+            p::SET_LIGHTING_MODE => {
                 self.mode = msg.data.first().copied().unwrap_or_default();
-                if self.mode == p::MODE_CUSTOM {
+                if self.mode == p::MODE_REALTIME {
                     self.leds.clear();
                 }
             }
-            p::SET_LIGHTING => self.reply(&fragments[0], &[]),
-            p::SET_LEDS => {
+            p::SET_LAYER_CONFIG => self.reply(&fragments[0], &[]),
+            p::PERFORM_REALTIME_UPDATES => {
                 if let Some(update) = p::parse_leds(&fragments) {
                     self.leds
                         .extend(update.entries.iter().map(|l| (l.index, l.color)));

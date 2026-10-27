@@ -13,3 +13,7 @@ rustix.workspace = true
 
 [lints]
 workspace = true
+
+[features]
+# Simulated keyboard (device::fake) for tests of dependent crates.
+fake = []

@@ -125,8 +125,10 @@ Windows app and the web app in phase 2. ✔ = already known thanks to bbossa.
 - [x] Cargo workspace, port bbossa's protocol and fixtures, tests passing
 - [x] CI (GitHub Actions): `cargo fmt`, `clippy`, tests without keyboard, `cargo deny`
 - [x] Planning file in English
-- [ ] First commit and push to GitHub
-- [ ] German ISO key map (LED index ↔ key); bbossa only has French ISO. Verify with a `calibrate` command that lights the keys one by one
+- [x] First commit
+- [x] Key map with W3C key names and legends (uk, de, fr); same physical layout as bbossa's verified French ISO map
+- [x] `calibrate` command that lights the keys one by one
+- [ ] Run `calibrate --layout de` on the reference keyboard and fix any legend that differs from the keycaps
 
 ## 4. Phase 1 – Capture setup
 
@@ -203,8 +205,10 @@ crates/
   quietlinux-core/     library
     protocol.rs        pure functions: build/parse frames, CRC, fragmentation (no I/O, ported from bbossa)
     device.rs          sysfs discovery, interface checks, hidraw transport, identified session
+    device/fake.rs     simulated keyboard for tests (feature `fake`)
     hid_descriptor.rs  minimal HID report descriptor parser
     layout.rs          LED indexes per zone
+    keymap.rs          physical keys: W3C names, LED index, position; keycap legends per layout
     color.rs           RGB colors
     model/             (planned) profiles, effects, key map, macros (serde, TOML)
   quietlinux-cli/      binary `quietlinux` (clap)
@@ -228,7 +232,7 @@ logic. Dependencies stay minimal (today: clap, rustix) and are checked in CI
 - [ ] Fuzz the parsers (`cargo fuzz`)
 
 ### 6.3 Phase 4 – CLI
-- [x] `status`, `zones`, `light static`, `light set`
+- [x] `status`, `zones`, `keys`, `calibrate`, `light static`, `light stored`, `light set` (zones and single keys)
 - [ ] `backup`, `restore`
 - [ ] `light effect …` for every effect
 - [ ] `keymap get|set|reset`, `macro list|add|edit|delete|assign`

@@ -23,6 +23,9 @@ use crate::Rgb;
 use crate::hid_descriptor::{Usage, top_level_usage};
 use crate::protocol::{self as p, Command, Led, PACKET_SIZE, Packet, ProtocolError};
 
+#[cfg(any(test, feature = "fake"))]
+pub mod fake;
+
 pub const SYSFS: &str = "/sys";
 const HID_ID: &str = "0003:0000373F:00000002";
 pub const VENDOR_INTERFACE: u8 = 2;
@@ -427,6 +430,10 @@ impl<T: Transport> Session<T> {
         &self.identity
     }
 
+    pub fn transport(&self) -> &T {
+        &self.transport
+    }
+
     /// True when writing is allowed: known firmware, or explicitly forced.
     pub fn writable(&self) -> bool {
         self.identity.known() || self.allow_unknown_firmware
@@ -515,6 +522,12 @@ impl<T: Transport> Session<T> {
         Ok(())
     }
 
+    /// Switch to effects mode: the effect stored in the keyboard shows again.
+    pub fn show_stored_effect(&mut self) -> Result<()> {
+        self.check_writable()?;
+        self.set_mode(p::MODE_EFFECTS)
+    }
+
     /// Static color effect (`10:06`, stored in the keyboard), after switching to effects mode.
     pub fn set_static(&mut self, color: Rgb, brightness: u8) -> Result<()> {
         self.check_writable()?;
@@ -538,72 +551,12 @@ pub fn open(
 
 #[cfg(test)]
 mod tests {
-    use std::collections::VecDeque;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
+    use super::fake::FakeKeyboard;
     use super::*;
 
     const KNOWN: [u8; 8] = KNOWN_VERSIONS[0];
-
-    /// Answers like the Light Mount, from what is known of its protocol.
-    struct FakeKeyboard {
-        version: Vec<u8>,
-        mode: u8,
-        received: Vec<Packet>,
-        pending: VecDeque<Packet>,
-    }
-
-    impl FakeKeyboard {
-        fn new(version: &[u8], mode: u8) -> Self {
-            Self {
-                version: version.to_vec(),
-                mode,
-                received: Vec::new(),
-                pending: VecDeque::new(),
-            }
-        }
-
-        fn reply(&mut self, request: &Packet, data: &[u8]) {
-            let resp =
-                p::frame(p::command_of(request), data, p::seq_of(request), request[2]).unwrap();
-            self.pending.push_back(resp);
-        }
-    }
-
-    impl Transport for &mut FakeKeyboard {
-        fn send(&mut self, packet: &Packet) -> io::Result<()> {
-            self.received.push(*packet);
-            if p::fragment_index(packet) != 0 {
-                return Ok(());
-            }
-            match p::command_of(packet) {
-                p::GET_VERSION => {
-                    let version = self.version.clone();
-                    self.reply(packet, &version);
-                }
-                p::GET_MODE => {
-                    let mode = self.mode;
-                    self.reply(packet, &[mode]);
-                }
-                p::SET_MODE => self.mode = p::data(packet)[0],
-                p::SET_LIGHTING => self.reply(packet, &[]),
-                _ => {}
-            }
-            Ok(())
-        }
-
-        fn recv(&mut self, _timeout: Duration) -> io::Result<Option<Packet>> {
-            Ok(self.pending.pop_front())
-        }
-    }
-
-    fn commands(kb: &FakeKeyboard) -> Vec<String> {
-        kb.received
-            .iter()
-            .filter(|r| p::fragment_index(r) == 0)
-            .map(|r| p::command_of(r).to_string())
-            .collect()
-    }
 
     #[test]
     fn identify_and_read_mode() {
@@ -611,7 +564,7 @@ mod tests {
         let mut session = Session::with_seq(&mut kb, false, 0xfe).unwrap();
         assert!(session.identity().known());
         assert_eq!(session.lighting_mode().unwrap(), LightingMode::Effects);
-        assert_eq!(commands(&kb), ["03:01", "10:01"]);
+        assert_eq!(kb.commands(), ["03:01", "10:01"]);
         assert_eq!(kb.received[0][2], p::SESSION_NONE);
         assert_eq!(p::seq_of(&kb.received[1]), 0xff);
     }
@@ -680,7 +633,7 @@ mod tests {
             session.set_leds(&[]),
             Err(Error::UnknownFirmware(_))
         ));
-        assert_eq!(commands(&kb), ["03:01"]);
+        assert_eq!(kb.commands(), ["03:01"]);
     }
 
     #[test]
@@ -688,7 +641,7 @@ mod tests {
         let mut kb = FakeKeyboard::new(&[9; 8], p::MODE_EFFECTS);
         let mut session = Session::with_seq(&mut kb, true, 0).unwrap();
         session.set_static(Rgb::new(1, 2, 3), 100).unwrap();
-        assert_eq!(commands(&kb), ["03:01", "10:02", "10:06"]);
+        assert_eq!(kb.commands(), ["03:01", "10:02", "10:06"]);
     }
 
     #[test]
@@ -696,7 +649,7 @@ mod tests {
         let mut kb = FakeKeyboard::new(&KNOWN, p::MODE_CUSTOM);
         let mut session = Session::with_seq(&mut kb, false, 0).unwrap();
         session.set_static(Rgb::new(0xe6, 0x30, 0x00), 50).unwrap();
-        assert_eq!(commands(&kb), ["03:01", "10:02", "10:06"]);
+        assert_eq!(kb.commands(), ["03:01", "10:02", "10:06"]);
         assert_eq!(kb.mode, p::MODE_EFFECTS);
         assert_eq!(
             kb.received[2],
@@ -714,7 +667,7 @@ mod tests {
         let mut session = Session::with_seq(&mut kb, false, 0).unwrap();
         session.set_leds(&leds).unwrap();
         assert_eq!(
-            commands(&kb),
+            kb.commands(),
             [
                 "03:01", "10:01", "10:02", "10:0d", "10:0d", "10:0d", "10:0d", "10:0d"
             ]
@@ -724,7 +677,7 @@ mod tests {
         let mut session = Session::with_seq(&mut kb, false, 0).unwrap();
         session.set_leds(&leds).unwrap();
         assert_eq!(
-            commands(&kb),
+            kb.commands(),
             [
                 "03:01", "10:01", "10:0d", "10:0d", "10:0d", "10:0d", "10:0d"
             ]

@@ -99,7 +99,10 @@ LED indexes:
 | `9e`–`a2` | left side strip |
 | `a3`–`a7` | right side strip |
 
-The mapping of key LEDs to the German ISO layout is still to be done.
+Which key each LED belongs to is in `crates/quietlinux-core/src/keymap.rs` [bbossa]:
+the key LEDs are numbered row by row like the LampArray lamps. French and
+German ISO keyboards share the same physical layout, so the mapping holds for
+both; `quietlinux calibrate` checks it on a keyboard.
 
 ### `11:02` key events
 

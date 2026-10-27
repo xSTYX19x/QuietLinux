@@ -18,3 +18,6 @@ clap.workspace = true
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+quietlinux-core = { workspace = true, features = ["fake"] }

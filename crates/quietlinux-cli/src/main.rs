@@ -1,13 +1,19 @@
 //! `quietlinux`: command line tool for the be quiet! Light Mount keyboard.
 
+mod calibrate;
+
+use std::io::{self, BufRead, Write};
 use std::process::ExitCode;
 use std::str::FromStr;
 
 use clap::{Parser, Subcommand};
 use quietlinux_core::Rgb;
 use quietlinux_core::device::{self, fmt_version};
+use quietlinux_core::keymap::{self, KEYS, Key, Layout};
 use quietlinux_core::layout::{self, Zone};
 use quietlinux_core::protocol::Led;
+
+use crate::calibrate::Answer;
 
 #[derive(Debug, Parser)]
 #[command(
@@ -24,6 +30,10 @@ struct Cli {
     #[arg(long, global = true)]
     allow_unknown_firmware: bool,
 
+    /// Keycap legends to show: uk, de or fr
+    #[arg(long, global = true, default_value_t = Layout::Uk)]
+    layout: Layout,
+
     #[command(subcommand)]
     command: Command,
 }
@@ -34,9 +44,20 @@ enum Command {
     Status,
     /// List the lighting zones and their LED indexes (does not touch the keyboard)
     Zones,
+    /// List the keys: LED index, name and legend (does not touch the keyboard)
+    Keys,
     /// Change the lighting
     #[command(subcommand)]
     Light(Light),
+    /// Light the keys one by one to check the key map
+    ///
+    /// Press Enter when the lit key is the one shown, otherwise type what is lit.
+    /// The stored effect shows again at the end.
+    Calibrate {
+        /// Start at this LED index (hex, see `quietlinux keys`)
+        #[arg(long, value_name = "HEX", value_parser = parse_hex_u8)]
+        start: Option<u8>,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -49,12 +70,16 @@ enum Light {
         #[arg(long, default_value_t = 100, value_parser = clap::value_parser!(u8).range(0..=100))]
         brightness: u8,
     },
-    /// Per-LED colors by zone (volatile: lost when the keyboard is unplugged)
+    /// Show the effect stored in the keyboard again (leaves custom mode)
+    Stored,
+    /// Per-LED colors by zone or key (volatile: lost when the keyboard is unplugged)
     ///
-    /// Zones not given are switched off. Example: quietlinux light set keys=ff2a00 top=f4dbae
+    /// LEDs not given are switched off; later pairs win.
+    /// Example: quietlinux light set keys=ff2a00 top=f4dbae KeyW=00ff00
     Set {
-        /// ZONE=COLOR pairs; zones: all, top, knob, keys, left, right
-        #[arg(required = true, value_name = "ZONE=COLOR")]
+        /// TARGET=COLOR pairs. Targets: zones (all, top, knob, keys, left, right)
+        /// or key names (see `quietlinux keys`)
+        #[arg(required = true, value_name = "TARGET=COLOR")]
         assignments: Vec<Assignment>,
         /// Scale all colors (0.0 to 1.0): per-LED colors have no brightness setting
         #[arg(long, default_value_t = 1.0)]
@@ -62,11 +87,49 @@ enum Light {
     },
 }
 
-/// Target of a `ZONE=COLOR` pair.
+fn parse_hex_u8(s: &str) -> Result<u8, String> {
+    u8::from_str_radix(s.trim_start_matches("0x"), 16)
+        .map_err(|_| format!("expected a hex byte like 2e, got {s:?}"))
+}
+
+/// Target of a `TARGET=COLOR` pair.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Target {
     All,
     Zone(Zone),
+    /// A single LED, by key name.
+    Led(u8),
+}
+
+impl Target {
+    fn contains(self, index: u8) -> bool {
+        match self {
+            Target::All => true,
+            Target::Zone(zone) => zone.leds().any(|i| i == index),
+            Target::Led(led) => led == index,
+        }
+    }
+}
+
+impl FromStr for Target {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s == "all" {
+            return Ok(Target::All);
+        }
+        if let Ok(zone) = s.parse() {
+            return Ok(Target::Zone(zone));
+        }
+        keymap::by_code(s)
+            .map(|k| Target::Led(k.led))
+            .ok_or_else(|| {
+                format!(
+                    "unknown target {s:?}: use a zone (all, top, knob, keys, left, right) \
+                 or a key name like Escape or KeyW (see `quietlinux keys`)"
+                )
+            })
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -79,16 +142,11 @@ impl FromStr for Assignment {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let (zone, color) = s
+        let (target, color) = s
             .split_once('=')
-            .ok_or_else(|| format!("expected ZONE=COLOR, got {s:?}"))?;
-        let target = if zone == "all" {
-            Target::All
-        } else {
-            Target::Zone(zone.parse()?)
-        };
+            .ok_or_else(|| format!("expected TARGET=COLOR, got {s:?}"))?;
         Ok(Self {
-            target,
+            target: target.parse()?,
             color: color.parse().map_err(|e| format!("{e}"))?,
         })
     }
@@ -101,17 +159,34 @@ fn leds_for(assignments: &[Assignment], dim: f32) -> Vec<Led> {
             let color = assignments
                 .iter()
                 .rev()
-                .find(|a| match a.target {
-                    Target::All => true,
-                    Target::Zone(zone) => zone.leds().any(|i| i == index),
-                })
+                .find(|a| a.target.contains(index))
                 .map_or(Rgb::BLACK, |a| a.color.scaled(dim));
             Led::new(index, color)
         })
         .collect()
 }
 
-fn run(cli: Cli) -> Result<(), device::Error> {
+/// Ask on the terminal about one lit key.
+fn ask_terminal(key: &Key, layout: Layout) -> Answer {
+    print!(
+        "{:02x}  {:<15} {:<8} ",
+        key.led,
+        key.code,
+        layout.legend(key.code)
+    );
+    let _ = io::stdout().flush();
+    let mut line = String::new();
+    match io::stdin().lock().read_line(&mut line) {
+        Ok(0) | Err(_) => Answer::Stop, // end of input (Ctrl+D)
+        Ok(_) => match line.trim() {
+            "" => Answer::Match,
+            "q" => Answer::Stop,
+            other => Answer::Lit(other.to_owned()),
+        },
+    }
+}
+
+fn run(cli: Cli) -> Result<ExitCode, device::Error> {
     let usb_path = cli.usb_path.as_deref();
     match cli.command {
         Command::Zones => {
@@ -122,6 +197,17 @@ fn run(cli: Cli) -> Result<(), device::Error> {
                     "{:<6} {:3} LEDs  {first:02x}-{last:02x}",
                     zone.name(),
                     leds.len()
+                );
+            }
+        }
+        Command::Keys => {
+            println!("LED  {:<15} LEGEND ({})", "NAME", cli.layout);
+            for key in &KEYS {
+                println!(
+                    "{:02x}   {:<15} {}",
+                    key.led,
+                    key.code,
+                    cli.layout.legend(key.code)
                 );
             }
         }
@@ -148,17 +234,57 @@ fn run(cli: Cli) -> Result<(), device::Error> {
             let (_, mut session) = device::open(usb_path, cli.allow_unknown_firmware)?;
             session.set_static(color, brightness)?;
         }
+        Command::Light(Light::Stored) => {
+            let (_, mut session) = device::open(usb_path, cli.allow_unknown_firmware)?;
+            session.show_stored_effect()?;
+        }
         Command::Light(Light::Set { assignments, dim }) => {
             let (_, mut session) = device::open(usb_path, cli.allow_unknown_firmware)?;
             session.set_leds(&leds_for(&assignments, dim))?;
         }
+        Command::Calibrate { start } => {
+            let keys: Vec<&Key> = KEYS
+                .iter()
+                .filter(|k| k.led >= start.unwrap_or(0))
+                .collect();
+            let (_, mut session) = device::open(usb_path, cli.allow_unknown_firmware)?;
+            println!(
+                "{} keys, one at a time ({} legends). Enter = the lit key is the one shown, \
+                 otherwise type what is lit; q = stop.",
+                keys.len(),
+                cli.layout
+            );
+            let layout = cli.layout;
+            let report =
+                calibrate::calibrate(&mut session, &keys, |key| ask_terminal(key, layout))?;
+            for m in &report.mismatches {
+                println!(
+                    "{:02x} {}: expected {:?}, lit: {:?}",
+                    m.key.led,
+                    m.key.code,
+                    layout.legend(m.key.code),
+                    m.lit
+                );
+            }
+            println!(
+                "{} checked, {} mismatch(es)",
+                report.checked,
+                report.mismatches.len()
+            );
+            if report.colors_lost {
+                println!("Custom colors were cleared: set them again with `quietlinux light set`.");
+            }
+            if !report.mismatches.is_empty() {
+                return Ok(ExitCode::FAILURE);
+            }
+        }
     }
-    Ok(())
+    Ok(ExitCode::SUCCESS)
 }
 
 fn main() -> ExitCode {
     match run(Cli::parse()) {
-        Ok(()) => ExitCode::SUCCESS,
+        Ok(code) => code,
         Err(e) => {
             eprintln!("quietlinux: {e}");
             ExitCode::FAILURE
@@ -187,9 +313,21 @@ mod tests {
             "all=000000".parse::<Assignment>().unwrap().target,
             Target::All
         );
+        assert_eq!(
+            "Escape=000000".parse::<Assignment>().unwrap().target,
+            Target::Led(0x2e)
+        );
         assert!("keys".parse::<Assignment>().is_err());
         assert!("wheel=ff0000".parse::<Assignment>().is_err());
+        assert!("escape=ff0000".parse::<Assignment>().is_err());
         assert!("keys=red".parse::<Assignment>().is_err());
+    }
+
+    #[test]
+    fn hex_byte() {
+        assert_eq!(parse_hex_u8("2e"), Ok(0x2e));
+        assert_eq!(parse_hex_u8("0x9D"), Ok(0x9d));
+        assert!(parse_hex_u8("100").is_err());
     }
 
     #[test]
@@ -197,15 +335,18 @@ mod tests {
         let assignments = [
             "all=111111".parse().unwrap(),
             "knob=ff0000".parse().unwrap(),
+            "KeyW=00ff00".parse().unwrap(),
         ];
         let leds = leds_for(&assignments, 1.0);
         assert_eq!(leds.len(), 166);
-        assert!(leds.iter().all(|l| l.color
-            == if l.index == 0x2d {
-                Rgb::new(0xff, 0, 0)
-            } else {
-                Rgb::new(0x11, 0x11, 0x11)
-            }));
+        for led in leds {
+            let expected = match led.index {
+                0x2d => Rgb::new(0xff, 0, 0),
+                0x57 => Rgb::new(0, 0xff, 0),
+                _ => Rgb::new(0x11, 0x11, 0x11),
+            };
+            assert_eq!(led.color, expected, "LED {:02x}", led.index);
+        }
     }
 
     #[test]

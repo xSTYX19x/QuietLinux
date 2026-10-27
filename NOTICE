@@ -21,6 +21,8 @@ keyboard_bequiet_lightmount_rgb
     crates/quietlinux-core/src/device.rs          <- lightmount/device.py
     crates/quietlinux-core/src/hid_descriptor.rs  <- lightmount/hid.py
     crates/quietlinux-core/src/layout.rs          <- lightmount/layout.py
+    crates/quietlinux-core/src/keymap.rs          <- lightmount/keymap.py (LED indexes, positions, French legends)
+    crates/quietlinux-cli/src/calibrate.rs        <- calibrate command of lightmount/cli.py
     crates/quietlinux-core/tests/protocol.rs      <- tests/test_protocol.py
   The test fixtures in crates/quietlinux-core/tests/fixtures/ are copied
   unchanged from its tests/fixtures/ directory.

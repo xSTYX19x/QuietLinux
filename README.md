@@ -21,7 +21,8 @@ Not affiliated with or endorsed by be quiet!. See [Safety](#safety).
 |---|---|
 | Find the keyboard, read firmware version and lighting mode | ✅ |
 | Static color effect with brightness (stored in the keyboard) | ✅ |
-| Per-LED colors by zone: keys, top bar, knob, side strips (volatile) | ✅ |
+| Per-LED colors by zone (keys, top bar, knob, side strips) or by key (volatile) | ✅ |
+| Key map with layout-independent key names, legends for UK, German and French ISO | ✅ |
 | Other effects (wave, breathing, ripple, …) | planned |
 | Key remapping, Fn layer, knob, M1–M5 | planned |
 | Macros | planned |
@@ -44,6 +45,7 @@ sudo udevadm control --reload && sudo udevadm trigger
 # replug the keyboard, then:
 ./target/release/quietlinux status
 ./target/release/quietlinux light set keys=ff2a00 top=f4dbae knob=ffffff
+./target/release/quietlinux light stored   # back to the stored effect
 ```
 
 Details: [installation](docs/installation.md), [command line usage](docs/usage-cli.md).

@@ -129,6 +129,7 @@ pub fn action_text(action: &Action) -> Option<String> {
             effect: None,
         } => format!("lighting {}", LightingAction(*action).name()?),
         Action::WindowsShortcut(a) => format!("shortcut {}", Shortcut(*a).name()?),
+        Action::OpenWebsite(url) if info::website_ok(url) => format!("website {url}"),
         Action::Macro(id) => format!("macro {id}"),
         _ => return None,
     })
@@ -169,6 +170,13 @@ pub fn parse_desired(text: &str) -> Result<Desired, String> {
             effect: None,
         },
         "shortcut" => Action::WindowsShortcut(arg.parse::<Shortcut>()?.0),
+        "website" if info::website_ok(arg) => Action::OpenWebsite(arg.to_owned()),
+        "website" => {
+            return Err(format!(
+                "invalid website {arg:?}: http:// or https://, at most {} characters, no spaces",
+                info::MAX_WEBSITE
+            ));
+        }
         "macro" => Action::Macro(
             arg.parse()
                 .map_err(|_| format!("invalid macro ID {arg:?} in {text:?}"))?,
@@ -191,7 +199,7 @@ pub fn parse_desired(text: &str) -> Result<Desired, String> {
         }
         _ => {
             return Err(format!(
-                "invalid binding {text:?}: expected key, media, mouse, lighting, shortcut, macro, disable, default or raw"
+                "invalid binding {text:?}: expected key, media, mouse, lighting, shortcut, website, macro, disable, default or raw"
             ));
         }
     };
@@ -1217,6 +1225,7 @@ mod tests {
             "lighting next-effect",
             "shortcut calculator",
             "macro 2",
+            "website https://example.org",
         ] {
             let Desired::Action(action) = parse_desired(text).unwrap() else {
                 panic!("{text}")

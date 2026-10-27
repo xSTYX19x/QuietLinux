@@ -25,7 +25,7 @@ Not affiliated with or endorsed by be quiet!. See [Safety](#safety).
 | Key bindings on both layers (normal and Fn): keys and combinations, media, mouse buttons, lighting actions, macros stored in the keyboard, disable, reset | ✅ |
 | Game mode: which shortcuts it blocks | ✅ |
 | Backup and restore of bindings, game mode and macros as a TOML file (`backup`, `apply`) | ✅ |
-| Background service (`quietlinux-daemon`): per-key colors shown again after replugging or sleep | ✅ |
+| Background service (`quietlinux-daemon`): per-key colors shown again after replugging or sleep; website keys | ✅ |
 | Per-LED colors by zone (keys, top bar, knob, side strips) or by key (volatile) | ✅ |
 | Key map with layout-independent key names, legends for UK, German and French ISO | ✅ |
 | Macros stored in the keyboard: list, show, create, edit, delete (`macro`) | ✅ |
@@ -77,8 +77,9 @@ Details: [installation](docs/installation.md), [command line usage](docs/usage-c
   **Note:** the keyboard also reports every key press on its vendor interface,
   so programs running as that user can read what is typed on the Light Mount.
   See [installation](docs/installation.md#permissions-udev-rule).
-- No network access, no open ports. The optional background service only
-  shows the last per-key colors again after replugging or sleep.
+- No network access, no open ports. The optional background service shows the
+  last per-key colors again after replugging or sleep and opens the websites
+  bound to keys; it reads the key events for that and drops all others.
 - Per-LED colors are volatile and do not wear the keyboard's flash memory.
 
 ## Credits

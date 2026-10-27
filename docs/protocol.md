@@ -360,7 +360,7 @@ Action types and their data:
 | `03` | mouse | button: `[01][button \| flags][auto-fire rate]` (buttons 0 left, 1 right, 2 middle, 3 forward, 4 back; flags `40` while pressed, `80` double click); scroll: `[02][0 up, 1 down, 2 left, 3 right]` |
 | `04` | open folder | `[length][path, ASCII]` |
 | `05` | open file | `[length][path, ASCII]` |
-| `06` | open website | `[length][URL, ASCII]` [cap] |
+| `06` | open website | `[length][URL, ASCII]` [cap]; QuietLinux writes it (up to 51 characters, one packet as captured) and its background service opens it |
 | `07` | Windows shortcut | `[action]` (file explorer, calculator, task manager, lock, …) |
 | `08` | profile | `[action]`: 1 select (`[1][profile ID, 16 bytes]`: IO Center's UUID of the profile) [cap], 2 cycle, 3 next [cap], 4 previous [cap] |
 | `09` | backlight | `[action]`: 1 select effect (`[1][effect]`), 2 next effect, 3 previous effect, 4 brighter, 5 darker |

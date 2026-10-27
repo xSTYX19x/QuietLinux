@@ -592,6 +592,12 @@ impl Action {
                 vec![0x0a, lo, hi]
             }
             Action::WindowsShortcut(action) => vec![0x07, *action],
+            // [cap] `06 13 "https://example.org"`; only what fits one packet, as captured
+            Action::OpenWebsite(url) if website_ok(url) => {
+                let mut bytes = vec![0x06, u8::try_from(url.len()).ok()?];
+                bytes.extend_from_slice(url.as_bytes());
+                bytes
+            }
             // next/previous effect, brighter, darker (selecting an effect is not captured)
             Action::Backlight {
                 action: action @ 2..=5,
@@ -600,6 +606,18 @@ impl Action {
             _ => return None,
         })
     }
+}
+
+/// Longest website address a binding takes: what fits one `11:02` packet with
+/// key ID, layer, action type and length, like the captured binding.
+pub const MAX_WEBSITE: usize = 51;
+
+/// A website binding QuietLinux writes: `http://` or `https://`, printable ASCII,
+/// at most [`MAX_WEBSITE`] characters.
+pub fn website_ok(url: &str) -> bool {
+    (url.starts_with("https://") || url.starts_with("http://"))
+        && url.len() <= MAX_WEBSITE
+        && url.chars().all(|c| c.is_ascii_graphic())
 }
 
 fn modifier_names(modifiers: u8) -> Vec<&'static str> {
@@ -1014,6 +1032,16 @@ mod tests {
             assert_eq!(action.to_bytes().as_deref(), Some(bytes), "{action}");
         }
         assert_eq!(Action::OpenWebsite("x".into()).to_bytes(), None);
+        let site = Action::OpenWebsite("https://example.org".into());
+        let mut captured = vec![0x06, 0x13];
+        captured.extend_from_slice(b"https://example.org");
+        assert_eq!(site.to_bytes(), Some(captured));
+        let long = format!("https://example.org/{}", "a".repeat(40));
+        assert_eq!(Action::OpenWebsite(long).to_bytes(), None);
+        assert_eq!(
+            Action::OpenWebsite("file:///etc/passwd".into()).to_bytes(),
+            None
+        );
         assert_eq!(
             Action::Backlight {
                 action: 1,

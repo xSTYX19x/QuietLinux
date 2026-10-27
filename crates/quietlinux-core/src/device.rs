@@ -356,7 +356,10 @@ impl Transport for Hidraw {
         }
         // hidraw returns one report per read; shorter reports are zero-padded.
         let mut packet = [0u8; PACKET_SIZE];
-        let _ = self.file.read(&mut packet)?;
+        // 0 bytes: the device is gone (it would poll as readable forever)
+        if self.file.read(&mut packet)? == 0 {
+            return Err(io::ErrorKind::UnexpectedEof.into());
+        }
         Ok(Some(packet))
     }
 }
@@ -1124,7 +1127,8 @@ mod tests {
         let refused = session.set_binding(
             0x03,
             false,
-            &Action::OpenWebsite("https://example.org".into()),
+            // not captured: refused before anything is sent
+            &Action::OpenFile("/home".into()),
         );
         assert!(matches!(refused, Err(Error::Unsupported(_))));
         assert_eq!(kb.commands(), ["03:01", "11:02", "11:02", "11:03"]);

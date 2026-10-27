@@ -69,13 +69,15 @@ struct Cli {
 }
 
 /// Binding kinds of the key editor: the word `bind` takes, and the label.
-const BIND_KINDS: [(&str, &str); 7] = [
+const BIND_KINDS: [(&str, &str); 8] = [
     ("default", "Factory binding"),
     ("key", "Key or combination"),
     ("media", "Media"),
     ("mouse", "Mouse button"),
     ("lighting", "Lighting"),
     ("macro", "Macro"),
+    // opened by the background service
+    ("website", "Website"),
     ("disable", "Disabled"),
 ];
 
@@ -433,7 +435,7 @@ impl Controller {
         let kind = BIND_KINDS.iter().position(|(w, _)| *w == word).unwrap_or(0);
         ui.set_bind_kind(i32::try_from(kind).unwrap_or(0));
         self.kind_changed(ui);
-        if kind == 1 {
+        if kind == 1 || kind == 6 {
             ui.set_bind_text(value.into());
         } else {
             let values = ui.get_bind_values();
@@ -499,7 +501,7 @@ impl Controller {
         let kind = usize::try_from(ui.get_bind_kind()).unwrap_or(0);
         let (word, _) = BIND_KINDS[kind.min(BIND_KINDS.len() - 1)];
         let value = match kind {
-            1 => ui.get_bind_text().to_string(),
+            1 | 6 => ui.get_bind_text().trim().to_string(),
             2..=5 => {
                 let values = ui.get_bind_values();
                 let Some(v) = usize::try_from(ui.get_bind_value_index())
@@ -1332,6 +1334,7 @@ mod tests {
                 "mouse" => "mouse left",
                 "lighting" => "lighting brighter",
                 "macro" => "macro 1",
+                "website" => "website https://example.org",
                 other => other,
             };
             assert!(config::parse_desired(text).is_ok(), "{text}");

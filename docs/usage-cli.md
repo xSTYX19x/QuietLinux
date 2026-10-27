@@ -226,6 +226,7 @@ quietlinux bind M5 macro 2                # a macro stored in the keyboard
 | `lighting ACTION` | `next-effect`, `previous-effect`, `brighter`, `darker` |
 | `shortcut NAME` | Windows shortcuts (`calculator`, `task-manager`, `lock-pc`, …): IO Center performs them on Windows; on Linux nothing happens yet |
 | `macro ID` | a macro stored in the keyboard; `quietlinux info` lists their IDs. The keyboard plays it itself |
+| `website URL` | open a website (`http://` or `https://`, at most 51 characters). The keyboard only reports the press: the [background service](installation.md#background-service-optional) opens it |
 | `disable` | the key does nothing |
 | `default` | back to the factory binding |
 
@@ -237,10 +238,9 @@ quietlinux bind M5 macro 2                # a macro stored in the keyboard
   brighter/darker, Fn+←/→ previous/next effect.
 - `quietlinux info` lists all bindings that differ from the factory ones.
 - Macros are created with [`macro create`](#macro-list--show--create--edit--delete).
-- Not yet: opening files/folders/websites and
-  switching profiles (IO Center does these on the PC; QuietLinux needs a
-  background service for them), selecting an effect, mouse double click and
-  auto fire (their messages are not captured yet).
+- Not yet: opening files and folders, Windows shortcuts and switching profiles
+  (performed on the PC; their bindings are not captured or not done yet),
+  selecting an effect, mouse double click and auto fire.
 
 ## `macro list | show | create | edit | delete`
 
@@ -354,9 +354,9 @@ events = "+ctrl KeyA -ctrl 50ms +ctrl KeyC -ctrl"
   The file ends with a commented-out `[effect]` section: remove the `#` signs
   and fill it in to have `apply` set an effect.
 - Bindings use the syntax of `bind` (`key …`, `media …`, `mouse …`, `lighting …`,
-  `shortcut …`, `macro …`, `disable`, `default`); `"Fn+KEY"` is the Fn layer.
-  Bindings QuietLinux cannot write yet (websites, profiles, …) are stored as
-  `raw` bytes.
+  `shortcut …`, `website …`, `macro …`, `disable`, `default`); `"Fn+KEY"` is the
+  Fn layer. Bindings QuietLinux cannot write yet (profiles, files, …) are
+  stored as `raw` bytes.
 - Macros are stored with their events in the syntax of `macro create`
   (`+ctrl KeyA -ctrl` is the same as `ctrl+KeyA`). Events without a name are
   stored as `raw_events` (4 hex bytes each), a config `apply` has no name for

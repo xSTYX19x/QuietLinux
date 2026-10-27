@@ -91,7 +91,7 @@ Windows app and the web app in phase 2. ✔ = already known thanks to bbossa.
 - [x] Fn layer (second binding per key)
 - [x] Knob: press, turn left, turn right, each assignable
 - [x] Macro keys M1–M5
-- [ ] **Host-side actions** (open a program, file, folder or website): the keyboard cannot do this itself. On Linux this needs a background service that reacts to the vendor key events (`11:02`).
+- [x] **Host-side actions**: websites through the background service (see 6.5); files, folders and profile keys still open
 - [x] Restore the factory key bindings (`bind KEY default`, `apply`)
 
 ### 2.3 Macros
@@ -301,7 +301,9 @@ logic. Dependencies stay minimal (today: clap, rustix) and are checked in CI
 
 ### 6.5 Phase 6 – Daemon (optional)
 - [ ] Evaluate keeping hidraw access to the daemon only (system service with its own user, GUI/CLI talk to it over D-Bus), so that user processes cannot read key presses from interface 2
-- [ ] Host-side actions (open program/URL, shortcuts) through vendor events
+- [x] Website keys: `bind KEY website URL` (CLI, GUI, backup); the daemon listens to `11:02` and opens http(s) addresses with `xdg-open`
+- [ ] Find out whether the `11:02` event of a website key carries the address (the daemon reads the binding if not)
+- [ ] Other host-side actions: open file/folder (`04`/`05`, not captured), profile keys (`08`: switch between backup files?)
 - [x] Reapply after replug/resume: `quietlinux-daemon` shows the per-key colors (or "off") from `lighting.toml` again; polls sysfs every 2 s, detects sleep by wall vs. monotonic clock
 - [x] systemd user service (`packaging/systemd/quietlinux-daemon.service`)
 - [ ] Test the daemon on the reference keyboard (replug, suspend)

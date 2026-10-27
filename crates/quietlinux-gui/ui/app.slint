@@ -633,9 +633,10 @@ component KeysPage inherits VerticalBox {
                     }
                 }
 
-                if root.bind-kind == 1: LineEdit {
+                // kinds typed as text: 1 key or combination, 6 website (src/main.rs BIND_KINDS)
+                if root.bind-kind == 1 || root.bind-kind == 6: LineEdit {
                     text <=> root.bind-text;
-                    placeholder-text: "ctrl+KeyC";
+                    placeholder-text: root.bind-kind == 6 ? "https://example.org" : "ctrl+KeyC";
                     min-width: 160px;
                 }
                 if root.bind-values.length > 0 && root.bind-kind != 1: ComboBox {

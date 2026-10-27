@@ -143,6 +143,12 @@ enum BindAction {
     /// A macro stored in the keyboard, by its ID (`quietlinux info` lists them);
     /// the keyboard plays it itself
     Macro { id: u16 },
+    /// Open a website (http or https, at most 51 characters); the background
+    /// service (quietlinux-daemon) opens it when the key is pressed
+    Website {
+        #[arg(value_parser = parse_website)]
+        url: String,
+    },
     /// The key does nothing
     Disable,
     /// Back to the factory binding
@@ -169,6 +175,7 @@ impl BindAction {
             },
             BindAction::Shortcut { name } => Action::WindowsShortcut(name.0),
             BindAction::Macro { id } => Action::Macro(*id),
+            BindAction::Website { url } => Action::OpenWebsite(url.clone()),
             BindAction::Disable => Action::Disabled,
             BindAction::Default => return None,
         })
@@ -372,6 +379,17 @@ enum Light {
         #[arg(long, default_value_t = 1.0)]
         dim: f32,
     },
+}
+
+fn parse_website(s: &str) -> Result<String, String> {
+    if quietlinux_core::info::website_ok(s) {
+        Ok(s.to_owned())
+    } else {
+        Err(format!(
+            "http:// or https://, at most {} characters, no spaces",
+            quietlinux_core::info::MAX_WEBSITE
+        ))
+    }
 }
 
 fn parse_hex_u8(s: &str) -> Result<u8, String> {

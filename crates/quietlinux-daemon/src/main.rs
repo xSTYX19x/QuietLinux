@@ -4,17 +4,24 @@
 //! after it is unplugged or the computer sleeps. This service looks for the
 //! keyboard every few seconds and, when it appears or the computer woke up,
 //! shows again what QuietLinux showed last (`~/.config/quietlinux/lighting.toml`,
-//! written by the window and the command line). It sends nothing otherwise.
+//! written by the window and the command line).
+//!
+//! While the keyboard is there, it also listens to its key events (interface 2
+//! reports every key press) for keys bound to "open website", and opens those
+//! with `xdg-open`. Every other key press is dropped at once: nothing is stored
+//! or logged.
 //!
 //! Run it as a systemd user service (packaging/systemd/quietlinux-daemon.service).
 
-use std::path::Path;
-use std::process::ExitCode;
+use std::process::{Command, ExitCode, Stdio};
 use std::thread::sleep;
 use std::time::{Duration, Instant, SystemTime};
 
 use clap::Parser;
-use quietlinux_core::device::{self, LightingMode};
+use quietlinux_core::device::{self, LightingMode, Session, Transport};
+use quietlinux_core::info::{self, Action, Binding, parse_action};
+use quietlinux_core::keymap;
+use quietlinux_core::protocol::{self as p, Message};
 use quietlinux_core::state::{self, Mode};
 
 #[derive(Debug, Parser)]
@@ -97,27 +104,120 @@ fn show_again(usb_path: Option<&str>) -> Result<String, Box<dyn std::error::Erro
     }
 }
 
+/// The action type "open website" in a binding and a key event.
+const WEBSITE: u8 = 0x06;
+
+/// The website a key event (`11:02` notification data) asks to open: from the
+/// event itself if it carries the address, else from the key's binding.
+fn website_for(event: &[u8], bindings: impl FnOnce() -> Vec<Binding>) -> Option<String> {
+    let [key_id, flags, _state, action @ ..] = event else {
+        return None;
+    };
+    if action.first() != Some(&WEBSITE) {
+        return None;
+    }
+    let website = |action: Action| match action {
+        Action::OpenWebsite(url) => Some(url),
+        _ => None,
+    };
+    let fn_layer = flags & 0x80 != 0;
+    let url = parse_action(action)
+        .and_then(|(a, _)| website(a))
+        .or_else(|| {
+            bindings()
+                .into_iter()
+                .find(|b| b.key_id == *key_id && b.fn_layer == fn_layer)
+                .and_then(|b| website(b.action))
+        })?;
+    // only what QuietLinux itself would bind: http(s), no spaces
+    info::website_ok(&url).then_some(url)
+}
+
+/// Open a website in the user's browser, without a shell.
+fn open_website(url: &str) {
+    match Command::new("xdg-open")
+        .arg(url)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+    {
+        // reaped in the background: the browser may run on
+        Ok(mut child) => {
+            std::thread::spawn(move || child.wait());
+        }
+        Err(e) => eprintln!("quietlinux-daemon: xdg-open: {e}"),
+    }
+}
+
+/// Handle a notification: only key events of website keys do something; all
+/// other key presses are dropped at once (nothing is stored or logged).
+fn on_notification<T: Transport>(session: &mut Session<T>, note: &Message) {
+    if note.cmd != p::ACTION_FIRED {
+        return;
+    }
+    let read_bindings = || {
+        // the event does not name the address: read it from the keyboard
+        let _ = session.open_session();
+        session.read_bindings().map(|(_, b)| b).unwrap_or_default()
+    };
+    if let Some(url) = website_for(&note.data, read_bindings) {
+        let key = keymap::code_for_key_id(note.data[0]).unwrap_or("a key");
+        eprintln!("quietlinux-daemon: opening the website bound to {key}");
+        open_website(&url);
+    }
+}
+
+fn log_show_again(usb_path: Option<&str>) {
+    sleep(SETTLE);
+    match show_again(usb_path) {
+        Ok(done) => eprintln!("quietlinux-daemon: {done}"),
+        Err(e) => eprintln!("quietlinux-daemon: {e}"),
+    }
+}
+
 fn run(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
     let usb_path = cli.usb_path.as_deref();
     if cli.once {
         println!("{}", show_again(usb_path)?);
         return Ok(());
     }
-    eprintln!(
-        "quietlinux-daemon: watching for the Light Mount every {} s",
-        cli.interval
-    );
+    let interval = Duration::from_secs(cli.interval);
+    eprintln!("quietlinux-daemon: watching for the Light Mount");
     let mut watch = Watch::new(SystemTime::now(), Instant::now());
+    let mut last_error = String::new();
     loop {
-        let present = device::find(Path::new(device::SYSFS), usb_path).is_ok();
-        if watch.step(present, SystemTime::now(), Instant::now()) {
-            sleep(SETTLE);
-            match show_again(usb_path) {
-                Ok(done) => eprintln!("quietlinux-daemon: {done}"),
-                Err(e) => eprintln!("quietlinux-daemon: {e}"),
+        match device::open(usb_path, false) {
+            Ok((_, mut session)) => {
+                last_error.clear();
+                if watch.step(true, SystemTime::now(), Instant::now()) {
+                    log_show_again(usb_path);
+                }
+                // listen for website keys until the keyboard is gone
+                loop {
+                    match session.next_notification(interval) {
+                        Ok(Some(note)) => on_notification(&mut session, &note),
+                        Ok(None) => {}
+                        Err(_) => break,
+                    }
+                    if watch.step(true, SystemTime::now(), Instant::now()) {
+                        log_show_again(usb_path);
+                    }
+                }
+                eprintln!("quietlinux-daemon: the Light Mount is gone");
+                watch.step(false, SystemTime::now(), Instant::now());
+            }
+            Err(e) => {
+                // say it once, not every few seconds
+                let error = e.to_string();
+                if error != last_error && !matches!(e, device::Error::NotFound) {
+                    eprintln!("quietlinux-daemon: {error}");
+                }
+                last_error = error;
+                watch.step(false, SystemTime::now(), Instant::now());
+                sleep(interval);
             }
         }
-        sleep(Duration::from_secs(cli.interval));
     }
 }
 
@@ -139,6 +239,40 @@ mod tests {
     fn cli_definition() {
         use clap::CommandFactory;
         Cli::command().debug_assert();
+    }
+
+    #[test]
+    fn website_keys() {
+        let site = "https://example.org";
+        let bound = |key_id, fn_layer| Binding {
+            key_id,
+            fn_layer,
+            action: Action::OpenWebsite(site.to_owned()),
+            raw: Vec::new(),
+        };
+        // the event carries the address
+        let mut event = vec![0x03, 0x00, 0x01, WEBSITE, 19];
+        event.extend_from_slice(site.as_bytes());
+        assert_eq!(website_for(&event, Vec::new).as_deref(), Some(site));
+        // only the action type: from the binding, on the right layer
+        assert_eq!(
+            website_for(&[0x03, 0x00, 0x01, WEBSITE], || vec![bound(0x03, false)]).as_deref(),
+            Some(site)
+        );
+        assert_eq!(
+            website_for(&[0x03, 0x80, 0x01, WEBSITE], || vec![bound(0x03, false)]),
+            None
+        );
+        // other key presses: the bindings are not even read
+        let unread = || -> Vec<Binding> { panic!("bindings read for a plain key") };
+        assert_eq!(
+            website_for(&[0x0e, 0x00, 0x01, 0x01, 0x00, 0x04], unread),
+            None
+        );
+        // an address QuietLinux would not bind is not opened
+        let mut odd = vec![0x03, 0x00, 0x01, WEBSITE, 9];
+        odd.extend_from_slice(b"file:///x");
+        assert_eq!(website_for(&odd, Vec::new), None);
     }
 
     #[test]

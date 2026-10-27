@@ -1,5 +1,6 @@
 # systemd user service: shows the Light Mount's per-key colors again after the
-# keyboard is replugged or the computer wakes up.
+# keyboard is replugged or the computer wakes up, and opens the websites bound
+# to keys.
 #
 # Install (as your user, not root):
 #   install -Dm644 packaging/systemd/quietlinux-daemon.service ~/.config/systemd/user/quietlinux-daemon.service
@@ -8,21 +9,18 @@
 # Log: journalctl --user -u quietlinux-daemon
 
 [Unit]
-Description=QuietLinux: show the Light Mount's per-key colors again after replugging or sleep
+Description=QuietLinux: per-key colors after replugging or sleep, website keys
 Documentation=https://github.com/xSTYX19x/QuietLinux
 
 [Service]
 ExecStart=%h/.local/bin/quietlinux-daemon
 Restart=on-failure
 RestartSec=5
-# It only reads ~/.config/quietlinux and talks to the keyboard's hidraw device.
-# (PrivateTmp, ProtectSystem, ProtectHome would need user namespaces in a user
-# service, which not every system allows: the service would not start there.)
-NoNewPrivileges=yes
-RestrictAddressFamilies=AF_UNIX
-LockPersonality=yes
-RestrictRealtime=yes
-SystemCallArchitectures=native
+# Website keys start the browser (xdg-open) from this service. Sandboxing
+# options would be inherited by the browser and break it (no network, no
+# Chrome sandbox), and stopping the service would end the browser too: so no
+# sandboxing here, and only the service itself is stopped.
+KillMode=process
 
 [Install]
 WantedBy=default.target

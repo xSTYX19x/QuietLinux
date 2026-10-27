@@ -103,6 +103,7 @@ then **Apply**:
 | Key or combination | as in `bind KEY key`, e.g. `ctrl+KeyC`, `F13` |
 | Media, Mouse button, Lighting | from the list |
 | Macro | one of the macros stored in the keyboard |
+| Website | `https://…` (at most 51 characters); opened by the [background service](installation.md#background-service-optional) |
 | Disabled | (none) |
 
 Fn cannot be bound. Enter can only be changed with the command line

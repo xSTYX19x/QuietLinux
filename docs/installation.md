@@ -31,12 +31,24 @@ install -Dm755 target/release/quietlinux-daemon ~/.local/bin/quietlinux-daemon
 
 ## Background service (optional)
 
-Per-key colors are not stored in the keyboard: they are gone after it is
-unplugged or the computer sleeps. `quietlinux-daemon` shows them again. It
-looks for the keyboard every 2 seconds and, when it appears or the computer
-woke up, shows what QuietLinux showed last (`~/.config/quietlinux/lighting.toml`,
-written by the window and by `quietlinux light set/off/effect`). It sends
-nothing else; with an effect, the keyboard shows it by itself.
+`quietlinux-daemon` does what the keyboard cannot do by itself:
+
+- **Per-key colors again.** They are not stored in the keyboard and are gone
+  after it is unplugged or the computer sleeps. When the keyboard appears or
+  the computer woke up, the service shows what QuietLinux showed last
+  (`~/.config/quietlinux/lighting.toml`, written by the window and by
+  `quietlinux light set/off/effect`). With an effect it sends nothing: the
+  keyboard shows it by itself.
+- **Website keys.** Keys bound to "open website" (`quietlinux bind KEY website
+  URL`) only report the press; the service opens the address with `xdg-open`.
+
+To see those presses, it reads the key events of the keyboard's vendor
+interface, which reports **every** key press (see
+[Permissions](#permissions-udev-rule)). It drops every press that is not a
+website key at once; nothing is stored or logged. It needs the desktop's
+`WAYLAND_DISPLAY`/`DISPLAY` in the systemd user environment to start the
+browser (desktops set it up; if not: `systemctl --user import-environment
+WAYLAND_DISPLAY DISPLAY`).
 
 Install it as a systemd user service:
 

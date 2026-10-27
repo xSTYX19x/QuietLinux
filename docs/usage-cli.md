@@ -187,7 +187,13 @@ Which directions an effect uses depends on the effect.
 ## `light stored`
 
 Leaves realtime mode: the effect stored in the keyboard shows again. Use it to
-undo `light set` without unplugging the keyboard.
+undo `light set` without unplugging the keyboard, or to switch the lighting on
+after `light off`.
+
+## `light off`
+
+Switches the lighting off, like IO Center's on/off switch. The effect stays
+stored; `light stored` switches it on again.
 
 ## `bind [--fn] KEY ACTION`
 
@@ -225,10 +231,52 @@ quietlinux bind M5 macro 2                # a macro stored in the keyboard
   M5 mic-mute, Knob mute, KnobLeft volume-down, KnobRight volume-up; Fn+↑/↓
   brighter/darker, Fn+←/→ previous/next effect.
 - `quietlinux info` lists all bindings that differ from the factory ones.
-- Not yet: creating or editing macros, opening files/folders/websites and
+- Macros are created with [`macro create`](#macro-list--show--create--edit--delete).
+- Not yet: opening files/folders/websites and
   switching profiles (IO Center does these on the PC; QuietLinux needs a
   background service for them), selecting an effect, mouse double click and
   auto fire (their messages are not captured yet).
+
+## `macro list | show | create | edit | delete`
+
+Macros are stored in the keyboard and played by it: a key bound to one (`bind
+KEY macro ID`) types it, on any computer, without QuietLinux running.
+
+```sh
+quietlinux macro list                        # ID, name, repeat mode, number of events
+quietlinux macro show 3                      # the events of macro 3
+quietlinux macro create select-copy ctrl+KeyA 50ms ctrl+KeyC
+quietlinux macro create --repeat while-held --delay 30 spam KeyA
+quietlinux macro edit 3 --name copy --events ctrl+KeyC
+quietlinux macro edit 3 --repeat repeat
+quietlinux macro delete 3
+```
+
+Events, separated by spaces (or commas):
+
+| Token | Meaning |
+|---|---|
+| `KeyA` | tap a key: press and release |
+| `ctrl+KeyC` | tap a combination: modifiers down, key down and up, modifiers up |
+| `+shift`, `-shift` | press, release a key (modifiers or key names) |
+| `250ms` | the pause after the previous event (0–65535) |
+
+- Options go before the events (`--events` last in `edit`): everything after
+  the first event is read as events.
+- Key names as in `bind` (`quietlinux keys`); modifiers `ctrl`, `shift`, `alt`,
+  `win`, `rctrl`, `rshift`, `altgr`, `rwin`.
+- Each event is followed by `--delay` milliseconds (default 100, as IO Center
+  records), the last one by none, unless a pause token says otherwise.
+- The events are HID key codes: what they type depends on the keyboard layout
+  of the computer, like the keys themselves.
+- `--repeat`: `once` (default), `while-held` (repeats while the key is held),
+  `repeat` (IO Center's "repeat").
+- Names: up to 32 ASCII characters.
+- `create` takes the smallest free ID, like IO Center.
+- Every change writes **all** macros again (the keyboard's protocol has no other
+  way): QuietLinux reads them all first, writes them, and reads them back to
+  check. `delete` is refused while a key is bound to the macro.
+- `show` prints what the macro types: mind who can see your screen.
 
 ## `game-mode --block SHORTCUTS`
 

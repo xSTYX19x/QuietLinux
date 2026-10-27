@@ -2,6 +2,7 @@
 
 mod calibrate;
 mod config;
+mod macros;
 mod report;
 mod settings;
 
@@ -82,6 +83,14 @@ enum Command {
         #[command(subcommand)]
         action: BindAction,
     },
+    /// Macros stored in the keyboard: list, show, create, edit, delete
+    ///
+    /// Events: KeyA taps a key, ctrl+KeyC a combination, +shift / -shift press /
+    /// release a key, 250ms sets the pause after the previous event (default
+    /// --delay after each event, none after the last).
+    /// Example: quietlinux macro create select-copy ctrl+KeyA 50ms ctrl+KeyC
+    #[command(subcommand)]
+    Macro(MacroCommand),
     /// Save the keyboard's key bindings and game mode shortcuts to a file (read-only)
     ///
     /// `-` writes to standard output. The effect cannot be read from the Light Mount;
@@ -169,6 +178,96 @@ impl BindAction {
 }
 
 #[derive(Debug, Subcommand)]
+enum MacroCommand {
+    /// List the macros: ID, name, repeat mode, number of events (read-only)
+    List,
+    /// Show a macro's events, in the syntax of `macro create` (read-only)
+    Show { id: u16 },
+    /// Store a new macro in the keyboard; bind it with `quietlinux bind KEY macro ID`
+    Create {
+        name: String,
+        /// Events (see `quietlinux macro --help`); options go before them
+        #[arg(required = true, allow_hyphen_values = true)]
+        events: Vec<String>,
+        /// once, while-held or repeat
+        #[arg(long, default_value = "once")]
+        repeat: macros::RepeatMode,
+        /// Pause after each event, in ms
+        #[arg(long, default_value_t = macros::DEFAULT_DELAY_MS)]
+        delay: u16,
+    },
+    /// Change a macro's name, repeat mode or events
+    Edit {
+        id: u16,
+        #[arg(long)]
+        name: Option<String>,
+        /// once, while-held or repeat
+        #[arg(long)]
+        repeat: Option<macros::RepeatMode>,
+        /// New events, replacing all (see `quietlinux macro --help`); give it last
+        #[arg(long, num_args = 1.., allow_hyphen_values = true)]
+        events: Option<Vec<String>>,
+        /// Pause after each new event, in ms
+        #[arg(long, default_value_t = macros::DEFAULT_DELAY_MS)]
+        delay: u16,
+    },
+    /// Delete a macro (refused while a key is bound to it)
+    Delete { id: u16 },
+}
+
+fn run_macro<T: device::Transport>(
+    session: &mut device::Session<T>,
+    command: MacroCommand,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let lines = match command {
+        MacroCommand::List => macros::list(session)?,
+        MacroCommand::Show { id } => macros::show(session, id)?,
+        MacroCommand::Create {
+            name,
+            events,
+            repeat,
+            delay,
+        } => {
+            let events = macros::parse_events(&events, delay)?;
+            let count = events.len();
+            let id = macros::create(session, &name, repeat, events)?;
+            vec![format!(
+                "Macro {id} {name:?} stored ({count} event(s)). Bind it: quietlinux bind KEY macro {id}"
+            )]
+        }
+        MacroCommand::Edit {
+            id,
+            name,
+            repeat,
+            events,
+            delay,
+        } => {
+            let events = events
+                .map(|e| macros::parse_events(&e, delay))
+                .transpose()?;
+            if name.is_none() && repeat.is_none() && events.is_none() {
+                return Err("nothing to change: give --name, --repeat or --events".into());
+            }
+            let changes = macros::Changes {
+                name,
+                repeat,
+                events,
+            };
+            macros::edit(session, id, changes)?;
+            vec![format!("Macro {id} changed.")]
+        }
+        MacroCommand::Delete { id } => {
+            macros::delete(session, id)?;
+            vec![format!("Macro {id} deleted.")]
+        }
+    };
+    for line in lines {
+        println!("{line}");
+    }
+    Ok(())
+}
+
+#[derive(Debug, Subcommand)]
 enum Light {
     /// Static color effect, stored in the keyboard
     Static {
@@ -202,8 +301,10 @@ enum Light {
         #[arg(long, default_value = "up")]
         direction: settings::Direction,
     },
-    /// Show the effect stored in the keyboard again (leaves realtime mode)
+    /// Show the effect stored in the keyboard again (leaves realtime mode or "off")
     Stored,
+    /// Switch the lighting off, like IO Center's on/off switch; `light stored` switches it on
+    Off,
     /// Per-LED colors by zone or key (volatile: lost when the keyboard is unplugged)
     ///
     /// LEDs not given are switched off; later pairs win.
@@ -504,6 +605,14 @@ fn run(cli: Cli) -> Result<ExitCode, Box<dyn std::error::Error>> {
             let (_, mut session) = device::open(usb_path, cli.allow_unknown_firmware)?;
             session.show_stored_effect()?;
         }
+        Command::Light(Light::Off) => {
+            let (_, mut session) = device::open(usb_path, cli.allow_unknown_firmware)?;
+            session.set_lighting_mode(device::LightingMode::Off)?;
+        }
+        Command::Macro(command) => {
+            let mut session = open_session(usb_path, cli.allow_unknown_firmware)?;
+            run_macro(&mut session, command)?;
+        }
         Command::Light(Light::Set { assignments, dim }) => {
             let (_, mut session) = device::open(usb_path, cli.allow_unknown_firmware)?;
             session.set_leds(&leds_for(&assignments, dim))?;
@@ -581,6 +690,42 @@ mod tests {
     fn cli_definition() {
         use clap::CommandFactory;
         Cli::command().debug_assert();
+    }
+
+    #[test]
+    fn macro_events_on_the_command_line() {
+        let cli = Cli::try_parse_from([
+            "quietlinux",
+            "macro",
+            "create",
+            "--repeat",
+            "while-held",
+            "x",
+            "+shift",
+            "KeyA",
+            "-shift",
+            "50ms",
+        ])
+        .unwrap();
+        let Command::Macro(MacroCommand::Create { events, repeat, .. }) = cli.command else {
+            panic!()
+        };
+        assert_eq!(events, ["+shift", "KeyA", "-shift", "50ms"]);
+        assert_eq!(repeat, macros::RepeatMode(1));
+        let cli = Cli::try_parse_from([
+            "quietlinux",
+            "macro",
+            "edit",
+            "3",
+            "--events",
+            "-ctrl",
+            "KeyC",
+        ])
+        .unwrap();
+        let Command::Macro(MacroCommand::Edit { events, .. }) = cli.command else {
+            panic!()
+        };
+        assert_eq!(events.unwrap(), ["-ctrl", "KeyC"]);
     }
 
     #[test]

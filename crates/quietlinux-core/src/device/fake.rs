@@ -9,7 +9,13 @@ use std::time::Duration;
 
 use super::{KNOWN_VERSIONS, Transport};
 use crate::Rgb;
+use crate::info::Macro;
 use crate::protocol::{self as p, Command, Packet};
+
+/// Events per `12:05` reply, like the reference keyboard.
+const MACRO_EVENTS_PER_PAGE: usize = 13;
+/// Status `INVALID_PARAMETER`.
+const INVALID_PARAMETER: u8 = 0x05;
 
 /// Answers like the Light Mount, from what is known of its protocol.
 #[derive(Debug, Clone)]
@@ -32,6 +38,8 @@ pub struct FakeKeyboard {
     pub bindings: HashMap<(u8, u8), Vec<u8>>,
     /// Game mode flags set with `07:03`.
     pub game_mode_flags: u8,
+    /// Stored macros by ID (`12:01`–`12:08`).
+    pub macros: BTreeMap<u16, Macro>,
     fragments: Vec<Packet>,
 }
 
@@ -47,6 +55,7 @@ impl FakeKeyboard {
             layer_config: None,
             bindings: HashMap::new(),
             game_mode_flags: 0,
+            macros: BTreeMap::new(),
             fragments: Vec::new(),
         }
     }
@@ -82,6 +91,99 @@ impl FakeKeyboard {
         self.pending.push_back(resp);
     }
 
+    fn fail(&mut self, request: &Packet, status: u8) {
+        let mut resp = p::frame(
+            p::command_of(request),
+            &[],
+            p::request_id_of(request),
+            request[2],
+        )
+        .expect("short reply");
+        resp[3] = status;
+        let crc = p::crc16_modbus(&resp[..62]).to_le_bytes();
+        resp[62..].copy_from_slice(&crc);
+        self.pending.push_back(resp);
+    }
+
+    /// `12:01`–`12:08`; `false` if `msg` is no macro request.
+    fn handle_macro(&mut self, request: &Packet, msg: &p::Message) -> bool {
+        let id = match msg.data[..] {
+            [lo, hi, ..] => u16::from_le_bytes([lo, hi]),
+            _ => 0,
+        };
+        let known = self.macros.contains_key(&id);
+        match msg.cmd {
+            p::GET_MACROS => {
+                let mut data = u16::try_from(self.macros.len())
+                    .unwrap()
+                    .to_le_bytes()
+                    .to_vec();
+                for id in self.macros.keys() {
+                    data.extend_from_slice(&id.to_le_bytes());
+                }
+                self.reply(request, &data);
+            }
+            p::SET_MACROS => {
+                let ids: Vec<u16> = msg.data[4..]
+                    .chunks_exact(2)
+                    .map(|c| u16::from_le_bytes([c[0], c[1]]))
+                    .collect();
+                self.macros.retain(|id, _| ids.contains(id));
+                for id in ids {
+                    self.macros
+                        .entry(id)
+                        .or_insert_with(|| Macro::new(id, "", Vec::new()));
+                }
+                self.reply(request, &[]);
+            }
+            _ if !known => self.fail(request, INVALID_PARAMETER),
+            p::GET_MACRO_CONFIG => {
+                let config = self.macros[&id].config;
+                self.reply(request, &config);
+            }
+            p::SET_MACRO_CONFIG => {
+                if let Some(m) = self.macros.get_mut(&id) {
+                    m.config.copy_from_slice(&msg.data[2..6]);
+                }
+                self.reply(request, &[]);
+            }
+            p::GET_MACRO_NAME => {
+                let name = self.macros[&id].name.clone();
+                let mut data = vec![u8::try_from(name.len()).unwrap()];
+                data.extend_from_slice(name.as_bytes());
+                self.reply(request, &data);
+            }
+            p::SET_MACRO_NAME => {
+                let name = p::parse_macro_name(&msg.data[2..]).unwrap_or_default();
+                if let Some(m) = self.macros.get_mut(&id) {
+                    m.name = name;
+                }
+                self.reply(request, &[]);
+            }
+            p::GET_MACRO_EVENTS => {
+                let events = &self.macros[&id].events;
+                let index = usize::from(u16::from_le_bytes([msg.data[2], msg.data[3]]));
+                let mut data = u16::try_from(events.len()).unwrap().to_le_bytes().to_vec();
+                for e in events.iter().skip(index).take(MACRO_EVENTS_PER_PAGE) {
+                    data.extend_from_slice(&[e.kind, e.usage]);
+                    data.extend_from_slice(&e.delay_ms.to_le_bytes());
+                }
+                self.reply(request, &data);
+            }
+            p::SET_MACRO_EVENTS => match p::parse_macro_events(&msg.data) {
+                Some((_, events)) => {
+                    if let Some(m) = self.macros.get_mut(&id) {
+                        m.events = events;
+                    }
+                    self.reply(request, &[]);
+                }
+                None => self.fail(request, INVALID_PARAMETER),
+            },
+            _ => return false,
+        }
+        true
+    }
+
     fn handle(&mut self, packet: &Packet) {
         self.received.push(*packet);
         self.fragments.push(*packet);
@@ -92,6 +194,12 @@ impl FakeKeyboard {
         let Some(msg) = p::reassemble(&fragments) else {
             return;
         };
+        if msg.cmd.feature == p::FEATURE_MACROS
+            && !self.answers.contains_key(&msg.cmd)
+            && self.handle_macro(&fragments[0], &msg)
+        {
+            return;
+        }
         match msg.cmd {
             p::GET_DEVICE_INFO => {
                 let version = self.version.clone();

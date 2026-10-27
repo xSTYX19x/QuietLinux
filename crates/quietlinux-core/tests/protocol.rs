@@ -900,7 +900,8 @@ fn windows_replies_are_empty_successes() {
     let all = windows();
     assert!(all.len() > 300);
     for (dir, m, _, name) in all {
-        if dir == "in" && m.cmd != Command::new(0x12, 0x0b) {
+        // replies with data: only while connecting; 12:0b answers INVALID_STATE
+        if dir == "in" && name != "connect" && m.cmd != Command::new(0x12, 0x0b) {
             assert_eq!(m.status, p::STATUS_SUCCESS, "{name} {}", m.cmd);
             assert!(m.data.is_empty(), "{name} {}", m.cmd);
         }
@@ -938,8 +939,14 @@ fn windows_effects() {
             (config.effect, config.direction)
         })
         .collect();
-    // color wave, tornado, reactive, matrix, breathing, static
-    assert_eq!(effects, [(1, 3), (2, 4), (4, 0), (5, 1), (3, 0), (0, 0)]);
+    // color wave, tornado, reactive, matrix, static
+    assert_eq!(effects, [(1, 3), (2, 4), (4, 0), (5, 1), (0, 0)]);
+    // the on/off switch is the lighting mode
+    let modes: Vec<Vec<u8>> = windows_out("effects", p::SET_LIGHTING_MODE)
+        .into_iter()
+        .map(|(m, _)| m.data)
+        .collect();
+    assert_eq!(modes, [[p::MODE_OFF], [p::MODE_GENERAL]]);
 }
 
 #[test]
@@ -1062,33 +1069,93 @@ fn windows_macro_test() {
     // deleting it: the list without 3
     let (list, _) = &windows_out("macro-delete", p::SET_MACROS)[0];
     assert_eq!(list.data, p::macro_list_payload(&[1, 2]).unwrap());
-    // the repeat mode: byte 2 of the config (meaning of the values still unknown)
-    let modes: Vec<u8> = windows_out("macro-repeat", p::SET_MACRO_CONFIG)
+    // repeat mode of macro 1 set to "repeat", "while held", "once"
+    let configs: Vec<Vec<u8>> = windows_out("macro-repeat", p::SET_MACRO_CONFIG)
         .into_iter()
-        .filter(|(m, _)| m.data[..2] == [3, 0])
-        .map(|(m, _)| m.data[2])
+        .filter(|(m, _)| m.data[..2] == [1, 0])
+        .map(|(m, _)| m.data)
         .collect();
-    assert_eq!(modes, [2, 1, 2]);
+    let modes = [p::MACRO_REPEAT, p::MACRO_WHILE_HELD, p::MACRO_ONCE];
+    for (config, mode) in configs.iter().zip(modes) {
+        assert_eq!(*config, p::macro_config_payload(1, [mode, 2, 0, 0]));
+    }
+    assert_eq!(configs.len(), 3);
+}
+
+#[test]
+fn windows_connect_reads_macros() {
+    let all = windows();
+    let connect: Vec<&(String, p::Message, Vec<Packet>, String)> =
+        all.iter().filter(|(.., name)| name == "connect").collect();
+    let request = |cmd: Command| -> Vec<Vec<u8>> {
+        connect
+            .iter()
+            .filter(|(dir, m, ..)| dir == "out" && m.cmd == cmd)
+            .map(|(_, m, ..)| m.data.clone())
+            .collect()
+    };
+    let reply = |cmd: Command| -> Vec<Vec<u8>> {
+        connect
+            .iter()
+            .filter(|(dir, m, ..)| dir == "in" && m.cmd == cmd)
+            .map(|(_, m, ..)| m.data.clone())
+            .collect()
+    };
+    assert_eq!(request(p::GET_MACROS), [[0, 0]]);
+    assert_eq!(
+        quietlinux_core::info::parse_macro_ids(&reply(p::GET_MACROS)[0]),
+        Some(vec![1, 2])
+    );
+    assert_eq!(request(p::GET_MACRO_CONFIG), [[1, 0], [2, 0]]);
+    assert_eq!(reply(p::GET_MACRO_CONFIG), [p::MACRO_DEFAULT_CONFIG; 2]);
+    assert_eq!(request(p::GET_MACRO_NAME), [[1, 0], [2, 0]]);
+    // events in pages of 13, from these indexes
+    let pages: Vec<[u8; 4]> = [
+        (1, 0),
+        (1, 13),
+        (1, 26),
+        (1, 39),
+        (2, 0),
+        (2, 13),
+        (2, 26),
+        (2, 39),
+    ]
+    .into_iter()
+    .map(|(id, index)| p::macro_events_request(id, index))
+    .collect();
+    let requested: Vec<Vec<u8>> = request(p::GET_MACRO_EVENTS);
+    assert_eq!(
+        requested,
+        pages.iter().map(|p| p.to_vec()).collect::<Vec<_>>()
+    );
+    // then IO Center writes its profile: lighting on, all macros, M5 → macro 2
+    assert_eq!(request(p::SET_LIGHTING_MODE), [[p::MODE_GENERAL]]);
+    assert_eq!(
+        request(p::SET_MACROS),
+        [p::macro_list_payload(&[1, 2]).unwrap()]
+    );
+    assert_eq!(request(p::SET_BINDING), [[0x06, 0x00, 0x0a, 0x02, 0x00]]);
 }
 
 #[test]
 fn windows_fixture_holds_only_the_test_macro() {
+    let writes = [p::SET_MACRO_EVENTS, p::SET_MACRO_NAME];
+    let reads = [p::GET_MACRO_EVENTS, p::GET_MACRO_NAME];
     for (dir, m, packets, name) in windows() {
-        let contents = [
-            p::SET_MACRO_EVENTS,
-            p::SET_MACRO_NAME,
-            Command::new(0x12, 0x05),
-            Command::new(0x12, 0x07),
-        ];
-        if dir == "out" && contents.contains(&m.cmd) {
-            assert_eq!(m.data[..2], [3, 0], "{name} {}", m.cmd);
+        let what = format!("{name} {dir} {}", m.cmd);
+        if dir == "out" && writes.contains(&m.cmd) {
+            assert_eq!(m.data[..2], [3, 0], "{what}");
         }
-        // replies repeat the start of the request in their unused bytes
+        // the replies with macro contents of the other macros were left out
+        assert!(
+            !(dir == "in" && reads.contains(&m.cmd) && !m.is_notification()),
+            "{what}"
+        );
+        // replies to writes repeat the start of the request in their unused bytes
         for raw in packets {
             let unused = &raw[1 + usize::from(raw[0])..62];
-            if unused.iter().any(|&b| b != 0) {
-                assert!(dir == "in" && contents.contains(&m.cmd), "{name} {}", m.cmd);
-                assert_eq!(unused[..2], [3, 0], "{name} {}", m.cmd);
+            if dir == "in" && writes.contains(&m.cmd) {
+                assert_eq!(unused[..2], [3, 0], "{what}");
             }
         }
     }

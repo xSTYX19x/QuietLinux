@@ -21,6 +21,7 @@ use rustix::event::{PollFd, PollFlags, Timespec, poll};
 
 use crate::Rgb;
 use crate::hid_descriptor::{Usage, top_level_usage};
+use crate::info::Macro;
 use crate::protocol::{self as p, Command, Led, Message, PACKET_SIZE, Packet, ProtocolError};
 
 #[cfg(any(test, feature = "fake"))]
@@ -515,8 +516,14 @@ impl<T: Transport> Session<T> {
     /// reassembled if it spans several packets. Notifications (such as key events)
     /// are skipped.
     fn request(&mut self, packet: &Packet) -> Result<Message> {
+        self.request_message(std::slice::from_ref(packet))
+    }
+
+    /// Send a message (all its fragments) and wait for the reply to it.
+    fn request_message(&mut self, message: &[Packet]) -> Result<Message> {
+        let packet = &message[0];
         let cmd = p::command_of(packet);
-        self.send(std::slice::from_ref(packet))?;
+        self.send(message)?;
         let deadline = Instant::now() + REPLY_TIMEOUT;
         let mut fragments: Vec<Packet> = Vec::new();
         loop {
@@ -621,8 +628,75 @@ impl<T: Transport> Session<T> {
 
     /// IDs of the macros stored in the keyboard (`12:01`).
     pub fn macro_ids(&mut self) -> Result<Vec<u16>> {
-        let reply = self.query(p::GET_MACROS, &[])?;
+        // [first index u16], like IO Center for Windows
+        let reply = self.query(p::GET_MACROS, &[0, 0])?;
         crate::info::parse_macro_ids(&reply.data).ok_or(Error::InvalidReply(p::GET_MACROS))
+    }
+
+    /// Read one macro: config, name and events, in the order IO Center for Windows does.
+    pub fn read_macro(&mut self, id: u16) -> Result<Macro> {
+        let ids = id.to_le_bytes();
+        let config = self.query(p::GET_MACRO_CONFIG, &ids)?;
+        let config: [u8; 4] = config
+            .data
+            .get(..4)
+            .and_then(|c| c.try_into().ok())
+            .ok_or(Error::InvalidReply(p::GET_MACRO_CONFIG))?;
+        let name = self.query(p::GET_MACRO_NAME, &ids)?;
+        let name = p::parse_macro_name(&name.data).ok_or(Error::InvalidReply(p::GET_MACRO_NAME))?;
+        let mut events = Vec::new();
+        loop {
+            let index = u16::try_from(events.len())
+                .map_err(|_| Error::InvalidReply(p::GET_MACRO_EVENTS))?;
+            let reply = self.query(p::GET_MACRO_EVENTS, &p::macro_events_request(id, index))?;
+            let (total, page) = p::parse_macro_events_page(&reply.data)
+                .ok_or(Error::InvalidReply(p::GET_MACRO_EVENTS))?;
+            if events.len() + page.len() > usize::from(total)
+                || (page.is_empty() && events.len() < usize::from(total))
+            {
+                return Err(Error::InvalidReply(p::GET_MACRO_EVENTS));
+            }
+            events.extend(page);
+            if events.len() == usize::from(total) {
+                break;
+            }
+        }
+        Ok(Macro {
+            id,
+            name,
+            config,
+            events,
+        })
+    }
+
+    /// All macros stored in the keyboard.
+    pub fn read_macros(&mut self) -> Result<Vec<Macro>> {
+        let ids = self.macro_ids()?;
+        ids.into_iter().map(|id| self.read_macro(id)).collect()
+    }
+
+    /// Replace all macros, like IO Center for Windows does on every change: `12:02`
+    /// with all IDs (a macro not listed is deleted), then for each macro `12:04`
+    /// config, `12:08` name and `12:06` events.
+    pub fn write_macros(&mut self, macros: &[Macro]) -> Result<()> {
+        self.check_writable()?;
+        let ids: Vec<u16> = macros.iter().map(|m| m.id).collect();
+        // check every payload before the first write
+        let mut messages = vec![(p::SET_MACROS, p::macro_list_payload(&ids)?)];
+        for m in macros {
+            messages.push((p::SET_MACRO_CONFIG, p::macro_config_payload(m.id, m.config)));
+            messages.push((p::SET_MACRO_NAME, p::macro_name_payload(m.id, &m.name)?));
+            messages.push((
+                p::SET_MACRO_EVENTS,
+                p::macro_events_payload(m.id, &m.events)?,
+            ));
+        }
+        for (cmd, payload) in messages {
+            let id = self.next_request_id();
+            let message = p::message(cmd, &payload, id, self.sid)?;
+            self.request_message(&message)?;
+        }
+        Ok(())
     }
 
     /// Switch the lighting mode (`10:02`). Values 1 (general) and 3 (realtime) are
@@ -992,6 +1066,50 @@ mod tests {
         );
         assert!(session.set_media_binding(0x04, 8).is_err());
         assert!(session.set_game_mode_blocks(0).is_err());
+        assert_eq!(kb.commands(), ["03:01"]);
+    }
+
+    #[test]
+    fn macros_written_and_read_back() {
+        let key = |kind, usage| p::MacroEvent {
+            kind,
+            usage,
+            delay_ms: 100,
+        };
+        let mut kb = FakeKeyboard::new(&KNOWN, p::MODE_GENERAL);
+        let mut session = Session::with_request_id(&mut kb, false, 1).unwrap();
+        // 30 events: three pages to read, a fragmented message to write
+        let events: Vec<p::MacroEvent> = (0..15)
+            .flat_map(|i| [key(p::MACRO_KEY_DOWN, 4 + i), key(p::MACRO_KEY_UP, 4 + i)])
+            .collect();
+        let mut long = Macro::new(1, "long", events);
+        long.set_repeat(p::MACRO_WHILE_HELD);
+        let short = Macro::new(3, "test", vec![key(p::MACRO_KEY_DOWN, 4)]);
+        session
+            .write_macros(&[long.clone(), short.clone()])
+            .unwrap();
+        assert_eq!(session.read_macros().unwrap(), [long.clone(), short]);
+        // deleting: write the list without it
+        session.write_macros(std::slice::from_ref(&long)).unwrap();
+        assert_eq!(session.macro_ids().unwrap(), [1]);
+        let sent: Vec<String> = kb.commands().into_iter().skip(1).take(7).collect();
+        assert_eq!(
+            sent,
+            [
+                "12:02", "12:04", "12:08", "12:06", "12:04", "12:08", "12:06"
+            ]
+        );
+        assert_eq!(kb.macros[&1].config, [p::MACRO_WHILE_HELD, 2, 0, 0]);
+    }
+
+    #[test]
+    fn macro_writes_refused_on_unknown_firmware() {
+        let mut kb = FakeKeyboard::new(&[9; 8], p::MODE_GENERAL);
+        let mut session = Session::with_request_id(&mut kb, false, 1).unwrap();
+        assert!(matches!(
+            session.write_macros(&[]),
+            Err(Error::UnknownFirmware(_))
+        ));
         assert_eq!(kb.commands(), ["03:01"]);
     }
 

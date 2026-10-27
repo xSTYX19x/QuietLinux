@@ -127,6 +127,26 @@ Captured from IO Center Web and replayed in the tests (`connect-web.hex`):
    `07:04` game mode state.
 5. While connected: `01:06` GetActiveSessionInfo from time to time.
 
+### What IO Center for Windows does when it starts [cap]
+
+Captured with USBPcap (`windows.hex`, capture `connect`):
+
+1. `01:01` OpenSession with session `00`, payload `[connection ID u32][01]`
+   (client type 1 = QControl); the reference keyboard answers session `01`,
+   state 1, timeout 3.
+2. With session `01`: `03:01` device info, `01:05` QLink version, `01:04`
+   features (payload `00`), `03:02` serial number, `07:01` layout, `01:06`
+   session info (`01 03 01`), `01:04` and `03:01` again.
+3. All macros: `12:01` list (payload `00 00`), then for each `12:03` config,
+   `12:07` name and `12:05` events page by page.
+4. `12:09` StartRecording with `03 08 09 0b` (purpose unknown: count 3 and the
+   key IDs of Tab, Caps Lock and left Ctrl?).
+5. `11:04` bindings enabled, `11:01` bindings, `07:02` game mode flags,
+   `07:04` game mode state, `10:01` lighting mode, `10:05` layer 0.
+6. Then it writes its active profile: `10:02` lighting mode `01`, `12:02` macro
+   list, `11:05` bindings enabled `01`, every macro (`12:04`, `12:08`, `12:06`)
+   and the profile's bindings.
+
 ### Factory defaults of the Light Mount [web]
 
 | Setting | Default |
@@ -227,7 +247,7 @@ offers Shift+Tab, Alt+F4, Win and Alt+Tab (no Caps Lock).
 | Command | Name | Payload | Reply | Source |
 |---|---|---|---|---|
 | `10:01` | GetLightingMode | | `[mode]` | [cap] |
-| `10:02` | SetLightingMode | `[mode]` | none | [cap] modes 1 and 3 |
+| `10:02` | SetLightingMode | `[mode]` | none | [cap] modes 0, 1 and 3 |
 | `10:03` | GetLayersLayout | | `[count][layer IDs…]` | [web] |
 | `10:04` | SetLayersLayout | `[count][layer IDs…]` | | [web] |
 | `10:05` | GetLayerConfig | `[layer]` | layer config, as below | [web] |
@@ -242,7 +262,8 @@ offers Shift+Tab, Alt+F4, Win and Alt+Tab (no Caps Lock).
 
 **Lighting modes:** `00` off, `01` general (the layers' effects, stored),
 `02` custom (stored per-key layers), `03` realtime (per-LED colors from
-`10:0d`, volatile). Switching to realtime clears every LED. [cap] modes 1, 3; [web] all
+`10:0d`, volatile). Switching to realtime clears every LED. [cap] modes 0, 1, 3; [web] all.
+IO Center for Windows' lighting on/off switch sends mode `00` and `01`. [cap]
 
 IO Center for Windows does its per-key lighting in **realtime** mode, not in
 custom mode: `10:02` `03`, then all 166 LEDs in `10:0d` messages of 40 colors
@@ -316,7 +337,7 @@ blue 0.43, which explains why unscaled colors look greenish. [web]
 | `11:01` | GetBindings | `[index u16]` (index of the first entry to read) | `[2 count bytes]` then binding entries |
 | `11:02` | SetBinding | `[key ID][layer][action type][action data…]`; captured: `04 00 02 08` (M3, normal layer, media, stop) [cap] | (empty) |
 | `11:03` | ClearBinding | `[key ID][layer]` (back to the default) [cap] | (empty) |
-| `11:04` / `11:05` | Get/SetConfig | `[enabled]` | `[enabled]`: 1 = custom bindings active |
+| `11:04` / `11:05` | Get/SetConfig | `[enabled]` | `[enabled]`: 1 = custom bindings active; IO Center for Windows reads it and writes `01` [cap] |
 | `11:06` | GetBinding | | |
 
 - Key IDs: see [Key IDs](#key-ids). Layer byte: `00` normal, `80` Fn held
@@ -410,15 +431,15 @@ again when one changes:
 
 | Command | Name | Payload | Reply |
 |---|---|---|---|
-| `12:01` | GetMacros | (none) | `[count u16][macro ID u16]…`, e.g. `02 00 01 00 02 00` (IDs 1, 2) |
+| `12:01` | GetMacros | `[first index u16]` (IO Center sends `00 00`; no payload works too) | `[count u16][macro ID u16]…`, e.g. `02 00 01 00 02 00` (IDs 1, 2) |
 | `12:02` | SetMacros | `[count u16][first index u16 = 0][macro ID u16]…`: the IDs of **all** macros; a macro left out is deleted | (empty) |
-| `12:03` | GetMacroConfig | [web] | |
-| `12:04` | SetMacroConfig | `[macro ID u16][repeat mode][02][00 00]` | (empty) |
-| `12:05` | GetMacroEvents | [web] | |
+| `12:03` | GetMacroConfig | `[macro ID u16]` | `[repeat mode][02][00 00]` |
+| `12:04` | SetMacroConfig | `[macro ID u16][repeat mode][02][00 00]`; repeat modes `00` once, `01` while held, `02` repeat (IO Center: "Einmalig", "Halten", "Wiederholen") | (empty) |
+| `12:05` | GetMacroEvents | `[macro ID u16][index of the first event u16]` | `[total event count u16][event]…`, at most 13 events; IO Center asks again from index 13, 26, … |
 | `12:06` | SetMacroEvents | `[macro ID u16][count u16][first index u16 = 0][event]…` | (empty) |
-| `12:07` | GetMacroName | [web] | |
+| `12:07` | GetMacroName | `[macro ID u16]` | `[length][name]` |
 | `12:08` | SetMacroName | `[macro ID u16][length][name, ASCII]` | (empty) |
-| `12:09` / `12:0a` | StartRecording / StopRecording | [web] `[count][key IDs…]` | |
+| `12:09` / `12:0a` | StartRecording / StopRecording | `[count][key IDs…]` [web]; IO Center for Windows sends `12:09` `03 08 09 0b` when it starts [cap] | (empty) |
 | `12:0b` | AbortPlayback | (none); answered INVALID_STATE when no macro plays | |
 
 - A macro event is 4 bytes: `[kind][HID usage][delay after it, ms u16]`,
@@ -433,9 +454,10 @@ again when one changes:
   `qlcap` hides those replies with their requests.
 - Macro IDs count from 1; a new macro gets the next free ID, its default name
   is "Makro N" in the German app.
-- SetMacroConfig: the repeat mode byte took the values 0 (default), 2 and 1
-  while the repeat mode was changed; their meaning and that of the `02` byte
-  still have to be matched to the app's options.
+- The meaning of the `02 00 00` after the repeat mode is unknown; IO Center
+  never changed it.
+- What IO Center reads with `12:03`, `12:07` and `12:05` is byte for byte what
+  it writes back with `12:04`, `12:08` and `12:06`. [cap]
 - A macro of 52 events (214 bytes) went in one fragmented message; the `first
   index` fields are presumably for longer lists.
 - While IO Center for Windows records a macro, the keyboard sends `12:05`
@@ -589,7 +611,6 @@ files (`quietlinux backup`/`apply`).
 ## Unknown so far
 
 - Payload layouts of `10:07`/`10:08` (layer masks), `10:0b`/`10:0c` (playback), `11:04`/`11:05`, `11:06`, the `31` CONTROLS feature.
-- Request layouts of `12:03`, `12:05`, `12:07` (reading a macro's config, events and name): IO Center for Windows reads them when it starts.
-- The meaning of the `12:04` bytes (repeat modes).
-- Setting the polling rate, quick tap pairs and the LED calibration: not captured yet.
+- The `02 00 00` bytes of a macro's config; the purpose of `12:09` StartRecording when IO Center starts.
+- Polling rate, quick tap and LED calibration: IO Center for Windows has no settings for them on the Light Mount (fixed 1000 Hz; quick tap and calibration are for the TKL and the fans).
 - Everything marked **[web]** only: to be captured before use. See [todo.md](todo.md).

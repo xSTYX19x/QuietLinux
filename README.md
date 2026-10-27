@@ -21,15 +21,14 @@ Not affiliated with or endorsed by be quiet!. See [Safety](#safety).
 |---|---|
 | Find the keyboard; read firmware, layout, lighting, game mode, quick tap and key bindings (`info`) | ✅ |
 | Show the key presses the keyboard reports (`events`) | ✅ |
-| Effects (static, color wave, tornado, breathing, reactive, matrix) with color or gradient, brightness, speed, direction (stored in the keyboard) | ✅ |
+| Effects (static, color wave, tornado, breathing, reactive, matrix) with color or gradient, brightness, speed, direction (stored in the keyboard); lighting off | ✅ |
 | Key bindings on both layers (normal and Fn): keys and combinations, media, mouse buttons, lighting actions, macros stored in the keyboard, disable, reset | ✅ |
 | Game mode: which shortcuts it blocks | ✅ |
 | Backup and restore of bindings and game mode as a TOML file (`backup`, `apply`) | ✅ |
 | Per-LED colors by zone (keys, top bar, knob, side strips) or by key (volatile) | ✅ |
 | Key map with layout-independent key names, legends for UK, German and French ISO | ✅ |
-| Create and edit macros | planned (format known, reading still to be captured) |
+| Macros stored in the keyboard: list, show, create, edit, delete (`macro`) | ✅ |
 | Per-key lighting that stays (IO Center keeps it alive from the PC too), open file/folder/website, profile switching keys | planned (background service) |
-| Polling rate | planned |
 | Graphical interface | planned |
 | Firmware updates | **never**, see [Safety](#safety) |
 

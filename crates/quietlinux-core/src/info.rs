@@ -8,6 +8,7 @@ use std::fmt;
 
 use crate::Rgb;
 use crate::keymap;
+use crate::protocol::{self as p, MacroEvent};
 
 fn u16_at(data: &[u8], at: usize) -> Option<u16> {
     Some(u16::from_le_bytes([*data.get(at)?, *data.get(at + 1)?]))
@@ -110,6 +111,46 @@ pub fn parse_qlink_version(data: &[u8]) -> Option<String> {
 pub fn parse_id_list(data: &[u8]) -> Option<Vec<u8>> {
     let count = usize::from(*data.first()?);
     data.get(1..1 + count).map(<[u8]>::to_vec)
+}
+
+/// A macro stored in the keyboard (`12:03`, `12:05`, `12:07`). [cap]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Macro {
+    pub id: u16,
+    pub name: String,
+    /// `12:04` config: repeat mode, then 3 bytes kept as read (IO Center: `02 00 00`).
+    pub config: [u8; 4],
+    pub events: Vec<MacroEvent>,
+}
+
+impl Macro {
+    /// A new macro with IO Center's default config (played once).
+    pub fn new(id: u16, name: &str, events: Vec<MacroEvent>) -> Self {
+        Self {
+            id,
+            name: name.to_owned(),
+            config: p::MACRO_DEFAULT_CONFIG,
+            events,
+        }
+    }
+
+    pub fn repeat(&self) -> u8 {
+        self.config[0]
+    }
+
+    pub fn set_repeat(&mut self, mode: u8) {
+        self.config[0] = mode;
+    }
+}
+
+/// Name of a repeat mode, like IO Center for Windows.
+pub fn repeat_name(mode: u8) -> Option<&'static str> {
+    Some(match mode {
+        p::MACRO_ONCE => "once",
+        p::MACRO_WHILE_HELD => "while held",
+        p::MACRO_REPEAT => "repeat",
+        _ => return None,
+    })
 }
 
 /// Reply to `12:01` (the macro list): `[count u16]` then `count` macro IDs (u16). [cap]

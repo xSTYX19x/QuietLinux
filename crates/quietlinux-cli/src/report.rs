@@ -448,7 +448,7 @@ mod tests {
             "Key bindings:   on, 2 of 2 decoded",
             "  M1                   media: play/pause",
             "  KnobLeft             media: volume down",
-            "Macros:         unavailable",
+            "Macros:         none",
         ] {
             assert!(text.contains(expected), "missing {expected:?} in\n{text}");
         }

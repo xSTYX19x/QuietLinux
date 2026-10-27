@@ -13,7 +13,7 @@ Reference frames used by the protocol tests. They need no keyboard.
 | `connect-web.hex` | IO Center Web connecting (identification, `01:01` OpenSession, reading the state), requests and replies |
 | `bindings-web.hex` | IO Center Web binding keys (key, combination, mouse, lighting, shortcut, F13, disable, reset, Fn layer), a dual color effect, game mode notifications |
 | `writes-web.hex` | IO Center Web changing settings: `10:06` effects/colors/brightness/speed, `11:02` a media binding, `07:03` game mode flags, `01:03` keep-alive |
-| `windows.hex` | IO Center for Windows: effects, per-key lighting (realtime mode), a test macro created, bound, edited and deleted, website and profile bindings, profile switches |
+| `windows.hex` | IO Center for Windows: starting (reading all macros), effects and the on/off switch, per-key lighting (realtime mode), a test macro created, bound, edited and deleted, repeat modes, website and profile bindings, profile switches |
 
 Format of the `.hex` files: one message per line, its 64-byte packets as hex
 separated by spaces; `#` starts a comment.

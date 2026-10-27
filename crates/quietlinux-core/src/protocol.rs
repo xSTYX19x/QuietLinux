@@ -97,16 +97,16 @@ pub const SET_MACRO_CONFIG: Command = Command::new(FEATURE_MACROS, 0x04);
 /// Notification while the keyboard records a macro: a key press or release.
 pub const INPUT_EVENT: Command = Command::new(FEATURE_MACROS, 0x05);
 /// Request: the events of a macro. Same code as the `INPUT_EVENT` notification.
-pub const GET_MACRO_EVENTS: Command = Command::new(FEATURE_MACROS, 0x05);
+pub const GET_MACRO_EVENTS: Command = READ_ONLY[18];
 pub const SET_MACRO_EVENTS: Command = Command::new(FEATURE_MACROS, 0x06);
-pub const GET_MACRO_NAME: Command = Command::new(FEATURE_MACROS, 0x07);
+pub const GET_MACRO_NAME: Command = READ_ONLY[19];
 pub const SET_MACRO_NAME: Command = Command::new(FEATURE_MACROS, 0x08);
 /// Keeps a session open; IO Center Web sends it every 1.5 s (timeout 3 s).
 pub const KEEP_ALIVE: Command = Command::new(FEATURE_ROOT, 0x03);
 
 /// Read-only requests (IO Center Web layouts, see `docs/protocol.md`). Only these
 /// can be sent with [`crate::device::Session::query`]: none of them changes the keyboard.
-pub const READ_ONLY: [Command; 17] = [
+pub const READ_ONLY: [Command; 20] = [
     Command::new(FEATURE_ROOT, 0x04),       // GetSupportedFeatures
     Command::new(FEATURE_ROOT, 0x05),       // GetQLinkVersion
     Command::new(FEATURE_ROOT, 0x06),       // GetActiveSessionInfo
@@ -123,7 +123,10 @@ pub const READ_ONLY: [Command; 17] = [
     Command::new(FEATURE_LIGHTINGS, 0x0f),  // GetCalibration
     Command::new(FEATURE_BINDINGS, 0x01),   // GetBindings
     Command::new(FEATURE_BINDINGS, 0x04),   // GetConfig (bindings enabled)
-    Command::new(FEATURE_MACROS, 0x01),     // GetMacros
+    Command::new(FEATURE_MACROS, 0x01),     // GetMacros [cap]
+    Command::new(FEATURE_MACROS, 0x03),     // GetMacroConfig [cap]
+    Command::new(FEATURE_MACROS, 0x05),     // GetMacroEvents [cap]
+    Command::new(FEATURE_MACROS, 0x07),     // GetMacroName [cap]
 ];
 
 pub const GET_SUPPORTED_FEATURES: Command = READ_ONLY[0];
@@ -140,6 +143,7 @@ pub const GET_BINDINGS_CONFIG: Command = READ_ONLY[15];
 pub const GET_LAYERS_LAYOUT: Command = READ_ONLY[10];
 pub const GET_GLOBAL_LAYERS: Command = READ_ONLY[12];
 pub const GET_MACROS: Command = READ_ONLY[16];
+pub const GET_MACRO_CONFIG: Command = READ_ONLY[17];
 
 pub fn is_read_only(cmd: Command) -> bool {
     READ_ONLY.contains(&cmd)
@@ -722,6 +726,54 @@ pub fn macro_events_payload(id: u16, events: &[MacroEvent]) -> Result<Vec<u8>, P
     Ok(payload)
 }
 
+/// Repeat modes (first byte of a macro's config), as IO Center for Windows names them. [cap]
+pub const MACRO_ONCE: u8 = 0x00;
+pub const MACRO_WHILE_HELD: u8 = 0x01;
+pub const MACRO_REPEAT: u8 = 0x02;
+/// Config of a new macro in IO Center for Windows: once, then `02 00 00` (meaning unknown).
+pub const MACRO_DEFAULT_CONFIG: [u8; 4] = [MACRO_ONCE, 0x02, 0x00, 0x00];
+
+/// `12:04` payload: `[macro ID u16][config: repeat mode, 3 more bytes]`. [cap]
+pub fn macro_config_payload(id: u16, config: [u8; 4]) -> Vec<u8> {
+    let mut payload = id.to_le_bytes().to_vec();
+    payload.extend_from_slice(&config);
+    payload
+}
+
+/// `12:05` request payload: `[macro ID u16][index of the first event u16]`. [cap]
+pub fn macro_events_request(id: u16, index: u16) -> [u8; 4] {
+    let [a, b] = id.to_le_bytes();
+    let [c, d] = index.to_le_bytes();
+    [a, b, c, d]
+}
+
+/// Decode a `12:05` reply: `[total event count u16][events…]` (up to 13 per reply). [cap]
+pub fn parse_macro_events_page(data: &[u8]) -> Option<(u16, Vec<MacroEvent>)> {
+    let total = u16::from_le_bytes([*data.first()?, *data.get(1)?]);
+    let events = data.get(2..)?;
+    if events.len() % 4 != 0 {
+        return None;
+    }
+    Some((total, macro_events(events)))
+}
+
+/// Decode a `12:07` reply: `[length][name]`. [cap]
+pub fn parse_macro_name(data: &[u8]) -> Option<String> {
+    let len = usize::from(*data.first()?);
+    let name = data.get(1..1 + len)?;
+    Some(String::from_utf8_lossy(name).into_owned())
+}
+
+fn macro_events(data: &[u8]) -> Vec<MacroEvent> {
+    data.chunks_exact(4)
+        .map(|e| MacroEvent {
+            kind: e[0],
+            usage: e[1],
+            delay_ms: u16::from_le_bytes([e[2], e[3]]),
+        })
+        .collect()
+}
+
 /// Decode a `12:06` payload: the macro ID and its events. `None` unless it starts
 /// at index 0 and holds exactly `count` events.
 pub fn parse_macro_events(data: &[u8]) -> Option<(u16, Vec<MacroEvent>)> {
@@ -731,15 +783,7 @@ pub fn parse_macro_events(data: &[u8]) -> Option<(u16, Vec<MacroEvent>)> {
     if index != 0 || events.len() != count * 4 {
         return None;
     }
-    let events = events
-        .chunks_exact(4)
-        .map(|e| MacroEvent {
-            kind: e[0],
-            usage: e[1],
-            delay_ms: u16::from_le_bytes([e[2], e[3]]),
-        })
-        .collect();
-    Some((id, events))
+    Some((id, macro_events(events)))
 }
 
 // --- 10:0d: PerformRealtimeUpdates (per-LED colors) ---------------------------

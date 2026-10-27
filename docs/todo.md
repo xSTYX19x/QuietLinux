@@ -310,8 +310,8 @@ logic. Dependencies stay minimal (today: clap, rustix) and are checked in CI
 - [ ] Test the daemon after suspend/resume
 
 ### 6.6 Phase 7 – Release
-- [ ] Docs: `README.md`, `docs/installation.md` ✔, `docs/usage-cli.md` ✔, `docs/usage-gui.md` ✔, `docs/protocol.md` ✔, `docs/troubleshooting.md`, `docs/contributing.md` (including how to capture for another firmware version or layout)
-- [ ] Install script for binary + udev rule
+- [x] Docs: `README.md`, `docs/installation.md`, `docs/usage-cli.md`, `docs/usage-gui.md`, `docs/protocol.md`, `docs/troubleshooting.md`, `docs/contributing.md`
+- [x] Install script (`install.sh`, `uninstall.sh`): programs, menu entry and icon, udev rule, user service
 - [ ] Packages: AUR (PKGBUILD), `cargo install`, prebuilt binaries in releases, maybe .deb/Flatpak
 - [ ] GitHub release, issue template "device report"
 

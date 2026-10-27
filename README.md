@@ -42,14 +42,10 @@ pass `--allow-unknown-firmware`.
 ```sh
 git clone https://github.com/xSTYX19x/QuietLinux.git
 cd QuietLinux
-cargo build --release
-sudo install -m 644 packaging/udev/70-quietlinux.rules /etc/udev/rules.d/
-sudo udevadm control --reload && sudo udevadm trigger
+./install.sh --service     # builds and installs for your user; asks sudo for the udev rule
 # replug the keyboard, then:
-./target/release/quietlinux status
-./target/release/quietlinux light set keys=ff2a00 top=f4dbae knob=ffffff
-./target/release/quietlinux light stored   # back to the stored effect
-./target/release/quietlinux-gui            # the graphical interface
+quietlinux status
+quietlinux-gui             # or "QuietLinux" in the application menu
 ```
 
 Details: [installation](docs/installation.md), [command line usage](docs/usage-cli.md),
@@ -63,7 +59,9 @@ Details: [installation](docs/installation.md), [command line usage](docs/usage-c
 - [docs/usage-cli.md](docs/usage-cli.md): every command with examples
 - [docs/usage-gui.md](docs/usage-gui.md): the graphical interface
 - [docs/protocol.md](docs/protocol.md): what is known about the keyboard's protocol
+- [docs/troubleshooting.md](docs/troubleshooting.md): when something does not work
 - [docs/capturing.md](docs/capturing.md): how to record and decode the vendor software's traffic
+- [docs/contributing.md](docs/contributing.md): device reports, captures, code
 - [docs/todo.md](docs/todo.md): roadmap
 
 ## Safety

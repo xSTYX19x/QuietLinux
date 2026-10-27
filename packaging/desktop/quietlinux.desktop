@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=QuietLinux
+GenericName=Keyboard Settings
+Comment=Lighting, key bindings and macros of the be quiet! Light Mount
+Exec=quietlinux-gui
+Icon=quietlinux
+Terminal=false
+Categories=Settings;HardwareSettings;
+Keywords=keyboard;lighting;RGB;macro;Light Mount;be quiet;
+StartupWMClass=quietlinux

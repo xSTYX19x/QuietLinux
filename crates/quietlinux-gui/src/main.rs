@@ -1241,6 +1241,8 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
     if let Some(file) = cli.screenshot {
         return screenshot::run(&file, cli.page, cli.theme);
     }
+    // matches packaging/desktop/quietlinux.desktop: the desktop shows its name and icon
+    slint::set_xdg_app_id("quietlinux")?;
     let ui = AppWindow::new()?;
     set_up(&ui);
     let prefs = prefs::load();

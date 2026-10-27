@@ -10,6 +10,21 @@
   (Debian/Ubuntu: `libfontconfig-dev pkg-config`, Fedora: `fontconfig-devel`,
   Arch: `fontconfig pkgconf`). It runs on Wayland and X11 and needs no GPU.
 
+## Quick install
+
+```sh
+git clone https://github.com/xSTYX19x/QuietLinux.git
+cd QuietLinux
+./install.sh             # command line tool, window, udev rule (asks sudo for it)
+./install.sh --service   # the same, and the background service started now and at login
+```
+
+It builds the programs, installs them to `~/.local/bin`, adds QuietLinux to the
+application menu and installs the [udev rule](#permissions-udev-rule).
+`--no-gui` leaves out the window, `--no-udev` the rule, `--prefix DIR` installs
+elsewhere. `./uninstall.sh` removes everything again (your settings in
+`~/.config/quietlinux` stay). The sections below do the same by hand.
+
 ## Build
 
 ```sh

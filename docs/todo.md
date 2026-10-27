@@ -107,7 +107,8 @@ Windows app and the web app in phase 2. ✔ = already known thanks to bbossa.
 ### 2.4 Profiles
 - [x] Find out how many profiles the device holds: none. IO Center for Windows keeps profiles on the PC and writes all settings when switching [cap]
 - [ ] Profile switching keys (binding type `08`): needs the background service
-- [ ] Export/import profiles as files (own documented format, e.g. TOML)
+- [x] Export/import profiles as files (own documented format, e.g. TOML): `backup`/`apply`
+- [ ] Import and export IO Center for Windows backups (`.zip`), so that settings move between IO Center and QuietLinux. A sample export of the reference keyboard is available locally (`captures/`, not committed: it contains the user's macros). Analyze the format first, document it in `protocol.md` or its own doc, and add only an anonymized or self-made sample as a fixture
 
 ### 2.5 Product settings
 - [x] Show the firmware version (**read-only**, see 7)

@@ -232,7 +232,7 @@ crates/
     config.rs          backup/apply file (serde, TOML)
   quietlinux-cli/      binary `quietlinux` (clap)
   quietlinux-gui/      binary `quietlinux-gui` (Slint, software renderer; `--demo` with the simulated keyboard)
-  quietlinux-daemon/   (planned) host-side actions, reapply after replug/resume
+  quietlinux-daemon/   binary `quietlinux-daemon`: per-key colors again after replug/resume; (planned) host-side actions
 tools/qlcap/           capture decoder (pcap, pcapng, WebHID logs)
 tools/webhid-logger.js DevTools snippet that logs WebHID reports
 packaging/udev/        udev rule
@@ -288,7 +288,8 @@ logic. Dependencies stay minimal (today: clap, rustix) and are checked in CI
 - [x] Knob: press, turn left and turn right in the key editor
 - [x] Per-key colors in the window: brush with color wheel, click to paint, right-click to clear, light bar zones; sent at once (realtime, volatile)
 - [x] Remember the last effect (CLI and GUI, `last-effect.toml`; the keyboard does not report it) and the painted per-key colors (`gui.toml`); the window starts with them and with the view of the keyboard's lighting mode
-- [ ] Save and load per-key color layouts as files, and keep them shown (background service)
+- [x] Keep per-key colors shown: remembered in `lighting.toml`, shown again by the background service
+- [ ] Save and load several per-key color layouts as named files
 - [ ] A file chooser for the backup (needs the XDG desktop portal; today a file name field)
 - [ ] Screen reader support: Slint's "accessibility" feature is off because its D-Bus stack needs quick-xml 0.38 (RUSTSEC-2026-0194/-0195); turn it on once AccessKit moves to quick-xml 0.41+
 - [ ] Remove the `cargo deny` ignores for unmaintained crates (ttf-parser, zvariant, zbus_names) when Slint/winit move on
@@ -301,8 +302,9 @@ logic. Dependencies stay minimal (today: clap, rustix) and are checked in CI
 ### 6.5 Phase 6 – Daemon (optional)
 - [ ] Evaluate keeping hidraw access to the daemon only (system service with its own user, GUI/CLI talk to it over D-Bus), so that user processes cannot read key presses from interface 2
 - [ ] Host-side actions (open program/URL, shortcuts) through vendor events
-- [ ] Reapply settings after replug/resume
-- [ ] systemd user service
+- [x] Reapply after replug/resume: `quietlinux-daemon` shows the per-key colors (or "off") from `lighting.toml` again; polls sysfs every 2 s, detects sleep by wall vs. monotonic clock
+- [x] systemd user service (`packaging/systemd/quietlinux-daemon.service`)
+- [ ] Test the daemon on the reference keyboard (replug, suspend)
 
 ### 6.6 Phase 7 – Release
 - [ ] Docs: `README.md`, `docs/installation.md` ✔, `docs/usage-cli.md` ✔, `docs/usage-gui.md` ✔, `docs/protocol.md` ✔, `docs/troubleshooting.md`, `docs/contributing.md` (including how to capture for another firmware version or layout)

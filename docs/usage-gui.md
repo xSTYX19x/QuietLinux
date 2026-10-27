@@ -75,9 +75,10 @@ Colors for single keys, like `quietlinux light set`:
 - Changes show on the keyboard at once (realtime mode).
 - These colors are **not stored** in the keyboard: unplugging it ends them,
   and so do **Back to effect** or applying an effect. The window remembers
-  them (in `~/.config/quietlinux/gui.toml`) and shows them again when it
-  opens; painting a key sends them all to the keyboard again. A background
-  service that keeps them shown is planned ([todo.md](todo.md)).
+  them (in `~/.config/quietlinux/lighting.toml`) and shows them again when it
+  opens; painting a key sends them all to the keyboard again. The background
+  service shows them again after replugging or sleep
+  ([installation](installation.md#background-service-optional)).
 - When the window opens, the Lighting tab shows **Per key** if the keyboard is
   in per-key mode, else **Effect**.
 

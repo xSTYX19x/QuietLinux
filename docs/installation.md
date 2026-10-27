@@ -19,14 +19,35 @@ cargo build --release
 ```
 
 This builds `target/release/quietlinux` (the command line tool, under 1 MB, no
-runtime dependencies) and `target/release/quietlinux-gui` (the graphical
-interface). Only the command line tool: `cargo build --release -p quietlinux-cli`.
+runtime dependencies), `target/release/quietlinux-gui` (the graphical
+interface) and `target/release/quietlinux-daemon` (the background service). Only the command line tool: `cargo build --release -p quietlinux-cli`.
 To have them in your `PATH`:
 
 ```sh
 install -Dm755 target/release/quietlinux ~/.local/bin/quietlinux
 install -Dm755 target/release/quietlinux-gui ~/.local/bin/quietlinux-gui
+install -Dm755 target/release/quietlinux-daemon ~/.local/bin/quietlinux-daemon
 ```
+
+## Background service (optional)
+
+Per-key colors are not stored in the keyboard: they are gone after it is
+unplugged or the computer sleeps. `quietlinux-daemon` shows them again. It
+looks for the keyboard every 2 seconds and, when it appears or the computer
+woke up, shows what QuietLinux showed last (`~/.config/quietlinux/lighting.toml`,
+written by the window and by `quietlinux light set/off/effect`). It sends
+nothing else; with an effect, the keyboard shows it by itself.
+
+Install it as a systemd user service:
+
+```sh
+install -Dm644 packaging/systemd/quietlinux-daemon.service ~/.config/systemd/user/quietlinux-daemon.service
+systemctl --user daemon-reload
+systemctl --user enable --now quietlinux-daemon
+journalctl --user -u quietlinux-daemon   # what it did
+```
+
+`quietlinux-daemon --once` shows the last lighting once and exits.
 
 ## Permissions (udev rule)
 
@@ -84,7 +105,9 @@ whichever writes last wins.
 ## Uninstall
 
 ```sh
-rm ~/.local/bin/quietlinux ~/.local/bin/quietlinux-gui
+systemctl --user disable --now quietlinux-daemon
+rm ~/.config/systemd/user/quietlinux-daemon.service
+rm ~/.local/bin/quietlinux ~/.local/bin/quietlinux-gui ~/.local/bin/quietlinux-daemon
 sudo rm /etc/udev/rules.d/70-quietlinux.rules
 sudo udevadm control --reload
 ```

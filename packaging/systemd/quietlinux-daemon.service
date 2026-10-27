@@ -1,0 +1,28 @@
+# systemd user service: shows the Light Mount's per-key colors again after the
+# keyboard is replugged or the computer wakes up.
+#
+# Install (as your user, not root):
+#   install -Dm644 packaging/systemd/quietlinux-daemon.service ~/.config/systemd/user/quietlinux-daemon.service
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now quietlinux-daemon
+# Log: journalctl --user -u quietlinux-daemon
+
+[Unit]
+Description=QuietLinux: show the Light Mount's per-key colors again after replugging or sleep
+Documentation=https://github.com/xSTYX19x/QuietLinux
+
+[Service]
+ExecStart=%h/.local/bin/quietlinux-daemon
+Restart=on-failure
+RestartSec=5
+# It only reads ~/.config/quietlinux and talks to the keyboard's hidraw device.
+# (PrivateTmp, ProtectSystem, ProtectHome would need user namespaces in a user
+# service, which not every system allows: the service would not start there.)
+NoNewPrivileges=yes
+RestrictAddressFamilies=AF_UNIX
+LockPersonality=yes
+RestrictRealtime=yes
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=default.target

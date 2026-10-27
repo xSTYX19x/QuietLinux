@@ -3333,6 +3333,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "quietlinux-daemon"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "quietlinux-core",
+]
+
+[[package]]
 name = "quietlinux-gui"
 version = "0.1.0"
 dependencies = [

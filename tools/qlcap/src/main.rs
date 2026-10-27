@@ -38,16 +38,23 @@ enum Command {
         /// Device to decode as BUS.ADDRESS (default: the one with the most vendor packets)
         #[arg(long)]
         device: Option<String>,
-        /// Leave out key events (11:02)
+        /// Leave out key events (11:02, and 12:05 while a macro is recorded)
         #[arg(long)]
         no_key_events: bool,
+        /// Show the events and name of this macro ID; those of other macros are always hidden
+        #[arg(long = "macro", value_name = "ID")]
+        macro_id: Option<u16>,
     },
-    /// Print the vendor messages as test fixture lines (hex); serial number and key events left out
+    /// Print the vendor messages as test fixture lines (hex); serial number, key events and
+    /// macro contents left out
     Fixtures {
         #[arg(required = true)]
         files: Vec<PathBuf>,
         #[arg(long)]
         device: Option<String>,
+        /// Keep the events and name of this macro ID (e.g. a test macro)
+        #[arg(long = "macro", value_name = "ID")]
+        macro_id: Option<u16>,
     },
 }
 
@@ -124,17 +131,22 @@ fn run(cli: Cli) -> Result<(), String> {
             files,
             device,
             no_key_events,
+            macro_id,
         } => {
             let events = load_all(&files)?;
             let device = choose_device(&events, device.as_deref())?;
             let start = decode::start_time(&events);
-            for line in decode::lines(&events, &device) {
+            for line in decode::hide_macros(decode::lines(&events, &device), macro_id) {
                 if let Some(text) = decode::format(&line, start, !no_key_events) {
                     println!("{text}");
                 }
             }
         }
-        Command::Fixtures { files, device } => {
+        Command::Fixtures {
+            files,
+            device,
+            macro_id,
+        } => {
             let events = load_all(&files)?;
             let device = choose_device(&events, device.as_deref())?;
             let name = files
@@ -144,7 +156,7 @@ fn run(cli: Cli) -> Result<(), String> {
                 .collect::<Vec<_>>()
                 .join(", ");
             println!("# Extracted from {name} with qlcap (anonymized).");
-            for line in decode::lines(&events, &device) {
+            for line in decode::hide_macros(decode::lines(&events, &device), macro_id) {
                 if let Some(text) = decode::fixture(&line) {
                     println!("{text}");
                 }

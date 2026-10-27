@@ -133,6 +133,9 @@ enum BindAction {
     /// A Windows shortcut (calculator, task-manager, …): performed by IO Center on
     /// Windows; on Linux nothing happens yet
     Shortcut { name: settings::Shortcut },
+    /// A macro stored in the keyboard, by its ID (`quietlinux info` lists them);
+    /// the keyboard plays it itself
+    Macro { id: u16 },
     /// The key does nothing
     Disable,
     /// Back to the factory binding
@@ -158,6 +161,7 @@ impl BindAction {
                 effect: None,
             },
             BindAction::Shortcut { name } => Action::WindowsShortcut(name.0),
+            BindAction::Macro { id } => Action::Macro(*id),
             BindAction::Disable => Action::Disabled,
             BindAction::Default => return None,
         })
@@ -422,6 +426,12 @@ fn run(cli: Cli) -> Result<ExitCode, Box<dyn std::error::Error>> {
                 )));
             }
             let mut session = open_session(usb_path, cli.allow_unknown_firmware)?;
+            if let BindAction::Macro { id } = action {
+                let ids = session.macro_ids()?;
+                if !ids.contains(&id) {
+                    return Err(format!("the keyboard has no macro {id} (macros: {ids:?})").into());
+                }
+            }
             let prefix = if fn_layer { "Fn+" } else { "" };
             if let Some(action) = action.action() {
                 session.set_binding(key.key_id, fn_layer, &action)?;

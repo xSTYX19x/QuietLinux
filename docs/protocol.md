@@ -216,7 +216,9 @@ Quick tap ("SnapTap") priorities: 0 last input, 1 first key always wins,
 Notifications: `07:01` ConfigChanged, `07:02` StateChanged, `07:03`
 SnapTapConfigChanged. Switching game mode with Fn+Pause sends `07:01` with
 `[11][flags]`, then `07:02` with `[11][state]` (`01` on, `00` off); the meaning
-of `11` is unknown. [cap] IO Center Web has no switch for game mode, so `07:05`
+of `11` is unknown, with IO Center for Windows running it was `01`. [cap]
+Neither IO Center Web nor IO Center for Windows has a switch for game mode
+(Fn+Pause is the switch: action type `12` in the key event), so `07:05`
 SetState is not captured. The Light Mount's game mode
 offers Shift+Tab, Alt+F4, Win and Alt+Tab (no Caps Lock).
 
@@ -242,6 +244,12 @@ offers Shift+Tab, Alt+F4, Win and Alt+Tab (no Caps Lock).
 `02` custom (stored per-key layers), `03` realtime (per-LED colors from
 `10:0d`, volatile). Switching to realtime clears every LED. [cap] modes 1, 3; [web] all
 
+IO Center for Windows does its per-key lighting in **realtime** mode, not in
+custom mode: `10:02` `03`, then all 166 LEDs in `10:0d` messages of 40 colors
+(the last one committed), then one committed message per changed key. Going
+back to an effect is `10:02` `01`. [cap] So per-key lighting is not stored in
+the keyboard by either app; it needs a program that keeps running.
+
 **Layer config** (`10:06` payload, `10:05` reply without the first byte):
 
 ```text
@@ -251,8 +259,9 @@ offers Shift+Tab, Alt+F4, Win and Alt+Tab (no Caps Lock).
 - Layers: the Light Mount has one, `0` (whole keyboard). The Light Mount TKL has
   `0` top and `1` bars (side strips). [web]
 - Effects: `0` static, `1` color wave, `2` tornado, `3` breathing, `4` reactive,
-  `5` matrix, `6` off, `7` ripple. [web] (static [cap]) IO Center Web offers the
-  first six for the Light Mount; off and ripple appear for the TKL.
+  `5` matrix, `6` off, `7` ripple. [web] (the first six [cap]) IO Center Web and
+  IO Center for Windows offer the first six for the Light Mount; off and ripple
+  appear for the TKL.
 - Directions: `0` up, `1` down, `2` left, `3` right, `4` clockwise,
   `5` counterclockwise, `6` omnidirectional, `7` horizontal, `8` vertical, `9` cross. [web]
 - Brightness and speed: 0–100 percent (captured 10–100); defaults 100 and 50 [cap].
@@ -316,8 +325,7 @@ blue 0.43, which explains why unscaled colors look greenish. [web]
   first resets the key with `11:03`. [cap]
 - A GetBindings entry is `[key ID][flags: bit 7 = Fn layer][action type][action data…]`.
 - GetBindings returns only bindings that differ from the factory defaults: the
-  reference keyboard answers with its 5 changed M keys (one of them bound to
-  macro 0, action 2). [cap]
+  reference keyboard answers with its 5 changed M keys (M5 bound to macro 2). [cap]
 
 Action types and their data:
 
@@ -329,11 +337,11 @@ Action types and their data:
 | `03` | mouse | button: `[01][button \| flags][auto-fire rate]` (buttons 0 left, 1 right, 2 middle, 3 forward, 4 back; flags `40` while pressed, `80` double click); scroll: `[02][0 up, 1 down, 2 left, 3 right]` |
 | `04` | open folder | `[length][path, ASCII]` |
 | `05` | open file | `[length][path, ASCII]` |
-| `06` | open website | `[length][URL, ASCII]` |
+| `06` | open website | `[length][URL, ASCII]` [cap] |
 | `07` | Windows shortcut | `[action]` (file explorer, calculator, task manager, lock, …) |
-| `08` | profile | `[action]`: 1 select (`[1][profile u16]`), 2 cycle, 3 next, 4 previous |
+| `08` | profile | `[action]`: 1 select (`[1][profile ID, 16 bytes]`: IO Center's UUID of the profile) [cap], 2 cycle, 3 next [cap], 4 previous [cap] |
 | `09` | backlight | `[action]`: 1 select effect (`[1][effect]`), 2 next effect, 3 previous effect, 4 brighter, 5 darker |
-| `0a` | macro | `[action][macro ID u16]` |
+| `0a` | macro | `[macro ID u16]` [cap] (IO Center Web's code suggests an action byte before the ID; the Windows app sends none) |
 | `0b` | special key ("alt code") | `[02][code u16]` |
 | `0c` | disable | |
 
@@ -359,7 +367,8 @@ the action in the same format as in bindings. [cap] (layout matched with [web])
 | `6e 00 01 02 01`, `6f 00 01 02 02`, `70 00 01 02 03` | knob right (volume up), left (volume down), press (mute) |
 | `71 00 01 01 00 32`, `72 00 01 01 00 64` | the ISO keys `#` (HID usage `32`) and `<` (usage `64`) |
 | `02 00 00 02 04` | M1 bound to mic mute: state byte `00` here, `01` for every other key (meaning unknown) |
-| `06 00 01 0a 02 00` | M5 bound to macro 0: then the keys of the macro follow as events, typed by the keyboard itself |
+| `06 00 01 0a 02 00` | M5 bound to macro 2: then the keys of the macro follow as events, typed by the keyboard itself |
+| `5d 80 01 12` | Fn+Pause: game mode on/off, action type `12` (not in IO Center Web's table) |
 
 The keyboard sends this notification for **every** key press, also for plain
 keys and modifiers alone (e.g. `0b 00 01 01 01 00`: left Ctrl, modifiers `01`,
@@ -379,21 +388,63 @@ Captured bindings (all with an empty success reply) [cap]:
 | `03 00 07 02` | M2 → Windows shortcut "calculator" |
 | `09 00 00` | Caps Lock disabled |
 | `16 80 02 07` | Fn+F1 → play/pause |
+| `03 00 0a 03 00` | M2 → macro 3 (Windows app) |
+| `03 00 06 13 68 74 74 70 73 …` | M2 → open website `https://example.org` (Windows app) |
+| `03 00 08 03`, `03 00 08 04` | M2 → next profile, previous profile (Windows app) |
 
-### `12` MACROS
+**IO Center's default bindings.** A new profile in IO Center for Windows writes
+these explicitly [cap]: M1 play/pause, M2 next track, M3 previous track, M4
+stop, M5 mic mute, knob press mute, knob left/right volume down/up; Fn+↑
+brighter (`09 04`), Fn+↓ darker (`09 05`), Fn+→ next effect (`09 02`), Fn+←
+previous effect (`09 03`), Fn+Page Up volume up, Fn+Page Down volume down,
+Fn+Insert play/pause, Fn+Delete previous track, Fn+End next track, Fn+Home
+mute. The keyboard's own defaults for Fn+← and Fn+→ are the other way round
+(see the key events above).
 
-The reference keyboard reports this feature (version 1), and a macro bound to
-M5 is **played by the keyboard itself**: its key presses arrive as `11:02`
-events. So macros are stored in the keyboard. `12:01` GetMacros without payload
-answers `02 00 01 00 02 00` (layout unknown). [cap]
+### `12` MACROS [cap]
+
+Macros are **stored in the keyboard and played by it**: a key bound to a macro
+(`0a` action) types the macro's keys itself, and its key presses arrive as
+`11:02` events. Captured from IO Center for Windows, which writes every macro
+again when one changes:
+
+| Command | Name | Payload | Reply |
+|---|---|---|---|
+| `12:01` | GetMacros | (none) | `[count u16][macro ID u16]…`, e.g. `02 00 01 00 02 00` (IDs 1, 2) |
+| `12:02` | SetMacros | `[count u16][first index u16 = 0][macro ID u16]…`: the IDs of **all** macros; a macro left out is deleted | (empty) |
+| `12:03` | GetMacroConfig | [web] | |
+| `12:04` | SetMacroConfig | `[macro ID u16][repeat mode][02][00 00]` | (empty) |
+| `12:05` | GetMacroEvents | [web] | |
+| `12:06` | SetMacroEvents | `[macro ID u16][count u16][first index u16 = 0][event]…` | (empty) |
+| `12:07` | GetMacroName | [web] | |
+| `12:08` | SetMacroName | `[macro ID u16][length][name, ASCII]` | (empty) |
+| `12:09` / `12:0a` | StartRecording / StopRecording | [web] `[count][key IDs…]` | |
+| `12:0b` | AbortPlayback | (none); answered INVALID_STATE when no macro plays | |
+
+- A macro event is 4 bytes: `[kind][HID usage][delay after it, ms u16]`,
+  kinds `02` key down and `03` key up. IO Center records with a fixed delay of
+  100 ms after each event and 0 after the last: the test macro "A, B, C" is
+  `02 04 64 00  03 04 64 00  02 05 64 00  03 05 64 00  02 06 64 00  03 06 00 00`.
+- Creating a macro: `12:02` with the new ID added, then for each macro
+  `12:04`, `12:08`, `12:06`. Deleting one: `12:02` without it, then the others
+  again. Binding one to a key: `11:02` with action `0a [ID u16]`.
+- The keyboard's (empty) replies to `12:06` and `12:08` repeat the start of the
+  request in their unused bytes, so a reply shows part of the macro too.
+  `qlcap` hides those replies with their requests.
+- Macro IDs count from 1; a new macro gets the next free ID, its default name
+  is "Makro N" in the German app.
+- SetMacroConfig: the repeat mode byte took the values 0 (default), 2 and 1
+  while the repeat mode was changed; their meaning and that of the `02` byte
+  still have to be matched to the app's options.
+- A macro of 52 events (214 bytes) went in one fragmented message; the `first
+  index` fields are presumably for longer lists.
+- While IO Center for Windows records a macro, the keyboard sends `12:05`
+  InputEvent notifications with the recorded key presses (`[kind][HID usage]`,
+  e.g. `02 04` A down). [cap] No `12:09` StartRecording was seen in that
+  capture. They are key presses: `qlcap` hides them with `--no-key-events`.
 
 IO Center Web does not list this feature for the (full-size) Light Mount. For
-the TKL it uses only `12:09` StartRecording (`[count][key IDs…]`) and
-`12:0a` StopRecording; while recording, the keyboard sends `12:05` InputEvent
-notifications. The other commands exist (`12:01`–`12:08` get/set macros, their
-configuration, events and names, `12:0b` AbortPlayback) but IO Center Web
-does not send them, which suggests that macros are stored and played by the
-host application. To be checked with captures of the Windows app.
+the TKL it uses only `12:09` StartRecording and `12:0a` StopRecording.
 
 Input event types: 1 modifiers changed, 2/3 key press/release, 4/5 power key,
 6/7 consumer key, 8/9 physical key press/release, 10 buttons, 11/12 scroll,
@@ -525,8 +576,20 @@ confirmed with `quietlinux events` on the German keyboard: K42 is `#`, K45 is `<
 | `71` | `K42` | Backslash (ISO key left of Enter) ¹ |
 | `72` | `K45` | IntlBackslash (ISO key right of left Shift) ¹ |
 
+### Profiles [cap]
+
+Profiles exist only in IO Center for Windows, **not in the keyboard**. Switching
+the profile writes all settings of the new profile: `12:0b` AbortPlayback,
+`10:02` lighting mode, `10:06` effect, `12:02`–`12:08` all macros, `11:03`
+ClearBinding for each key the other profile changed and `11:02` SetBinding for
+each binding of the new one. A profile binding (`08`) only makes the keyboard
+report the key press; IO Center then switches. On Linux, profiles are setting
+files (`quietlinux backup`/`apply`).
+
 ## Unknown so far
 
 - Payload layouts of `10:07`/`10:08` (layer masks), `10:0b`/`10:0c` (playback), `11:04`/`11:05`, `11:06`, the `31` CONTROLS feature.
-- Whether the Windows app stores macros in the keyboard.
+- Request layouts of `12:03`, `12:05`, `12:07` (reading a macro's config, events and name): IO Center for Windows reads them when it starts.
+- The meaning of the `12:04` bytes (repeat modes).
+- Setting the polling rate, quick tap pairs and the LED calibration: not captured yet.
 - Everything marked **[web]** only: to be captured before use. See [todo.md](todo.md).

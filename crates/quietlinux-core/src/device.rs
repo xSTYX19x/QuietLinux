@@ -619,6 +619,12 @@ impl<T: Transport> Session<T> {
             .ok_or(Error::InvalidReply(p::GET_LIGHTING_MODE))
     }
 
+    /// IDs of the macros stored in the keyboard (`12:01`).
+    pub fn macro_ids(&mut self) -> Result<Vec<u16>> {
+        let reply = self.query(p::GET_MACROS, &[])?;
+        crate::info::parse_macro_ids(&reply.data).ok_or(Error::InvalidReply(p::GET_MACROS))
+    }
+
     /// Switch the lighting mode (`10:02`). Values 1 (general) and 3 (realtime) are
     /// captured from IO Center; 0 (off) and 2 (custom) come from IO Center Web.
     pub fn set_lighting_mode(&mut self, mode: LightingMode) -> Result<()> {

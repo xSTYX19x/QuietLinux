@@ -112,6 +112,12 @@ pub fn parse_id_list(data: &[u8]) -> Option<Vec<u8>> {
     data.get(1..1 + count).map(<[u8]>::to_vec)
 }
 
+/// Reply to `12:01` (the macro list): `[count u16]` then `count` macro IDs (u16). [cap]
+pub fn parse_macro_ids(data: &[u8]) -> Option<Vec<u16>> {
+    let count = usize::from(u16_at(data, 0)?);
+    (0..count).map(|i| u16_at(data, 2 + i * 2)).collect()
+}
+
 /// `01:04` reply: `[count]` then `count × [feature][version]`.
 pub fn parse_features(data: &[u8]) -> Option<Vec<(u8, u8)>> {
     let count = usize::from(*data.first()?);
@@ -430,15 +436,16 @@ pub enum Action {
     OpenFile(String),
     OpenWebsite(String),
     WindowsShortcut(u8),
+    /// Profile cycle, next or previous (IO Center switches profiles on the host).
     Profile(u8),
+    /// Select a profile: IO Center's ID of the profile (a UUID).
+    ProfileSelect([u8; 16]),
     Backlight {
         action: u8,
         effect: Option<u8>,
     },
-    Macro {
-        action: u8,
-        id: u8,
-    },
+    /// Play a macro stored in the keyboard.
+    Macro(u16),
     SpecialKey(u16),
     /// An action type this decoder does not know, with the bytes that follow.
     Unknown {
@@ -495,6 +502,7 @@ pub fn parse_action(data: &[u8]) -> Option<(Action, usize)> {
             (action, used)
         }
         0x07 => (Action::WindowsShortcut(arg(1)?), 2),
+        0x08 if arg(1)? == 1 => (Action::ProfileSelect(data.get(2..18)?.try_into().ok()?), 18),
         0x08 => (Action::Profile(arg(1)?), 2),
         0x09 if arg(1)? == 1 => (
             Action::Backlight {
@@ -510,13 +518,7 @@ pub fn parse_action(data: &[u8]) -> Option<(Action, usize)> {
             },
             2,
         ),
-        0x0a => (
-            Action::Macro {
-                action: arg(1)?,
-                id: arg(2)?,
-            },
-            3,
-        ),
+        0x0a => (Action::Macro(u16_at(data, 1)?), 3),
         0x0b => (Action::SpecialKey(u16_at(data, 2)?), 4),
         _ => (
             Action::Unknown {
@@ -543,6 +545,10 @@ impl Action {
                 auto_fire,
             } if *button < 0x20 && *flags == flags & 0xe0 => {
                 vec![0x03, 0x01, button | flags, *auto_fire]
+            }
+            Action::Macro(id) => {
+                let [lo, hi] = id.to_le_bytes();
+                vec![0x0a, lo, hi]
             }
             Action::WindowsShortcut(action) => vec![0x07, *action],
             // next/previous effect, brighter, darker (selecting an effect is not captured)
@@ -696,6 +702,7 @@ impl fmt::Display for Action {
                 write!(f, "Windows shortcut: {}", named(&WINDOWS_SHORTCUTS, *a))
             }
             Action::Profile(a) => write!(f, "profile: {}", named(&PROFILE, *a)),
+            Action::ProfileSelect(_) => write!(f, "profile: select"),
             Action::Backlight {
                 action,
                 effect: Some(e),
@@ -709,7 +716,7 @@ impl fmt::Display for Action {
                 action,
                 effect: None,
             } => write!(f, "lighting: {}", named(&BACKLIGHT, *action)),
-            Action::Macro { action, id } => write!(f, "macro {id} (action {action})"),
+            Action::Macro(id) => write!(f, "macro {id}"),
             Action::SpecialKey(code) => write!(f, "special key {code:#06x}"),
             Action::Unknown { kind, data } => {
                 write!(f, "action type {kind:#04x}")?;
@@ -930,6 +937,18 @@ mod tests {
         );
         assert_eq!(action(&[0x06, 3, b'a', b'.', b'b']), "open website \"a.b\"");
         assert_eq!(action(&[0x09, 1, 3]), "lighting: select effect breathing");
+        assert_eq!(action(&[0x0a, 0x02, 0x00]), "macro 2");
+        assert_eq!(parse_macro_ids(&[2, 0, 1, 0, 2, 0]), Some(vec![1, 2]));
+        assert_eq!(parse_macro_ids(&[0, 0]), Some(vec![]));
+        assert_eq!(parse_macro_ids(&[2, 0, 1, 0]), None);
+        assert_eq!(action(&[0x08, 0x03]), "profile: next");
+        let mut select = vec![0x08, 0x01];
+        select.extend([0x11; 16]);
+        assert_eq!(
+            parse_action(&select).unwrap(),
+            (Action::ProfileSelect([0x11; 16]), 18)
+        );
+        assert_eq!(parse_action(&select[..17]), None);
         assert_eq!(parse_action(&[0x06, 9, b'a']), None); // text longer than the data
         assert_eq!(parse_action(&[0x03, 7]), None); // unknown mouse action
     }
@@ -937,7 +956,7 @@ mod tests {
     #[test]
     fn actions_encode_like_io_center() {
         // captured SetBinding payloads after key ID and layer
-        let captured: [&[u8]; 8] = [
+        let captured: [&[u8]; 9] = [
             &[0x01, 0x00, 0x04],       // key A
             &[0x01, 0x01, 0x06],       // Ctrl+C
             &[0x01, 0x00, 0x68],       // F13
@@ -946,6 +965,7 @@ mod tests {
             &[0x07, 0x02],             // Windows shortcut: calculator
             &[0x09, 0x02],             // next effect
             &[0x00],                   // disabled
+            &[0x0a, 0x03, 0x00],       // macro 3
         ];
         for bytes in captured {
             let (action, used) = parse_action(bytes).unwrap();
@@ -953,7 +973,6 @@ mod tests {
             assert_eq!(action.to_bytes().as_deref(), Some(bytes), "{action}");
         }
         assert_eq!(Action::OpenWebsite("x".into()).to_bytes(), None);
-        assert_eq!(Action::Macro { action: 2, id: 0 }.to_bytes(), None);
         assert_eq!(
             Action::Backlight {
                 action: 1,

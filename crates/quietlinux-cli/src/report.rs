@@ -285,16 +285,18 @@ fn keyboard_lines<T: Transport>(session: &mut Session<T>, out: &mut Vec<String>)
         }
         Err(e) => push(out, "Key bindings:", unavailable(&e)),
     }
-    // GetMacros: layout unknown so far, shown as hex.
-    match session.query(p::GET_MACROS, &[]) {
-        Ok(m) => push(
+    match session.macro_ids() {
+        Ok(ids) if ids.is_empty() => push(out, "Macros:", "none".to_owned()),
+        Ok(ids) => push(
             out,
-            "Macros (raw):",
-            if m.data.is_empty() {
-                "(empty)".to_owned()
-            } else {
-                hex(&m.data)
-            },
+            "Macros:",
+            format!(
+                "IDs {} (for `quietlinux bind KEY macro ID`)",
+                ids.iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
         ),
         Err(e) => push(out, "Macros:", unavailable(&e)),
     }

@@ -67,7 +67,7 @@ Key bindings:   on, 15 of 15 decoded
   KnobLeft             media: volume down
   Fn+ArrowUp           lighting: brighter
   …
-Macros (raw):   …
+Macros:         IDs 1, 2 (for `quietlinux bind KEY macro ID`)
 ```
 
 (Values above are examples.) A line reads `unavailable (…)` when the keyboard
@@ -204,6 +204,7 @@ quietlinux bind CapsLock default          # back to the factory binding
 quietlinux bind --fn F1 media play-pause  # Fn+F1
 quietlinux bind --fn F1 default
 quietlinux bind KnobRight media next-track
+quietlinux bind M5 macro 2                # a macro stored in the keyboard
 ```
 
 | Action | Values |
@@ -213,6 +214,7 @@ quietlinux bind KnobRight media next-track
 | `mouse BUTTON` | `left`, `right`, `middle`, `forward`, `back` |
 | `lighting ACTION` | `next-effect`, `previous-effect`, `brighter`, `darker` |
 | `shortcut NAME` | Windows shortcuts (`calculator`, `task-manager`, `lock-pc`, …): IO Center performs them on Windows; on Linux nothing happens yet |
+| `macro ID` | a macro stored in the keyboard; `quietlinux info` lists their IDs. The keyboard plays it itself |
 | `disable` | the key does nothing |
 | `default` | back to the factory binding |
 
@@ -223,8 +225,10 @@ quietlinux bind KnobRight media next-track
   M5 mic-mute, Knob mute, KnobLeft volume-down, KnobRight volume-up; Fn+↑/↓
   brighter/darker, Fn+←/→ previous/next effect.
 - `quietlinux info` lists all bindings that differ from the factory ones.
-- Not yet: macros, opening files/folders/websites, selecting a profile or an
-  effect, mouse double click and auto fire (their messages are not captured yet).
+- Not yet: creating or editing macros, opening files/folders/websites and
+  switching profiles (IO Center does these on the PC; QuietLinux needs a
+  background service for them), selecting an effect, mouse double click and
+  auto fire (their messages are not captured yet).
 
 ## `game-mode --block SHORTCUTS`
 
@@ -269,7 +273,8 @@ blocks = ["shift-tab", "alt-f4", "win", "alt-tab", "caps-lock"]
 M1 = "media mic-mute"
 M2 = "key F13"
 "Fn+F1" = "media play-pause"
-M5 = "raw 0a 02 00"  # macro 0 (action 2): QuietLinux cannot write this yet; `apply` keeps it
+M5 = "macro 2"
+"Fn+Home" = "raw 08 03"  # profile: next: QuietLinux cannot write this yet; `apply` keeps it
 
 # [effect]
 # effect = "static"
@@ -280,8 +285,10 @@ M5 = "raw 0a 02 00"  # macro 0 (action 2): QuietLinux cannot write this yet; `ap
   The file ends with a commented-out `[effect]` section: remove the `#` signs
   and fill it in to have `apply` set an effect.
 - Bindings use the syntax of `bind` (`key …`, `media …`, `mouse …`, `lighting …`,
-  `shortcut …`, `disable`, `default`); `"Fn+KEY"` is the Fn layer. Bindings
-  QuietLinux cannot write yet (macros, …) are stored as `raw` bytes.
+  `shortcut …`, `macro …`, `disable`, `default`); `"Fn+KEY"` is the Fn layer.
+  Bindings QuietLinux cannot write yet (websites, profiles, …) are stored as
+  `raw` bytes.
+- Only the binding to a macro is saved, not the macro itself.
 
 ## `apply FILE [--dry-run]`
 
@@ -290,7 +297,7 @@ differs is sent; `--dry-run` lists the changes without making them.
 
 ```console
 $ quietlinux apply ~/lightmount.toml --dry-run
-  note: M5: kept (macro 0 (action 2)); QuietLinux cannot recreate it, `quietlinux bind M5 default` resets it
+  note: Fn+Home: kept (profile: next); QuietLinux cannot recreate it, `quietlinux bind --fn Home default` resets it
   M3: media: next track
   CapsLock: factory binding
 2 change(s); nothing written (--dry-run).
@@ -301,6 +308,7 @@ $ quietlinux apply ~/lightmount.toml --dry-run
 - With a `[bindings]` section, the file describes all changed keys: keys not
   listed get their factory binding back, **except** bindings QuietLinux cannot
   recreate (they are kept, with a note).
+- A binding to a macro the keyboard does not have is skipped, with a note.
 - `[keyboard]` is information only.
 - `[effect]` (optional): `effect`, one of `color`, `dual` (two colors) or
   `gradient` (list like `["ff0000@0", "0000ff@100"]`), `brightness`, `speed`,

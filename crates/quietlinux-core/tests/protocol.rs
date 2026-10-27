@@ -588,7 +588,7 @@ fn connect_web_replies_decode() {
             "M2: key F13",
             "M3: media: next track",
             "M4: media: play/pause",
-            "M5: macro 0 (action 2)"
+            "M5: macro 2"
         ]
     );
 }
@@ -864,4 +864,232 @@ fn game_mode_notifications() {
             (Command::new(0x07, 0x02), vec![0x11, 0x00]),
         ]
     );
+}
+
+// --- IO Center for Windows (windows.hex) ---------------------------------------------
+
+/// (direction, message, capture name) of `windows.hex`.
+fn windows() -> Vec<(String, p::Message, Vec<Packet>, String)> {
+    let path = format!("{}/tests/fixtures/windows.hex", env!("CARGO_MANIFEST_DIR"));
+    std::fs::read_to_string(&path)
+        .unwrap()
+        .lines()
+        .filter(|l| !l.starts_with('#') && !l.trim().is_empty())
+        .map(|l| {
+            let (hex, comment) = l.split_once('#').unwrap();
+            let packets: Vec<Packet> = hex.split_whitespace().map(parse_packet).collect();
+            let name = comment.rsplit_once('(').unwrap().1.trim_end_matches(')');
+            let dir = comment.split_whitespace().next().unwrap();
+            let message = p::reassemble(&packets).expect("complete message");
+            (dir.to_owned(), message, packets, name.to_owned())
+        })
+        .collect()
+}
+
+/// Requests of one capture with the given command.
+fn windows_out(capture: &str, cmd: Command) -> Vec<(p::Message, Vec<Packet>)> {
+    windows()
+        .into_iter()
+        .filter(|(dir, m, _, name)| dir == "out" && name == capture && m.cmd == cmd)
+        .map(|(_, m, packets, _)| (m, packets))
+        .collect()
+}
+
+#[test]
+fn windows_replies_are_empty_successes() {
+    let all = windows();
+    assert!(all.len() > 300);
+    for (dir, m, _, name) in all {
+        if dir == "in" && m.cmd != Command::new(0x12, 0x0b) {
+            assert_eq!(m.status, p::STATUS_SUCCESS, "{name} {}", m.cmd);
+            assert!(m.data.is_empty(), "{name} {}", m.cmd);
+        }
+    }
+}
+
+#[test]
+fn windows_rebuilds_every_request() {
+    for (dir, m, packets, name) in windows() {
+        if dir == "out" {
+            let rebuilt = p::message(m.cmd, &m.data, m.request_id, m.session).unwrap();
+            assert_eq!(rebuilt, packets, "{name} {}", m.cmd);
+        }
+    }
+}
+
+#[test]
+fn windows_effects() {
+    use quietlinux_core::info::LayerConfig;
+
+    let effects: Vec<(u8, u8)> = windows_out("effects", p::SET_LAYER_CONFIG)
+        .into_iter()
+        .map(|(m, _)| {
+            let config = LayerConfig::parse(&m.data[1..]).unwrap();
+            let payload = p::layer_config_payload(
+                m.data[0],
+                config.effect,
+                config.direction,
+                config.brightness,
+                config.speed,
+                &config.colors,
+            )
+            .unwrap();
+            assert_eq!(payload, m.data);
+            (config.effect, config.direction)
+        })
+        .collect();
+    // color wave, tornado, reactive, matrix, breathing, static
+    assert_eq!(effects, [(1, 3), (2, 4), (4, 0), (5, 1), (3, 0), (0, 0)]);
+}
+
+#[test]
+fn windows_per_key_lighting_is_realtime() {
+    let modes = windows_out("custom-mode", p::SET_LIGHTING_MODE);
+    assert_eq!(modes[0].0.data, [p::MODE_REALTIME]);
+    let updates = windows_out("custom-mode", p::PERFORM_REALTIME_UPDATES);
+    // the first update sets all 166 LEDs, W (LED 0x57) red
+    let first: Vec<Led> = updates[..5]
+        .iter()
+        .flat_map(|(_, packets)| p::parse_leds(packets).unwrap().entries)
+        .collect();
+    assert_eq!(first.len(), 166);
+    assert!(first.contains(&Led::new(0x57, Rgb::new(0xff, 0, 0))));
+    // then single changes, committed: A (LED 0x6c) green
+    let (last, packets) = updates.last().unwrap();
+    assert_eq!(
+        p::leds_payload(&[Led::new(0x6c, Rgb::new(0, 0xff, 0))], true).unwrap(),
+        last.data
+    );
+    assert_eq!(
+        p::update(
+            &[Led::new(0x6c, Rgb::new(0, 0xff, 0))],
+            last.request_id,
+            last.session
+        )[0],
+        *packets
+    );
+    let off = windows_out("custom-off", p::SET_LIGHTING_MODE);
+    assert_eq!(off[0].0.data, [p::MODE_GENERAL]);
+}
+
+#[test]
+fn windows_bindings() {
+    use quietlinux_core::info::{Action, parse_action};
+
+    let action = |capture: &str| -> Vec<Action> {
+        windows_out(capture, p::SET_BINDING)
+            .into_iter()
+            .map(|(m, _)| {
+                let (action, used) = parse_action(&m.data[2..]).unwrap();
+                assert_eq!(used, m.data.len() - 2);
+                action
+            })
+            .collect()
+    };
+    // M2 (key ID 03) bound to the test macro 3
+    let (m, _) = &windows_out("macro-assign", p::SET_BINDING)[0];
+    let macro3 = Action::Macro(3);
+    assert_eq!(
+        *m.data,
+        *p::binding_payload(0x03, p::LAYER_NORMAL, &macro3.to_bytes().unwrap())
+    );
+    assert_eq!(
+        action("bind-website"),
+        [
+            Action::OpenWebsite("https://example.org".into()),
+            Action::StandardKey {
+                modifiers: 0,
+                usage: 0x68
+            }
+        ]
+    );
+    // next and previous profile (selecting one names IO Center's profile UUID: left out)
+    assert_eq!(
+        action("bind-profile")[..2],
+        [Action::Profile(3), Action::Profile(4)]
+    );
+}
+
+#[test]
+fn windows_profile_switch_writes_everything() {
+    // profile 2 has IO Center's defaults: no macros, explicit default bindings
+    let lists: Vec<Vec<u8>> = windows_out("profiles", p::SET_MACROS)
+        .into_iter()
+        .map(|(m, _)| m.data)
+        .collect();
+    assert_eq!(lists[0], p::macro_list_payload(&[]).unwrap());
+    assert_eq!(lists[1], p::macro_list_payload(&[1, 2]).unwrap());
+    let bindings = windows_out("profiles", p::SET_BINDING);
+    let first: Vec<&[u8]> = bindings[..18].iter().map(|(m, _)| &m.data[..]).collect();
+    assert!(first.contains(&&[0x02, 0x00, 0x02, 0x07][..])); // M1 play/pause
+    assert!(first.contains(&&[0x6e, 0x00, 0x02, 0x01][..])); // knob right: volume up
+    assert!(first.contains(&&[0x57, 0x80, 0x09, 0x04][..])); // Fn+↑ brighter
+    // back to profile 1: M5 bound to macro 2 again
+    let (last, _) = bindings.last().unwrap();
+    assert_eq!(last.data, [0x06, 0x00, 0x0a, 0x02, 0x00]);
+}
+
+#[test]
+fn windows_macro_test() {
+    let named: Vec<Vec<u8>> = windows_out("macro-edit", p::SET_MACRO_NAME)
+        .into_iter()
+        .map(|(m, _)| m.data)
+        .collect();
+    assert_eq!(named, [p::macro_name_payload(3, "test").unwrap()]);
+    let (m, _) = &windows_out("macro-edit", p::SET_MACRO_EVENTS)[0];
+    let (id, events) = p::parse_macro_events(&m.data).unwrap();
+    assert_eq!(id, 3);
+    let steps: Vec<(u8, u8, u16)> = events
+        .iter()
+        .map(|e| (e.kind, e.usage, e.delay_ms))
+        .collect();
+    // A, B, C (HID usages 04-06), 100 ms after each event but the last
+    assert_eq!(
+        steps,
+        [
+            (p::MACRO_KEY_DOWN, 0x04, 100),
+            (p::MACRO_KEY_UP, 0x04, 100),
+            (p::MACRO_KEY_DOWN, 0x05, 100),
+            (p::MACRO_KEY_UP, 0x05, 100),
+            (p::MACRO_KEY_DOWN, 0x06, 100),
+            (p::MACRO_KEY_UP, 0x06, 0),
+        ]
+    );
+    assert_eq!(p::macro_events_payload(3, &events).unwrap(), m.data);
+    // creating it: macros 1, 2 and the new 3
+    let (list, _) = &windows_out("macro-create", p::SET_MACROS)[0];
+    assert_eq!(list.data, p::macro_list_payload(&[1, 2, 3]).unwrap());
+    // deleting it: the list without 3
+    let (list, _) = &windows_out("macro-delete", p::SET_MACROS)[0];
+    assert_eq!(list.data, p::macro_list_payload(&[1, 2]).unwrap());
+    // the repeat mode: byte 2 of the config (meaning of the values still unknown)
+    let modes: Vec<u8> = windows_out("macro-repeat", p::SET_MACRO_CONFIG)
+        .into_iter()
+        .filter(|(m, _)| m.data[..2] == [3, 0])
+        .map(|(m, _)| m.data[2])
+        .collect();
+    assert_eq!(modes, [2, 1, 2]);
+}
+
+#[test]
+fn windows_fixture_holds_only_the_test_macro() {
+    for (dir, m, packets, name) in windows() {
+        let contents = [
+            p::SET_MACRO_EVENTS,
+            p::SET_MACRO_NAME,
+            Command::new(0x12, 0x05),
+            Command::new(0x12, 0x07),
+        ];
+        if dir == "out" && contents.contains(&m.cmd) {
+            assert_eq!(m.data[..2], [3, 0], "{name} {}", m.cmd);
+        }
+        // replies repeat the start of the request in their unused bytes
+        for raw in packets {
+            let unused = &raw[1 + usize::from(raw[0])..62];
+            if unused.iter().any(|&b| b != 0) {
+                assert!(dir == "in" && contents.contains(&m.cmd), "{name} {}", m.cmd);
+                assert_eq!(unused[..2], [3, 0], "{name} {}", m.cmd);
+            }
+        }
+    }
 }

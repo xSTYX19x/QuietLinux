@@ -33,7 +33,7 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $Steps = @(
-    @{ Name = 'win-connect';       Text = 'Start IO Center (or open the Light Mount in it). Change nothing; wait 5 seconds.' },
+    @{ Name = 'win-connect';       Text = 'IO Center must be closed completely (also its tray icon) before you press Enter. Then start IO Center, open the Light Mount, change nothing; wait 5 seconds.' },
     @{ Name = 'win-polling';       Text = 'Set the polling rate to 500 Hz, then back to 1000 Hz.' },
     @{ Name = 'win-effects';       Text = 'Select one after the other: Color Wave, Tornado, Reactive, Matrix (and Ripple, Off if offered).' },
     @{ Name = 'win-custom-mode';   Text = 'Per-key lighting: make W red and A green, then apply.' },

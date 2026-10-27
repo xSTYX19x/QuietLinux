@@ -1,9 +1,9 @@
 //! Vendor messages out of USB transfers: detection, reassembly, formatting.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fmt::Write as _;
 
-use quietlinux_core::protocol::{self as p, Message, PACKET_SIZE, Packet};
+use quietlinux_core::protocol::{self as p, Command, Message, PACKET_SIZE, Packet};
 
 use crate::usb::{Dir, Transfer};
 
@@ -71,6 +71,12 @@ pub enum Line {
         dir: Dir,
         packet: Packet,
     },
+    /// A message with the contents of a macro, printed without its data (see [`hide_macros`]).
+    Hidden {
+        time: f64,
+        dir: Dir,
+        message: Message,
+    },
     Note {
         time: f64,
         text: String,
@@ -133,7 +139,10 @@ fn flush_broken(out: &mut Vec<Line>, buf: &mut Vec<(f64, Packet)>, dir: Dir) {
 
 fn line_time(line: &Line) -> f64 {
     match line {
-        Line::Message { time, .. } | Line::Broken { time, .. } | Line::Note { time, .. } => *time,
+        Line::Message { time, .. }
+        | Line::Broken { time, .. }
+        | Line::Hidden { time, .. }
+        | Line::Note { time, .. } => *time,
     }
 }
 
@@ -161,9 +170,66 @@ fn arrow(dir: Dir) -> &'static str {
     }
 }
 
-/// Key press notifications (`11:02` with request ID 0; the same code is `SetBinding` as a request).
+/// Key press notifications: `11:02` ActionFired and, while a macro is recorded,
+/// `12:05` InputEvent (request ID 0; as requests the same codes are `SetBinding`
+/// and `GetMacroEvents`).
 fn is_key_event(message: &Message) -> bool {
-    message.is_notification() && message.cmd == p::ACTION_FIRED
+    message.is_notification() && [p::ACTION_FIRED, p::INPUT_EVENT].contains(&message.cmd)
+}
+
+/// Macro events and names are private: a macro can hold typed text. Messages
+/// with the contents of a macro other than `keep` become [`Line::Hidden`]. The
+/// macro ID is the start of a request; a reply gets it from its request. Replies
+/// to `SetMacroEvents` and `SetMacroName` are hidden too: their unused bytes
+/// repeat the start of the request. [cap]
+pub fn hide_macros(lines: Vec<Line>, keep: Option<u16>) -> Vec<Line> {
+    const CONTENTS: [Command; 4] = [
+        p::GET_MACRO_EVENTS,
+        p::SET_MACRO_EVENTS,
+        p::GET_MACRO_NAME,
+        p::SET_MACRO_NAME,
+    ];
+    let mut requested: HashMap<(Command, u8), Option<u16>> = HashMap::new();
+    lines
+        .into_iter()
+        .map(|line| {
+            let Line::Message {
+                time,
+                dir,
+                ref message,
+                ..
+            } = line
+            else {
+                return line;
+            };
+            let key = (message.cmd, message.request_id);
+            if message.is_notification() || !CONTENTS.contains(&message.cmd) {
+                return line;
+            }
+            let macro_id = match dir {
+                Dir::Out => {
+                    let id = match message.data[..] {
+                        [lo, hi, ..] => Some(u16::from_le_bytes([lo, hi])),
+                        _ => None,
+                    };
+                    requested.insert(key, id);
+                    // a Get request holds only the ID
+                    if [p::GET_MACRO_EVENTS, p::GET_MACRO_NAME].contains(&message.cmd) {
+                        return line;
+                    }
+                    id
+                }
+                Dir::In => requested.remove(&key).flatten(),
+            };
+            if keep.is_some() && macro_id == keep {
+                return line;
+            }
+            let Line::Message { message, .. } = line else {
+                unreachable!()
+            };
+            Line::Hidden { time, dir, message }
+        })
+        .collect()
 }
 
 /// Serial number replies are never printed: they identify the keyboard.
@@ -185,26 +251,11 @@ pub fn format(line: &Line, start: f64, key_events: bool) -> Option<String> {
             } else {
                 hex(&message.data)
             };
-            let status = match message.status {
-                p::STATUS_SUCCESS => String::new(),
-                s => format!(
-                    " status {}",
-                    p::status_name(s).map_or_else(|| format!("{s:#04x}"), str::to_owned)
-                ),
-            };
-            let request = if message.is_notification() {
-                "notify".to_owned()
-            } else {
-                format!("req {:02x}", message.request_id)
-            };
-            format!(
-                "{:>10.3}  {}  {} {:<22} {request} s{:02x}{status}  {data}",
-                time - start,
-                arrow(*dir),
-                message.cmd,
-                message.name().unwrap_or("?"),
-                message.session,
-            )
+            message_line(*time - start, *dir, message, &data)
+        }
+        Line::Hidden { time, dir, message } => {
+            let data = format!("<macro contents hidden, {} bytes>", message.data.len());
+            message_line(*time - start, *dir, message, &data)
         }
         Line::Broken { time, dir, packet } => {
             format!(
@@ -218,8 +269,30 @@ pub fn format(line: &Line, start: f64, key_events: bool) -> Option<String> {
     })
 }
 
+fn message_line(time: f64, dir: Dir, message: &Message, data: &str) -> String {
+    let status = match message.status {
+        p::STATUS_SUCCESS => String::new(),
+        s => format!(
+            " status {}",
+            p::status_name(s).map_or_else(|| format!("{s:#04x}"), str::to_owned)
+        ),
+    };
+    let request = if message.is_notification() {
+        "notify".to_owned()
+    } else {
+        format!("req {:02x}", message.request_id)
+    };
+    format!(
+        "{time:>10.3}  {}  {} {:<22} {request} s{:02x}{status}  {data}",
+        arrow(dir),
+        message.cmd,
+        message.name().unwrap_or("?"),
+        message.session,
+    )
+}
+
 /// Test fixture line (packets as hex, see `crates/quietlinux-core/tests/fixtures`).
-/// Anonymized: serial number replies and key events are left out.
+/// Anonymized: serial number replies, key events and hidden macro contents are left out.
 pub fn fixture(line: &Line) -> Option<String> {
     let Line::Message {
         dir,
@@ -364,6 +437,63 @@ mod tests {
             1
         );
         assert_eq!(lines.iter().filter_map(fixture).count(), 0);
+    }
+
+    #[test]
+    fn macro_contents_are_hidden() {
+        let events_of = |id: u8, req: u8| {
+            p::frame(
+                p::SET_MACRO_EVENTS,
+                &[id, 0, 1, 0, 0, 0, 2, 4, 0, 0],
+                req,
+                p::SESSION,
+            )
+            .unwrap()
+        };
+        let get_name = p::frame(p::GET_MACRO_NAME, &[2, 0], 3, p::SESSION).unwrap();
+        let name = p::frame(p::GET_MACRO_NAME, b"\x02\x00\x06secret", 3, p::SESSION).unwrap();
+        let recorded = p::frame(p::INPUT_EVENT, &[2, 4], 0, p::SESSION).unwrap();
+        // the keyboard's reply repeats the request in its unused bytes
+        let mut echo = p::frame(p::SET_MACRO_EVENTS, &[], 1, p::SESSION).unwrap();
+        echo[7..17].copy_from_slice(&events_of(1, 1)[7..17]);
+        let crc = p::crc16_modbus(&echo[..62]).to_le_bytes();
+        echo[62..].copy_from_slice(&crc);
+        let events = [
+            transfer(0.0, "1.3", Dir::Out, &events_of(1, 1)),
+            transfer(1.0, "1.3", Dir::Out, &events_of(3, 2)),
+            transfer(2.0, "1.3", Dir::Out, &get_name),
+            transfer(3.0, "1.3", Dir::In, &name),
+            transfer(4.0, "1.3", Dir::In, &recorded),
+            transfer(5.0, "1.3", Dir::In, &echo),
+        ];
+        let lines = hide_macros(lines(&events, "1.3"), Some(3));
+        let shown: Vec<String> = lines.iter().filter_map(|l| format(l, 0.0, false)).collect();
+        assert_eq!(shown.len(), 5, "{shown:?}");
+        assert!(shown[4].contains("hidden, 0 bytes"), "{}", shown[4]);
+        assert!(
+            shown[0].ends_with("<macro contents hidden, 10 bytes>"),
+            "{}",
+            shown[0]
+        );
+        assert!(
+            shown[1].ends_with("03 00 01 00 00 00 02 04 00 00"),
+            "{}",
+            shown[1]
+        );
+        assert!(shown[2].ends_with("02 00"), "{}", shown[2]);
+        assert!(
+            shown[3].contains("hidden") && !shown[3].contains("73 65"),
+            "{}",
+            shown[3]
+        );
+        let fixtures: Vec<String> = lines.iter().filter_map(fixture).collect();
+        assert_eq!(fixtures.len(), 2);
+        assert!(fixtures[0].ends_with("12:06 SetMacroEvents"));
+        assert!(fixtures[1].ends_with("12:07 GetMacroName"));
+        assert_eq!(
+            hide_macros(lines, None).iter().filter_map(fixture).count(),
+            1
+        );
     }
 
     #[test]

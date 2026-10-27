@@ -216,7 +216,13 @@ its name (as IO Center names it, see [protocol.md](protocol.md)), request ID
 (`notify` for notifications the keyboard sends on its own), session byte, a
 status name if the keyboard reported an error, data.
 
-- `--no-key-events` hides key presses (`11:02`).
+- `--no-key-events` hides key presses (`11:02`, and `12:05` while a macro is
+  recorded).
+- Macro contents (events and names) are always hidden: a macro can hold typed
+  text, and IO Center writes all macros whenever one changes. `--macro ID`
+  shows those of one macro, e.g. a test macro you made for the capture. The
+  keyboard's replies repeat part of the macro in their unused bytes; they are
+  hidden as well.
 - `--device BUS.ADDRESS` picks a device if several are found (`qlcap` says so).
 - Several files (e.g. one per USB root hub) are merged by time:
   `qlcap frames step/*.pcap`.
@@ -242,6 +248,7 @@ To contribute findings, share decoded output or fixtures, never raw captures:
 qlcap fixtures captures/lighting/03-breathing-speed-50-to-100.pcapng > breathing-speed.hex
 ```
 
-`fixtures` leaves out the serial number reply and all key events. Read the
+`fixtures` leaves out the serial number reply, all key events and the contents
+of all macros (`--macro ID` keeps those of one test macro). Read the
 output before sharing it, and include your notes (what you changed, firmware
 version from `quietlinux status`).

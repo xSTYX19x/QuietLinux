@@ -91,6 +91,16 @@ pub const SET_BINDING: Command = Command::new(FEATURE_BINDINGS, 0x02);
 pub const CLEAR_BINDING: Command = Command::new(FEATURE_BINDINGS, 0x03);
 /// Game mode flags (keys game mode blocks).
 pub const SET_GAME_MODE_CONFIG: Command = Command::new(FEATURE_KEYBOARD, 0x03);
+/// The IDs of all macros; also deletes the macros not listed.
+pub const SET_MACROS: Command = Command::new(FEATURE_MACROS, 0x02);
+pub const SET_MACRO_CONFIG: Command = Command::new(FEATURE_MACROS, 0x04);
+/// Notification while the keyboard records a macro: a key press or release.
+pub const INPUT_EVENT: Command = Command::new(FEATURE_MACROS, 0x05);
+/// Request: the events of a macro. Same code as the `INPUT_EVENT` notification.
+pub const GET_MACRO_EVENTS: Command = Command::new(FEATURE_MACROS, 0x05);
+pub const SET_MACRO_EVENTS: Command = Command::new(FEATURE_MACROS, 0x06);
+pub const GET_MACRO_NAME: Command = Command::new(FEATURE_MACROS, 0x07);
+pub const SET_MACRO_NAME: Command = Command::new(FEATURE_MACROS, 0x08);
 /// Keeps a session open; IO Center Web sends it every 1.5 s (timeout 3 s).
 pub const KEEP_ALIVE: Command = Command::new(FEATURE_ROOT, 0x03);
 
@@ -277,7 +287,7 @@ impl fmt::Display for ProtocolError {
                 write!(f, "payload of {len} bytes, at most {max} fit")
             }
             Self::TooManyEntries { len, max } => {
-                write!(f, "{len} LED entries in one message, at most {max} fit")
+                write!(f, "{len} entries in one message, at most {max} fit")
             }
         }
     }
@@ -650,6 +660,86 @@ pub fn clear_binding_payload(key_id: u8, layer: u8) -> [u8; 2] {
 /// `[key ID][layer 0][02][action]`. [cap]
 pub fn media_binding_payload(key_id: u8, action: u8) -> [u8; 4] {
     [key_id, 0x00, ACTION_MEDIA, action]
+}
+
+// --- 12: macros --------------------------------------------------------------------
+//   IO Center for Windows writes a macro as SetMacroConfig, SetMacroName and
+//   SetMacroEvents, after SetMacros with the IDs of all macros. Lists start with
+//   `[count u16][index of the first entry u16]`; IO Center always sends them whole,
+//   from index 0.
+
+/// Event kinds of a macro step (IO Center Web's input event types).
+pub const MACRO_KEY_DOWN: u8 = 0x02;
+pub const MACRO_KEY_UP: u8 = 0x03;
+
+/// One step of a macro: `[kind][HID usage][delay after it, ms u16]`. [cap]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MacroEvent {
+    pub kind: u8,
+    pub usage: u8,
+    pub delay_ms: u16,
+}
+
+fn list_header(count: usize, max: usize) -> Result<Vec<u8>, ProtocolError> {
+    let count = u16::try_from(count)
+        .ok()
+        .filter(|&n| usize::from(n) <= max)
+        .ok_or(ProtocolError::TooManyEntries { len: count, max })?;
+    let mut payload = count.to_le_bytes().to_vec();
+    payload.extend_from_slice(&[0, 0]);
+    Ok(payload)
+}
+
+/// `12:02` payload: `[count u16][first index u16 = 0][macro ID u16]…`. [cap]
+pub fn macro_list_payload(ids: &[u16]) -> Result<Vec<u8>, ProtocolError> {
+    let mut payload = list_header(ids.len(), (MAX_PAYLOAD - 4) / 2)?;
+    for id in ids {
+        payload.extend_from_slice(&id.to_le_bytes());
+    }
+    Ok(payload)
+}
+
+/// `12:08` payload: `[macro ID u16][length][name]`. [cap] (IO Center's names were ASCII.)
+pub fn macro_name_payload(id: u16, name: &str) -> Result<Vec<u8>, ProtocolError> {
+    let len = u8::try_from(name.len()).map_err(|_| ProtocolError::PayloadTooLarge {
+        len: name.len(),
+        max: usize::from(u8::MAX),
+    })?;
+    let mut payload = id.to_le_bytes().to_vec();
+    payload.push(len);
+    payload.extend_from_slice(name.as_bytes());
+    Ok(payload)
+}
+
+/// `12:06` payload: `[macro ID u16][count u16][first index u16 = 0][events]`. [cap]
+pub fn macro_events_payload(id: u16, events: &[MacroEvent]) -> Result<Vec<u8>, ProtocolError> {
+    let mut payload = id.to_le_bytes().to_vec();
+    payload.extend(list_header(events.len(), (MAX_PAYLOAD - 6) / 4)?);
+    for e in events {
+        payload.extend_from_slice(&[e.kind, e.usage]);
+        payload.extend_from_slice(&e.delay_ms.to_le_bytes());
+    }
+    Ok(payload)
+}
+
+/// Decode a `12:06` payload: the macro ID and its events. `None` unless it starts
+/// at index 0 and holds exactly `count` events.
+pub fn parse_macro_events(data: &[u8]) -> Option<(u16, Vec<MacroEvent>)> {
+    let u16_at = |i: usize| Some(u16::from_le_bytes([*data.get(i)?, *data.get(i + 1)?]));
+    let (id, count, index) = (u16_at(0)?, usize::from(u16_at(2)?), u16_at(4)?);
+    let events = data.get(6..)?;
+    if index != 0 || events.len() != count * 4 {
+        return None;
+    }
+    let events = events
+        .chunks_exact(4)
+        .map(|e| MacroEvent {
+            kind: e[0],
+            usage: e[1],
+            delay_ms: u16::from_le_bytes([e[2], e[3]]),
+        })
+        .collect();
+    Some((id, events))
 }
 
 // --- 10:0d: PerformRealtimeUpdates (per-LED colors) ---------------------------

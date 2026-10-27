@@ -38,6 +38,8 @@ pub struct Snapshot {
     pub bindings_enabled: Option<bool>,
     /// Bindings that differ from the factory ones.
     pub bindings: Vec<Binding>,
+    /// IDs of the macros stored in the keyboard, if it reports them.
+    pub macros: Option<Vec<u16>>,
 }
 
 pub fn read_snapshot<T: Transport>(session: &mut Session<T>) -> Result<Snapshot, Error> {
@@ -67,6 +69,7 @@ pub fn read_snapshot<T: Transport>(session: &mut Session<T>) -> Result<Snapshot,
     let game_mode_on = first(session.query(p::GET_GAME_MODE_STATE, &[])).map(|s| s & 1 == 1);
     let bindings_enabled = first(session.query(p::GET_BINDINGS_CONFIG, &[])).map(|e| e == 1);
     let (_, bindings) = read_bindings(session)?;
+    let macros = session.macro_ids().ok();
     Ok(Snapshot {
         model: identity.as_ref().and_then(info::DeviceInfo::model_name),
         firmware: identity.map(|i| {
@@ -83,6 +86,7 @@ pub fn read_snapshot<T: Transport>(session: &mut Session<T>) -> Result<Snapshot,
         game_mode_on,
         bindings_enabled,
         bindings,
+        macros,
     })
 }
 
@@ -123,6 +127,7 @@ pub fn action_text(action: &Action) -> Option<String> {
             effect: None,
         } => format!("lighting {}", LightingAction(*action).name()?),
         Action::WindowsShortcut(a) => format!("shortcut {}", Shortcut(*a).name()?),
+        Action::Macro(id) => format!("macro {id}"),
         _ => return None,
     })
 }
@@ -162,6 +167,10 @@ pub fn parse_desired(text: &str) -> Result<Desired, String> {
             effect: None,
         },
         "shortcut" => Action::WindowsShortcut(arg.parse::<Shortcut>()?.0),
+        "macro" => Action::Macro(
+            arg.parse()
+                .map_err(|_| format!("invalid macro ID {arg:?} in {text:?}"))?,
+        ),
         "disable" if arg.is_empty() => Action::Disabled,
         "default" if arg.is_empty() => return Ok(Desired::Default),
         "raw" => {
@@ -180,7 +189,7 @@ pub fn parse_desired(text: &str) -> Result<Desired, String> {
         }
         _ => {
             return Err(format!(
-                "invalid binding {text:?}: expected key, media, mouse, lighting, shortcut, disable, default or raw"
+                "invalid binding {text:?}: expected key, media, mouse, lighting, shortcut, macro, disable, default or raw"
             ));
         }
     };
@@ -506,6 +515,13 @@ pub fn plan(settings: &Settings, current: &Snapshot) -> Plan {
                         });
                     }
                 }
+                Desired::Action(Action::Macro(id))
+                    if current.macros.as_ref().is_some_and(|m| !m.contains(id)) =>
+                {
+                    plan.notes.push(format!(
+                        "{name}: the keyboard has no macro {id}, left as it is"
+                    ));
+                }
                 Desired::Action(action) => {
                     if current_raw != action.to_bytes().as_deref() {
                         plan.ops.push(Op::Bind {
@@ -547,8 +563,10 @@ pub fn plan(settings: &Settings, current: &Snapshot) -> Plan {
                     fn_layer: b.fn_layer,
                 });
             } else {
+                let key = binding_key(b.key_id, false);
+                let fn_flag = if b.fn_layer { "--fn " } else { "" };
                 plan.notes.push(format!(
-                    "{name}: kept ({}); QuietLinux cannot recreate it, `quietlinux bind {name} default` resets it",
+                    "{name}: kept ({}); QuietLinux cannot recreate it, `quietlinux bind {fn_flag}{key} default` resets it",
                     b.action
                 ));
             }
@@ -606,6 +624,7 @@ mod tests {
             game_mode_on: Some(false),
             bindings_enabled: Some(true),
             bindings: parse_bindings(&CAPTURED_BINDINGS).unwrap().1,
+            macros: Some(vec![1, 2]),
         }
     }
 
@@ -621,7 +640,7 @@ mod tests {
             "M2 = \"key F13\"",
             "M3 = \"media next-track\"",
             "M4 = \"media play-pause\"",
-            "M5 = \"raw 0a 02 00\"  # macro 0 (action 2)",
+            "M5 = \"macro 2\"",
             "# [effect]",
         ] {
             assert!(text.contains(line), "missing {line:?} in\n{text}");
@@ -657,12 +676,46 @@ mod tests {
                 "M3: media: stop",
                 "M4: key LCtrl+C",
                 "M2: factory binding",
+                "M5: factory binding",
                 "effect: breathing, colors e63000 and ffffff, brightness 100, speed 50, direction up",
             ]
         );
-        // the macro on M5 is not in the file, but cannot be recreated: kept
-        assert_eq!(plan.notes.len(), 1);
-        assert!(plan.notes[0].starts_with("M5: kept"), "{}", plan.notes[0]);
+        assert_eq!(plan.notes, Vec::<String>::new());
+    }
+
+    #[test]
+    fn kept_binding_note_names_the_command() {
+        let mut current = snapshot();
+        current.bindings = parse_bindings(&[1, 0, 0x55, 0x80, 0x08, 0x03]).unwrap().1;
+        let plan = plan(&parse("version = 1\n[bindings]\n").unwrap(), &current);
+        assert_eq!(plan.ops, []);
+        assert_eq!(
+            plan.notes,
+            [
+                "Fn+Home: kept (profile: next); QuietLinux cannot recreate it, \
+              `quietlinux bind --fn Home default` resets it"
+            ]
+        );
+    }
+
+    #[test]
+    fn missing_macro_is_not_bound() {
+        let text = "version = 1\n[bindings]\nM1 = \"macro 7\"\nM5 = \"macro 1\"\n";
+        let plan = plan(&parse(text).unwrap(), &snapshot());
+        let shown: Vec<String> = plan.ops.iter().map(ToString::to_string).collect();
+        assert_eq!(
+            shown,
+            [
+                "M5: macro 1",
+                "M2: factory binding",
+                "M3: factory binding",
+                "M4: factory binding"
+            ]
+        );
+        assert_eq!(
+            plan.notes,
+            ["M1: the keyboard has no macro 7, left as it is"]
+        );
     }
 
     #[test]
@@ -673,6 +726,10 @@ mod tests {
             ("version = 1\n[bindings]\nM1 = \"media louder\"", "louder"),
             ("version = 1\n[bindings]\nFn = \"disable\"", "Fn key"),
             ("version = 1\n[bindings]\nM1 = \"raw 0a\"", "not a complete"),
+            (
+                "version = 1\n[bindings]\nM1 = \"macro x\"",
+                "invalid macro ID",
+            ),
             ("version = 1\n[game_mode]\nblocks = [\"escape\"]", "escape"),
             ("version = 1\n[effect]\neffect = \"ripple\"", "ripple"),
             (
@@ -700,13 +757,14 @@ mod tests {
             "mouse middle",
             "lighting next-effect",
             "shortcut calculator",
+            "macro 2",
         ] {
             let Desired::Action(action) = parse_desired(text).unwrap() else {
                 panic!("{text}")
             };
             assert_eq!(action_text(&action).as_deref(), Some(text));
         }
-        assert_eq!(action_text(&Action::Macro { action: 2, id: 0 }), None);
+        assert_eq!(action_text(&Action::ProfileSelect([0; 16])), None);
         assert_eq!(parse_desired("default"), Ok(Desired::Default));
         assert_eq!(
             parse_desired("raw 0a 02 00"),
@@ -729,12 +787,12 @@ mod tests {
         execute(&mut session, &plan(&settings, &current)).unwrap();
         assert_eq!(kb.game_mode_flags, 0);
         assert_eq!(kb.bindings[&(0x04, p::LAYER_NORMAL)], [0x02, 0x08]);
-        // M1, M2, M4 reset to their factory bindings, M5 (macro) untouched
+        // M1, M2, M4, M5 reset to their factory bindings
         let resets = kb
             .received
             .iter()
             .filter(|r| p::command_of(r) == p::CLEAR_BINDING)
             .count();
-        assert_eq!(resets, 3);
+        assert_eq!(resets, 4);
     }
 }

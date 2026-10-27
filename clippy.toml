@@ -1,2 +1,2 @@
 # Product and format names used in doc comments (".." keeps clippy's defaults).
-doc-valid-idents = ["..", "WebHID", "USBPcap", "LampArray", "IO", "pcapng", "QLink", "QuietLinux", "SnapTap", "ActionFired", "KnobLeft", "KnobRight", "CapsLock", "KeyA", "KeyC"]
+doc-valid-idents = ["..", "WebHID", "USBPcap", "LampArray", "IO", "pcapng", "QLink", "QuietLinux", "SnapTap", "ActionFired", "KnobLeft", "KnobRight", "CapsLock", "KeyA", "KeyC", "InputEvent"]

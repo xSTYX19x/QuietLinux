@@ -82,7 +82,7 @@ Windows app and the web app in phase 2. ✔ = already known thanks to bbossa.
 - [ ] Parameters per effect: color(s) / color mode (single, rainbow, …), brightness, speed, direction
 - [ ] Zones: keys, top bar, knob, left/right side strip, separately or as one group
 - [ ] Custom mode: color per key/LED ✔ (volatile, "realtime" mode `03`). A **stored** variant exists: lighting mode `02` "custom" with layers and layer masks [web]; layer mask format still unknown
-- [ ] Custom mode with up to 10 layers: `10:03`–`10:0a` (layers layout, config, mask, name) exist in the protocol [web]; to be captured from the Windows app
+- [ ] Custom mode with up to 10 layers: `10:03`–`10:0a` (layers layout, config, mask, name) exist in the protocol [web]; the Windows app does not use it (its per-key lighting is realtime mode)
 - [ ] LED color calibration
 - [ ] Interaction with LampArray / Dynamic Lighting (interface 3)
 
@@ -97,10 +97,14 @@ Windows app and the web app in phase 2. ✔ = already known thanks to bbossa.
 ### 2.3 Macros
 - [ ] Macro library, up to 999 events (key down/up, delays)
 - [ ] Recording, editing, repeat modes (find out: once, n times, while held, toggle?)
-- [ ] Find out: are macros stored in the device or played back by the host? IO Center Web does not support macros on the full-size Light Mount at all and only records them on the TKL: probably host-side (binding type `0a` + `11:02` ActionFired). Check with the Windows app
+- [x] Find out: are macros stored in the device or played back by the host? Stored and played by the keyboard; write format captured from the Windows app (`12:02`–`12:08`, see protocol.md)
+- [x] Bind a macro to a key (`bind KEY macro ID`, backup/apply)
+- [ ] Read a macro (`12:03`, `12:05`, `12:07`): capture IO Center for Windows starting
+- [ ] `macro list|create|edit|delete`, only after reading works (a write replaces all macros)
 
 ### 2.4 Profiles
-- [ ] Find out how many profiles the device holds; switch, read, write. No profile commands in the protocol [web]: profiles are probably kept by the host app and written to the keyboard when switched (binding type `08` profile actions)
+- [x] Find out how many profiles the device holds: none. IO Center for Windows keeps profiles on the PC and writes all settings when switching [cap]
+- [ ] Profile switching keys (binding type `08`): needs the background service
 - [ ] Export/import profiles as files (own documented format, e.g. TOML)
 
 ### 2.5 Product settings
@@ -176,8 +180,9 @@ Checklist (extended while collecting):
 - [ ] Custom mode: stored vs. preview; layers
 - [ ] Remap a key to: key, combination, media, mouse, disabled, profile switch, lighting control
 - [ ] Fn layer, knob (3 actions), M1–M5
-- [ ] Create, change, delete, assign a macro; long macro (fragmentation); each repeat mode
-- [ ] Switch and rename profiles, values per profile
+- [x] Create, change, delete, assign a macro; repeat mode changed (values still to be matched to the app's options) → `windows.hex`
+- [ ] IO Center for Windows starting (reads macros), polling rate, quick tap, LED calibration
+- [x] Switch profiles: everything written again → `windows.hex`
 - [ ] Game mode, quick tap (1 pair, 5 pairs)
 - [ ] LED calibration
 - [ ] Factory reset (only once the starting state is known for sure)
@@ -248,8 +253,8 @@ logic. Dependencies stay minimal (today: clap, rustix) and are checked in CI
 - [x] CLI: `light effect`, `bind` (media actions on M1–M5 and the knob), `game-mode --block`; tested on the reference keyboard (2026-10-27)
 - [x] Captures: key, combination, mouse, lighting, Windows shortcut, F13 bindings, Fn layer (`80`), disable, reset (`11:03`), dual color effect, game mode notifications → `bindings-web.hex`
 - [x] `bind` for all keys and both layers: key/combination, media, mouse button, lighting action, shortcut, disable, default; `light effect --dual`; tested on the reference keyboard (2026-10-27)
-- [ ] Not offered by IO Center Web for the Light Mount: polling rate, game mode switch, custom (per-key) lighting mode, macros → Windows app captures
-- [ ] Macros are stored and played by the keyboard (M5 → macro 0 plays its keys as events); capture the Windows app creating/editing a macro to learn `12:01`–`12:08`
+- [x] Windows app captures (2026-10-27): effects, per-key lighting (realtime mode, not custom mode), macros, website and profile bindings, profiles → `windows.hex`, every request rebuilt in the tests; `qlcap` hides macro contents
+- [ ] Not offered by IO Center Web for the Light Mount and not captured yet: polling rate; there is no game mode switch in either app (Fn+Pause)
 - [ ] Protocol layer for every command confirmed in phase 2, with fixtures
 - [ ] **Read** the device state first, write afterwards
 - [x] Backup/restore of what the keyboard reports (bindings, game mode); the effect is not readable from the Light Mount

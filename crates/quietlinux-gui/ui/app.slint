@@ -253,6 +253,8 @@ component ColorField inherits HorizontalLayout {
 component LightingPage inherits VerticalBox {
     in property <[string]> effects;
     in property <[string]> directions;
+    // the chosen effect moves (static, breathing and reactive do not)
+    in property <bool> has-direction;
     in property <image> wheel;
     in-out property <int> effect-index;
     in-out property <int> color-mode;
@@ -401,6 +403,7 @@ component LightingPage inherits VerticalBox {
                 ComboBox {
                     model: root.directions;
                     current-index <=> root.direction-index;
+                    enabled: root.has-direction;
                     selected => {
                         root.effect-changed();
                     }
@@ -1160,6 +1163,8 @@ export component AppWindow inherits Window {
     // lighting
     in property <[string]> effects;
     in property <[string]> directions;
+    // the chosen effect moves (static, breathing and reactive do not)
+    in property <bool> has-direction;
     in property <image> wheel;
     in-out property <int> effect-index;
     in-out property <int> color-mode;
@@ -1334,6 +1339,7 @@ export component AppWindow inherits Window {
                     if root.lighting-view == 0: LightingPage {
                             effects: root.effects;
                             directions: root.directions;
+                            has-direction: root.has-direction;
                             wheel: root.wheel;
                             reactive-index: root.reactive-index;
                             effect-index <=> root.effect-index;

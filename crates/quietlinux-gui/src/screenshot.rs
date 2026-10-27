@@ -33,6 +33,7 @@ pub fn run(path: &Path, page: i32, theme: i32) -> Result<(), Box<dyn Error>> {
     CONTROLLER.with(|c| {
         *c.borrow_mut() = Some(Controller::new(&ui, None));
     });
+    with_controller(|c, ui| c.show_directions(ui, None));
     let outcome = Backend::demo().handle(Request::Refresh);
     with_controller(|c, ui| c.apply(ui, outcome));
     ui.set_theme(theme);

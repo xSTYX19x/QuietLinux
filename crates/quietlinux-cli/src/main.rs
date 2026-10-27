@@ -358,9 +358,10 @@ enum Light {
         /// Speed in percent
         #[arg(long, default_value_t = 50, value_parser = clap::value_parser!(u8).range(0..=100))]
         speed: u8,
-        /// up, down, left, right, clockwise, counterclockwise, omnidirectional, horizontal, vertical, cross
-        #[arg(long, default_value = "up")]
-        direction: settings::Direction,
+        /// color-wave, matrix: up (default), down, left, right; tornado: clockwise
+        /// (default), counterclockwise; the other effects do not move
+        #[arg(long)]
+        direction: Option<settings::Direction>,
     },
     /// Show the effect stored in the keyboard again (leaves realtime mode or "off")
     Stored,
@@ -590,6 +591,8 @@ fn run(cli: Cli) -> Result<ExitCode, Box<dyn std::error::Error>> {
                 }
                 (None, None, None) => Colors::Gradient(settings::rainbow()),
             };
+            // checked before the keyboard is opened
+            let direction = effect.direction(direction)?;
             let mut session = open_session(usb_path, cli.allow_unknown_firmware)?;
             session.set_effect(effect.0, direction.0, brightness, speed, &colors)?;
             remember_effect(&config::EffectSetting {

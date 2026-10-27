@@ -217,7 +217,7 @@ const EFFECT_TEMPLATE: &str = r#"
 # color = "e63000"      # or dual = ["e63000", "ffffff"], or gradient = ["ff0000@0", "0000ff@100"]
 # brightness = 100
 # speed = 50
-# direction = "up"
+# direction = "up"     # color-wave, matrix: up, down, left, right; tornado: clockwise, counterclockwise
 "#;
 
 /// Text of a backup file.
@@ -545,7 +545,13 @@ pub fn parse(text: &str) -> Result<Settings, String> {
 
 fn effect_setting(e: EffectSection) -> Result<EffectSetting, String> {
     let effect: Effect = e.effect.parse()?;
-    let direction: Direction = e.direction.as_deref().unwrap_or("up").parse()?;
+    let wanted: Option<Direction> = e.direction.as_deref().map(str::parse).transpose()?;
+    // a direction given for an effect that does not move is left out (older files)
+    let direction = if effect.directions().is_empty() {
+        Direction(0)
+    } else {
+        effect.direction(wanted)?
+    };
     let percent = |name: &str, v: Option<u8>, default: u8| match v.unwrap_or(default) {
         v @ 0..=100 => Ok(v),
         v => Err(format!("{name} {v}: expected 0 to 100")),
@@ -606,9 +612,14 @@ pub fn effect_section(e: &EffectSetting) -> Option<String> {
         }
         Colors::OrientedGradient { .. } => return None,
     };
+    let direction = if e.effect.directions().is_empty() {
+        String::new()
+    } else {
+        format!("direction = \"{}\"\n", e.direction)
+    };
     Some(format!(
-        "[effect]\neffect = \"{}\"\n{colors}\nbrightness = {}\nspeed = {}\ndirection = \"{}\"\n",
-        e.effect, e.brightness, e.speed, e.direction
+        "[effect]\neffect = \"{}\"\n{colors}\nbrightness = {}\nspeed = {}\n{direction}",
+        e.effect, e.brightness, e.speed
     ))
 }
 
@@ -691,8 +702,16 @@ impl fmt::Display for Op {
             Op::Macros { summary, .. } => write!(f, "macros: {summary}"),
             Op::Effect(e) => write!(
                 f,
-                "effect: {}, colors {}, brightness {}, speed {}, direction {}",
-                e.effect, e.colors, e.brightness, e.speed, e.direction
+                "effect: {}, colors {}, brightness {}, speed {}{}",
+                e.effect,
+                e.colors,
+                e.brightness,
+                e.speed,
+                if e.effect.directions().is_empty() {
+                    String::new()
+                } else {
+                    format!(", direction {}", e.direction)
+                }
             ),
         }
     }
@@ -1121,7 +1140,7 @@ mod tests {
                 "M4: key LCtrl+C",
                 "M2: factory binding",
                 "M5: factory binding",
-                "effect: breathing, colors e63000 and ffffff, brightness 100, speed 50, direction up",
+                "effect: breathing, colors e63000 and ffffff, brightness 100, speed 50",
             ]
         );
         assert_eq!(plan.notes, Vec::<String>::new());
@@ -1173,7 +1192,7 @@ mod tests {
             Colors::Gradient(rainbow()),
         ] {
             let e = EffectSetting {
-                effect: Effect(4),
+                effect: Effect(1),
                 direction: Direction(3),
                 brightness: 70,
                 speed: 20,

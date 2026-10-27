@@ -47,6 +47,10 @@ say "Removing the programs from $prefix/bin"
 rm -f "$prefix/bin/quietlinux" "$prefix/bin/quietlinux-gui" "$prefix/bin/quietlinux-daemon"
 rm -f "$prefix/share/applications/quietlinux.desktop" \
     "$prefix/share/icons/hicolor/scalable/apps/quietlinux.svg"
+if [ -f "$prefix/share/icons/hicolor/icon-theme.cache" ] && command -v gtk-update-icon-cache >/dev/null; then
+    gtk-update-icon-cache -q -f -t "$prefix/share/icons/hicolor" || true
+fi
+command -v kbuildsycoca6 >/dev/null && kbuildsycoca6 >/dev/null 2>&1 || true
 
 rule=/etc/udev/rules.d/70-quietlinux.rules
 if [ "$udev" = 1 ] && [ -f "$rule" ]; then

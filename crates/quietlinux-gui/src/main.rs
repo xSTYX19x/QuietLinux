@@ -147,6 +147,8 @@ struct Controller {
     recorded: Vec<macros::Recorded>,
     /// Set to stop the recording.
     stop_recording: Option<Arc<AtomicBool>>,
+    /// The directions of the chosen effect, as the direction list shows them.
+    directions: Vec<Direction>,
     /// Save what is set for the next start (not in the demo mode).
     remember: bool,
     /// The lighting view was chosen from the keyboard's mode (on the first answer).
@@ -170,6 +172,7 @@ impl Controller {
             paint: Paint::Idle,
             recorded: Vec::new(),
             stop_recording: None,
+            directions: Vec::new(),
             remember: false,
             view_chosen: false,
             editor_key: String::new(),
@@ -814,11 +817,37 @@ impl Controller {
         ui.set_zone_right(zone(Zone::Right).into());
         if let Some(effect) = config::last_effect() {
             show_effect(ui, &effect);
+            self.show_directions(ui, Some(effect.direction));
         }
     }
 
     /// The effect changed: apply it soon, unless more changes follow.
-    fn effect_changed(&mut self, _: &AppWindow) {
+    /// The directions of the chosen effect in the direction list (greyed out if
+    /// it does not move). Keeps `prefer`, or the direction shown so far, if the
+    /// effect moves that way; else its first direction.
+    fn show_directions(&mut self, ui: &AppWindow, prefer: Option<Direction>) {
+        let effect = usize::try_from(ui.get_effect_index())
+            .ok()
+            .and_then(|i| Effect::all().get(i).copied())
+            .unwrap_or(Effect::STATIC);
+        let shown = usize::try_from(ui.get_direction_index())
+            .ok()
+            .and_then(|i| self.directions.get(i).copied());
+        let list = effect.directions().to_vec();
+        let index = prefer
+            .or(shown)
+            .and_then(|d| list.iter().position(|x| *x == d))
+            .unwrap_or(0);
+        ui.set_directions(strings(
+            list.iter().filter_map(|d| d.name()).map(str::to_owned),
+        ));
+        ui.set_direction_index(i32::try_from(index).unwrap_or(0));
+        ui.set_has_direction(!list.is_empty());
+        self.directions = list;
+    }
+
+    fn effect_changed(&mut self, ui: &AppWindow) {
+        self.show_directions(ui, None);
         self.color_timer
             .start(slint::TimerMode::SingleShot, EFFECT_DELAY, || {
                 with_controller(|c, ui| {
@@ -863,7 +892,8 @@ impl Controller {
         let Some(effect) = Effect::all().get(index(ui.get_effect_index())).copied() else {
             return;
         };
-        let direction = Direction::all()
+        let direction = self
+            .directions
             .get(index(ui.get_direction_index()))
             .copied()
             .unwrap_or(Direction(0));
@@ -1036,10 +1066,8 @@ fn binding_label(action: &Action, legends: Layout, macros: Option<&[Macro]>) -> 
 /// Put an effect into the lighting fields.
 fn show_effect(ui: &AppWindow, e: &EffectSetting) {
     let index = |i: Option<usize>| i.and_then(|i| i32::try_from(i).ok()).unwrap_or(0);
+    // the direction: Controller::show_directions
     ui.set_effect_index(index(Effect::all().iter().position(|x| *x == e.effect)));
-    ui.set_direction_index(index(
-        Direction::all().iter().position(|x| *x == e.direction),
-    ));
     ui.set_brightness(f32::from(e.brightness));
     ui.set_speed(f32::from(e.speed));
     match &e.colors {
@@ -1135,12 +1163,6 @@ fn set_up(ui: &AppWindow) {
         .position(|e| e.name() == Some("reactive"))
         .and_then(|i| i32::try_from(i).ok());
     ui.set_reactive_index(reactive.unwrap_or(-1));
-    ui.set_directions(strings(
-        Direction::all()
-            .into_iter()
-            .filter_map(Direction::name)
-            .map(str::to_owned),
-    ));
     ui.set_bind_kinds(strings(
         BIND_KINDS.iter().map(|(_, label)| (*label).to_owned()),
     ));
@@ -1270,6 +1292,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
     CONTROLLER.with(|c| {
         *c.borrow_mut() = Some(Controller::new(&ui, Some(requests)));
     });
+    with_controller(|c, ui| c.show_directions(ui, None));
     // the demo keyboard starts fresh; the real one gets what was set last time
     if !demo {
         with_controller(|c, ui| {

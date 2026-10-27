@@ -160,6 +160,37 @@ named_value!(Shortcut, SHORTCUTS, "Windows shortcut");
 
 impl Effect {
     pub const STATIC: Effect = Effect(0);
+
+    /// The directions the effect moves in on the Light Mount; empty: it does not
+    /// move. Tested on the reference keyboard: static, breathing and reactive
+    /// ignore the direction; color wave and matrix move up, down, left or right.
+    /// Tornado turns (clockwise, counterclockwise).
+    pub fn directions(self) -> &'static [Direction] {
+        const LINES: [Direction; 4] = [Direction(0), Direction(1), Direction(2), Direction(3)];
+        const TURNS: [Direction; 2] = [Direction(4), Direction(5)];
+        match self.0 {
+            1 | 5 => &LINES,
+            2 => &TURNS,
+            _ => &[],
+        }
+    }
+
+    /// `wanted` if the effect moves that way, its first direction if `None`;
+    /// `Direction(0)` for an effect that does not move.
+    pub fn direction(self, wanted: Option<Direction>) -> Result<Direction, String> {
+        let directions = self.directions();
+        match wanted {
+            Some(d) if directions.is_empty() => Err(format!(
+                "{self} does not move: it takes no direction (given: {d})"
+            )),
+            Some(d) if !directions.contains(&d) => {
+                let names: Vec<String> = directions.iter().map(ToString::to_string).collect();
+                Err(format!("{self} moves {}, not {d}", names.join(", ")))
+            }
+            Some(d) => Ok(d),
+            None => Ok(directions.first().copied().unwrap_or(Direction(0))),
+        }
+    }
 }
 
 /// A key `bind` may change, with its vendor key ID: any key or knob control, except Fn.
@@ -360,6 +391,28 @@ impl FromStr for Gradient {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn directions_per_effect() {
+        let effect = |name: &str| name.parse::<Effect>().unwrap();
+        let dir = |name: &str| name.parse::<Direction>().unwrap();
+        for name in ["static", "breathing", "reactive"] {
+            assert!(effect(name).directions().is_empty(), "{name}");
+            assert_eq!(effect(name).direction(None), Ok(Direction(0)));
+            assert!(effect(name).direction(Some(dir("left"))).is_err());
+        }
+        assert_eq!(effect("color-wave").direction(None), Ok(dir("up")));
+        assert_eq!(
+            effect("matrix").direction(Some(dir("left"))),
+            Ok(dir("left"))
+        );
+        let err = effect("color-wave")
+            .direction(Some(dir("clockwise")))
+            .unwrap_err();
+        assert_eq!(err, "color-wave moves up, down, left, right, not clockwise");
+        assert_eq!(effect("tornado").direction(None), Ok(dir("clockwise")));
+        assert!(effect("tornado").direction(Some(dir("up"))).is_err());
+    }
 
     #[test]
     fn names() {

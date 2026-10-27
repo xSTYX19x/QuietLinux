@@ -52,6 +52,9 @@ the keyboard at once: the stored effect, or the painted keys.
 - **Pick …** (or a click on the swatch) opens a color wheel: the hue around
   the circle, pale colors towards the center; the slider below sets how bright
   the color is.
+- **Direction** lists only the directions of the chosen effect (up, down,
+  left, right for color wave and matrix; clockwise, counterclockwise for
+  tornado) and is greyed out for static, breathing and reactive.
 - **Every change applies at once** and is stored in the keyboard: a choice in a
   list, a slider, a color from the wheel (when you let go) or six typed hex
   digits. A short pause (0.4 s) after the last change keeps a drag from

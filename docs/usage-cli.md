@@ -183,9 +183,10 @@ quietlinux light effect tornado --gradient ff0000@0,ffff00@30,0000ff@100
 | `--gradient` | 2–12 colors, evenly spread or with positions `@0`–`@100` | |
 | `--brightness` | 0–100 | 100 |
 | `--speed` | 0–100 | 50 |
-| `--direction` | `up`, `down`, `left`, `right`, `clockwise`, `counterclockwise`, `omnidirectional`, `horizontal`, `vertical`, `cross` | `up` |
+| `--direction` | `color-wave`, `matrix`: `up`, `down`, `left`, `right`; `tornado`: `clockwise`, `counterclockwise` | the first one |
 
-Which directions an effect uses depends on the effect.
+`static`, `breathing` and `reactive` do not move and take no `--direction`;
+a direction an effect does not move in is refused before anything is sent.
 
 The keyboard does not report its effect, so `light effect` and `light static`
 (and `apply` with an `[effect]`) remember the last one in

@@ -80,7 +80,17 @@ if [ "$gui" = 1 ]; then
     say "Adding QuietLinux to the application menu"
     install -Dm644 packaging/desktop/quietlinux.desktop "$prefix/share/applications/quietlinux.desktop"
     install -Dm644 crates/quietlinux-gui/ui/icon.svg "$prefix/share/icons/hicolor/scalable/apps/quietlinux.svg"
+    # refresh the caches, or the menu and the task bar show no icon until the next login
     command -v update-desktop-database >/dev/null && update-desktop-database -q "$prefix/share/applications" || true
+    if [ -f "$prefix/share/icons/hicolor/icon-theme.cache" ] && command -v gtk-update-icon-cache >/dev/null; then
+        gtk-update-icon-cache -q -f -t "$prefix/share/icons/hicolor" || true
+    fi
+    for kbuild in kbuildsycoca6 kbuildsycoca5; do
+        if command -v "$kbuild" >/dev/null; then
+            "$kbuild" >/dev/null 2>&1 || true
+            break
+        fi
+    done
 fi
 
 # the service runs from $bin

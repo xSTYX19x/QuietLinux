@@ -21,13 +21,14 @@ Not affiliated with or endorsed by be quiet!. See [Safety](#safety).
 |---|---|
 | Find the keyboard; read firmware, layout, lighting, game mode, quick tap and key bindings (`info`) | ✅ |
 | Show the key presses the keyboard reports (`events`) | ✅ |
-| Static color effect with brightness (stored in the keyboard) | ✅ |
+| Effects (static, color wave, tornado, breathing, reactive, matrix) with color or gradient, brightness, speed, direction (stored in the keyboard) | ✅ |
+| Media actions on M1–M5 and the knob | ✅ |
+| Game mode: which shortcuts it blocks | ✅ |
 | Per-LED colors by zone (keys, top bar, knob, side strips) or by key (volatile) | ✅ |
 | Key map with layout-independent key names, legends for UK, German and French ISO | ✅ |
-| Other effects (wave, breathing, ripple, …) | planned |
-| Key remapping, Fn layer, knob, M1–M5 | planned |
+| Key remapping of all keys, Fn layer, other action types | planned |
 | Macros | planned |
-| Profiles, game mode, quick tap | planned |
+| Profiles, quick tap | planned |
 | Graphical interface | planned |
 | Firmware updates | **never**, see [Safety](#safety) |
 

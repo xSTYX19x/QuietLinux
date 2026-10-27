@@ -656,6 +656,54 @@ impl<T: Transport> Session<T> {
         self.set_lighting_mode(LightingMode::General)
     }
 
+    /// Effect of layer 0 (`10:06`, stored in the keyboard), as IO Center Web sends it;
+    /// switches to general mode first if another mode is active.
+    pub fn set_effect(
+        &mut self,
+        effect: u8,
+        direction: u8,
+        brightness: u8,
+        speed: u8,
+        colors: &crate::info::Colors,
+    ) -> Result<()> {
+        self.check_writable()?;
+        let payload = p::layer_config_payload(0, effect, direction, brightness, speed, colors)?;
+        if self.lighting_mode()? != LightingMode::General {
+            self.send_lighting_mode(p::MODE_GENERAL)?;
+        }
+        let id = self.next_request_id();
+        self.request(&p::frame(p::SET_LAYER_CONFIG, &payload, id, self.sid)?)?;
+        Ok(())
+    }
+
+    /// Bind a media action to a key on the normal layer (`11:02`, stored in the keyboard).
+    pub fn set_media_binding(&mut self, key_id: u8, action: u8) -> Result<()> {
+        self.check_writable()?;
+        let id = self.next_request_id();
+        let payload = p::media_binding_payload(key_id, action);
+        self.request(&p::frame(p::SET_BINDING, &payload, id, self.sid)?)?;
+        Ok(())
+    }
+
+    /// Shortcuts game mode blocks (`07:03`, stored in the keyboard): bit 0 Shift+Tab,
+    /// 1 Alt+F4, 2 Win, 3 Alt+Tab, 4 Caps Lock.
+    pub fn set_game_mode_blocks(&mut self, flags: u8) -> Result<()> {
+        self.check_writable()?;
+        if flags & !0x1f != 0 {
+            return Err(Error::Unsupported(format!("game mode flags {flags:#04x}")));
+        }
+        let id = self.next_request_id();
+        self.request(&p::frame(p::SET_GAME_MODE_CONFIG, &[flags], id, self.sid)?)?;
+        Ok(())
+    }
+
+    /// Keep the session open (`01:03`); needed only by long-running programs.
+    pub fn keep_alive(&mut self) -> Result<()> {
+        let id = self.next_request_id();
+        self.request(&p::frame(p::KEEP_ALIVE, &[], id, self.sid)?)?;
+        Ok(())
+    }
+
     /// Static color effect (`10:06`, stored in the keyboard), after switching to general mode.
     pub fn set_static(&mut self, color: Rgb, brightness: u8) -> Result<()> {
         self.check_writable()?;
@@ -840,6 +888,53 @@ mod tests {
         assert_eq!(kb.commands(), ["03:01", "01:01", "10:01"]);
         assert_eq!(kb.received[1][2], p::SESSION_NONE);
         assert_eq!(kb.received[2][2], 2);
+    }
+
+    #[test]
+    fn writes_as_io_center_web() {
+        use crate::info::Colors;
+        let mut kb = FakeKeyboard::new(&KNOWN, p::MODE_REALTIME);
+        let mut session = Session::with_request_id(&mut kb, false, 1).unwrap();
+        session.open_session().unwrap();
+        session
+            .set_effect(3, 0, 100, 50, &Colors::Single(Rgb::new(1, 2, 3)))
+            .unwrap();
+        session.set_media_binding(0x04, 8).unwrap();
+        session.set_game_mode_blocks(0x1e).unwrap();
+        assert!(matches!(
+            session.set_game_mode_blocks(0x20),
+            Err(Error::Unsupported(_))
+        ));
+        session.keep_alive().unwrap();
+        assert_eq!(
+            kb.commands(),
+            [
+                "03:01", "01:01", "10:01", "10:02", "10:06", "11:02", "07:03", "01:03"
+            ]
+        );
+        assert_eq!(kb.mode, p::MODE_GENERAL);
+        assert_eq!(kb.layer_config, Some(vec![0, 3, 0, 100, 50, 0, 1, 2, 3]));
+        assert_eq!(kb.bindings[&0x04], [0x02, 8]);
+        assert_eq!(kb.game_mode_flags, 0x1e);
+        assert!(
+            kb.received[2..].iter().all(|r| r[2] == 2),
+            "all after 01:01 use session 2"
+        );
+    }
+
+    #[test]
+    fn writes_refused_on_unknown_firmware() {
+        use crate::info::Colors;
+        let mut kb = FakeKeyboard::new(&[9; 8], p::MODE_GENERAL);
+        let mut session = Session::with_request_id(&mut kb, false, 1).unwrap();
+        assert!(
+            session
+                .set_effect(0, 0, 100, 50, &Colors::Single(Rgb::BLACK))
+                .is_err()
+        );
+        assert!(session.set_media_binding(0x04, 8).is_err());
+        assert!(session.set_game_mode_blocks(0).is_err());
+        assert_eq!(kb.commands(), ["03:01"]);
     }
 
     #[test]

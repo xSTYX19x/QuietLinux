@@ -103,8 +103,13 @@ session (session byte `01`; `quietlinux info` now opens one first) [cap]:
 | `10:05` GetLayerConfig, layer 0 | a single byte `00` |
 | `10:0f` GetCalibration, `07:06` GetSnapTapConfig | status INVALID_STATE |
 
-INVALID_STATE probably means that these need a session opened with `01:01`
-(to be checked; IO Center Web does not send them when connecting).
+They answer INVALID_STATE also within a session opened with `01:01`, and
+`10:03` GetLayersLayout and `10:0e` GetGlobalLayers do too: the full-size Light
+Mount apparently does not support layers, calibration and quick tap in general
+mode (IO Center Web does not send these requests to it either). [cap]
+
+To restore a binding, IO Center Web sends the factory action with `11:02`
+(not `11:03` ClearBinding). [cap]
 
 ### What IO Center Web does when it connects to a Light Mount [cap]
 
@@ -147,7 +152,7 @@ Payloads are what follows the 4-byte header. "Reply" means the data of the reply
 |---|---|---|---|
 | `01:01` | OpenSession | `[connection ID u32]`, optionally `[client type]` (0 unspecified, 1 QControl, 2 web); IO Center Web picks a random ID in 10000–99999 and sends no client type [cap] | `[connection ID u32][session ID][state][timeout]`; the reference keyboard echoes the ID and answers session `02`, state 0, timeout 3 [cap] |
 | `01:02` | CloseSession | | |
-| `01:03` | KeepAlive | | |
+| `01:03` | KeepAlive | | (empty); IO Center Web sends it every 1.5 s, the session timeout is 3 (seconds) [cap] |
 | `01:04` | GetSupportedFeatures | | see [Features](#features) |
 | `01:05` | GetQLinkVersion | | `[patch u16][minor][major]`; reference keyboard: `17 00 00 00` = 0.0.23 [cap] |
 | `01:06` | GetActiveSessionInfo | | `[session ID][timeout][client type]`; reference keyboard: `02 03 00` [cap] |
@@ -195,7 +200,7 @@ IO Center stores a settings file there: a u32 length at offset 0, then text.
 |---|---|---|---|
 | `07:01` | GetLayout | | `[physical: 0 ANSI, 1 ISO, 2 JIS][visual: 0 US, 1 DE, 2 UK, 3 FR, 4 NO]` |
 | `07:02` | GetConfig | | `[game mode flags]` |
-| `07:03` | SetConfig | `[game mode flags]` | |
+| `07:03` | SetConfig | `[game mode flags]` [cap] | (empty) |
 | `07:04` | GetState | | `[state]` (0 inactive, 1 active; presumably game mode on/off) |
 | `07:05` | SetState | `[state]` | |
 | `07:06` | GetSnapTapConfig | | like the payload of `07:07` |
@@ -221,7 +226,7 @@ offers Shift+Tab, Alt+F4, Win and Alt+Tab (no Caps Lock).
 | `10:03` | GetLayersLayout | | `[count][layer IDs…]` | [web] |
 | `10:04` | SetLayersLayout | `[count][layer IDs…]` | | [web] |
 | `10:05` | GetLayerConfig | `[layer]` | layer config, as below | [web] |
-| `10:06` | SetLayerConfig | layer config, see below | | [cap] static; [web] the rest |
+| `10:06` | SetLayerConfig | layer config, see below | (empty) | [cap] single color and gradient; [web] dual color, oriented gradient, ripple |
 | `10:07` / `10:08` | Get/SetLayerMask | | | [web] (layout not analyzed) |
 | `10:09` / `10:0a` | Get/SetLayerName | `[layer]` / `[layer][length][ASCII…]` | `[length][ASCII…]` | [web] |
 | `10:0b` / `10:0c` | Get/SetPlaybackState | | | [web] (layout not analyzed) |
@@ -247,9 +252,11 @@ offers Shift+Tab, Alt+F4, Win and Alt+Tab (no Caps Lock).
   first six for the Light Mount; off and ripple appear for the TKL.
 - Directions: `0` up, `1` down, `2` left, `3` right, `4` clockwise,
   `5` counterclockwise, `6` omnidirectional, `7` horizontal, `8` vertical, `9` cross. [web]
-- Brightness: captured values 10, 50, 100 (IO Center's slider in percent) [cap];
-  IO Center Web converts the value it reads back with `/255*100`, so the scale
-  is to be confirmed. Speed: default 50 [cap].
+- Brightness and speed: 0–100 percent (captured 10–100); defaults 100 and 50 [cap].
+  (IO Center Web converts a brightness it reads back with `/255*100`, apparently
+  a quirk of the app.)
+- IO Center's default gradient for the animated effects (captured with
+  breathing): `ff0000@0 ffff00@17 00ff00@33 00ffff@50 0000ff@67 ff00ff@83 ff0000@100`. [cap]
 - Color modes and their colors [web] (single color [cap]):
   - `0` single color: `[R][G][B]`
   - `1` dual color: `[R][G][B][R][G][B]`
@@ -295,7 +302,7 @@ blue 0.43, which explains why unscaled colors look greenish. [web]
 | Command | Name | Payload | Reply |
 |---|---|---|---|
 | `11:01` | GetBindings | `[index u16]` (index of the first entry to read) | `[2 count bytes]` then binding entries |
-| `11:02` | SetBinding | `[key ID][layer][action type][action data…]` | |
+| `11:02` | SetBinding | `[key ID][layer][action type][action data…]`; captured: `04 00 02 08` (M3, normal layer, media, stop) [cap] | (empty) |
 | `11:03` | ClearBinding | `[key ID][layer]` (back to the default) | |
 | `11:04` / `11:05` | Get/SetConfig | `[enabled]` | `[enabled]`: 1 = custom bindings active |
 | `11:06` | GetBinding | | |

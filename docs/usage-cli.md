@@ -156,10 +156,64 @@ quietlinux light set all=000000                 # everything off
 Tip: too much green looks yellow on this keyboard (`ff6a00` looks yellow,
 `ff2a00` orange), and pure white is harsh on the strips.
 
+## `light effect EFFECT [options]`
+
+Sets the effect stored in the keyboard (like IO Center's lighting page). It
+survives a replug. Switches to effect mode if another mode is active.
+
+```sh
+quietlinux light effect breathing                         # IO Center's rainbow gradient
+quietlinux light effect static --color ff1493 --brightness 40
+quietlinux light effect color-wave --speed 80 --direction left
+quietlinux light effect breathing --gradient ff0000,0000ff
+quietlinux light effect tornado --gradient ff0000@0,ffff00@30,0000ff@100
+```
+
+| Option | Values | Default |
+|---|---|---|
+| `EFFECT` | `static`, `color-wave`, `tornado`, `breathing`, `reactive`, `matrix` | |
+| `--color` | one color, `rrggbb` | static: `e63000` (factory color); others: rainbow |
+| `--gradient` | 2–12 colors, evenly spread or with positions `@0`–`@100` | |
+| `--brightness` | 0–100 | 100 |
+| `--speed` | 0–100 | 50 |
+| `--direction` | `up`, `down`, `left`, `right`, `clockwise`, `counterclockwise`, `omnidirectional`, `horizontal`, `vertical`, `cross` | `up` |
+
+Which directions an effect uses depends on the effect.
+
 ## `light stored`
 
 Leaves realtime mode: the effect stored in the keyboard shows again. Use it to
 undo `light set` without unplugging the keyboard.
+
+## `bind KEY ACTION`
+
+Binds a media action to one of the macro keys or the knob. Stored in the keyboard.
+
+```sh
+quietlinux bind M3 stop
+quietlinux bind KnobRight next-track
+quietlinux bind M3 previous-track     # back to the factory binding
+```
+
+- Keys: `M1`–`M5`, `Knob` (press), `KnobLeft`, `KnobRight` (turns).
+- Actions: `volume-up`, `volume-down`, `mute`, `mic-mute`, `next-track`,
+  `previous-track`, `play-pause`, `stop`.
+- Factory bindings: M1 play-pause, M2 next-track, M3 previous-track, M4 stop,
+  M5 mic-mute, Knob mute, KnobLeft volume-down, KnobRight volume-up.
+- Other keys and other action types (keys, shortcuts, macros, …) come once
+  their messages are captured; `quietlinux info` shows the current bindings.
+
+## `game-mode --block SHORTCUTS`
+
+Chooses which shortcuts game mode blocks. Stored in the keyboard; game mode
+itself is switched with Fn+Pause.
+
+```sh
+quietlinux game-mode --block win,alt-tab
+quietlinux game-mode --block none
+```
+
+Shortcuts: `shift-tab`, `alt-f4`, `win`, `alt-tab`, `caps-lock`.
 
 ## `calibrate [--start HEX]`
 

@@ -83,8 +83,14 @@ pub const SET_LIGHTING_MODE: Command = Command::new(FEATURE_LIGHTINGS, 0x02);
 pub const SET_LAYER_CONFIG: Command = Command::new(FEATURE_LIGHTINGS, 0x06);
 /// Per-LED colors in realtime mode, volatile (bbossa: "LEDs").
 pub const PERFORM_REALTIME_UPDATES: Command = Command::new(FEATURE_LIGHTINGS, 0x0d);
-/// Notification: a key with a host-side binding was pressed (bbossa: "key event").
+/// Notification: a key was pressed (bbossa: "key event"). Same code as `SET_BINDING`.
 pub const ACTION_FIRED: Command = Command::new(FEATURE_BINDINGS, 0x02);
+/// Request: bind an action to a key. Same code as the `ACTION_FIRED` notification.
+pub const SET_BINDING: Command = Command::new(FEATURE_BINDINGS, 0x02);
+/// Game mode flags (keys game mode blocks).
+pub const SET_GAME_MODE_CONFIG: Command = Command::new(FEATURE_KEYBOARD, 0x03);
+/// Keeps a session open; IO Center Web sends it every 1.5 s (timeout 3 s).
+pub const KEEP_ALIVE: Command = Command::new(FEATURE_ROOT, 0x03);
 
 /// Read-only requests (IO Center Web layouts, see `docs/protocol.md`). Only these
 /// can be sent with [`crate::device::Session::query`]: none of them changes the keyboard.
@@ -563,6 +569,69 @@ pub fn static_color(rgb: Rgb, brightness: u8, seq: u8, session: u8) -> Packet {
         rgb.b,
     ];
     short_frame(SET_LAYER_CONFIG, &payload, seq, session)
+}
+
+// --- 10:06: SetLayerConfig (any effect) ------------------------------------------
+//   [layer][effect][direction][brightness][speed][color mode][colors…]
+//   Captured: static with one color, breathing with a 7-stop gradient. [cap]
+
+/// Most gradient stops in one packet (6 header bytes + count + 4 per stop ≤ 55).
+pub const MAX_GRADIENT_STOPS: usize = 12;
+
+/// Payload of `10:06`.
+pub fn layer_config_payload(
+    layer: u8,
+    effect: u8,
+    direction: u8,
+    brightness: u8,
+    speed: u8,
+    colors: &crate::info::Colors,
+) -> Result<Vec<u8>, ProtocolError> {
+    use crate::info::Colors;
+    let mut payload = vec![layer, effect, direction, brightness, speed];
+    let stops = |payload: &mut Vec<u8>, stops: &[(Rgb, u8)]| -> Result<(), ProtocolError> {
+        let count = u8::try_from(stops.len())
+            .ok()
+            .filter(|&n| usize::from(n) <= MAX_GRADIENT_STOPS)
+            .ok_or(ProtocolError::TooManyEntries {
+                len: stops.len(),
+                max: MAX_GRADIENT_STOPS,
+            })?;
+        payload.push(count);
+        for (color, position) in stops {
+            payload.extend_from_slice(&[color.r, color.g, color.b, *position]);
+        }
+        Ok(())
+    };
+    match colors {
+        Colors::Single(c) => payload.extend_from_slice(&[COLOR_MODE_SINGLE, c.r, c.g, c.b]),
+        Colors::Dual(a, b) => payload.extend_from_slice(&[0x01, a.r, a.g, a.b, b.r, b.g, b.b]),
+        Colors::Gradient(s) => {
+            payload.push(0x02);
+            stops(&mut payload, s)?;
+        }
+        Colors::OrientedGradient {
+            kind,
+            angle,
+            stops: s,
+        } => {
+            payload.extend_from_slice(&[0x03, *kind]);
+            payload.extend_from_slice(&angle.to_le_bytes());
+            stops(&mut payload, s)?;
+        }
+    }
+    Ok(payload)
+}
+
+// --- 11:02 SetBinding, 07:03 game mode flags, 01:03 keep-alive ----------------------
+
+/// Action type "media" of a binding.
+pub const ACTION_MEDIA: u8 = 0x02;
+
+/// `11:02` payload binding a media action to a key on the normal layer:
+/// `[key ID][layer 0][02][action]`. [cap]
+pub fn media_binding_payload(key_id: u8, action: u8) -> [u8; 4] {
+    [key_id, 0x00, ACTION_MEDIA, action]
 }
 
 // --- 10:0d: PerformRealtimeUpdates (per-LED colors) ---------------------------

@@ -592,3 +592,151 @@ fn connect_web_replies_decode() {
         ]
     );
 }
+
+// --- IO Center Web changing settings (writes-web.hex) -------------------------------
+
+fn writes_web() -> Vec<(String, Packet)> {
+    let path = format!(
+        "{}/tests/fixtures/writes-web.hex",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    std::fs::read_to_string(&path)
+        .unwrap()
+        .lines()
+        .filter(|l| !l.starts_with('#') && !l.trim().is_empty())
+        .map(|l| {
+            let (hex, comment) = l.split_once('#').unwrap();
+            (
+                comment.split_whitespace().next().unwrap().to_owned(),
+                parse_packet(hex.trim()),
+            )
+        })
+        .collect()
+}
+
+fn writes_out(cmd: Command) -> Vec<Packet> {
+    writes_web()
+        .into_iter()
+        .filter(|(dir, raw)| dir == "out" && p::command_of(raw) == cmd)
+        .map(|(_, raw)| raw)
+        .collect()
+}
+
+#[test]
+fn writes_web_replies_are_empty_successes() {
+    for (dir, raw) in writes_web() {
+        assert!(p::crc_ok(&raw));
+        if dir == "in" {
+            assert_eq!(p::status_of(&raw), p::STATUS_SUCCESS);
+            assert!(
+                p::data(&raw).is_empty() || p::command_of(&raw) == p::KEEP_ALIVE,
+                "{raw:02x?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn layer_configs_round_trip() {
+    use quietlinux_core::info::{Colors, LayerConfig};
+
+    let captured = writes_out(p::SET_LAYER_CONFIG);
+    assert!(captured.len() >= 10);
+    let mut effects = Vec::new();
+    for raw in captured {
+        let (_, data, id, session) = fields(&raw);
+        let config = LayerConfig::parse(&data[1..]).expect("decodes");
+        let payload = p::layer_config_payload(
+            data[0],
+            config.effect,
+            config.direction,
+            config.brightness,
+            config.speed,
+            &config.colors,
+        )
+        .unwrap();
+        assert_eq!(payload, data);
+        assert_eq!(
+            p::frame(p::SET_LAYER_CONFIG, &payload, id, session).unwrap(),
+            raw
+        );
+        effects.push((
+            config.effect,
+            config.brightness,
+            config.speed,
+            matches!(config.colors, Colors::Gradient(_)),
+        ));
+    }
+    // static (0) with one color and breathing (3) with a gradient; brightness and speed in percent
+    assert!(effects.contains(&(0, 20, 50, false)));
+    assert!(effects.contains(&(3, 100, 60, true)));
+    assert!(effects.iter().all(|&(_, b, s, _)| b <= 100 && s <= 100));
+}
+
+#[test]
+fn breathing_rainbow_of_io_center() {
+    use quietlinux_core::info::{Colors, LayerConfig};
+
+    let raw = writes_out(p::SET_LAYER_CONFIG)
+        .into_iter()
+        .find(|r| r[8] == 3)
+        .unwrap();
+    let config = LayerConfig::parse(&p::data(&raw)[1..]).unwrap();
+    let Colors::Gradient(stops) = config.colors else {
+        panic!()
+    };
+    let shown: Vec<String> = stops.iter().map(|(c, pos)| format!("{c}@{pos}")).collect();
+    assert_eq!(
+        shown,
+        [
+            "ff0000@0",
+            "ffff00@17",
+            "00ff00@33",
+            "00ffff@50",
+            "0000ff@67",
+            "ff00ff@83",
+            "ff0000@100"
+        ]
+    );
+}
+
+#[test]
+fn media_bindings() {
+    let captured = writes_out(p::SET_BINDING);
+    assert_eq!(captured.len(), 2);
+    for raw in captured {
+        let (_, data, id, session) = fields(&raw);
+        assert_eq!(data[..3], [0x04, 0x00, p::ACTION_MEDIA]); // M3, normal layer, media
+        let payload = p::media_binding_payload(0x04, data[3]);
+        assert_eq!(
+            p::frame(p::SET_BINDING, &payload, id, session).unwrap(),
+            raw
+        );
+    }
+}
+
+#[test]
+fn game_mode_flags() {
+    let captured = writes_out(p::SET_GAME_MODE_CONFIG);
+    let mut flags: Vec<u8> = captured.iter().map(|r| p::data(r)[0]).collect();
+    flags.sort_unstable();
+    assert_eq!(
+        flags,
+        [0x00, 0x01, 0x03, 0x07, 0x0f, 0x10, 0x18, 0x1c, 0x1e, 0x1f]
+    );
+    for raw in captured {
+        let (_, data, id, session) = fields(&raw);
+        assert_eq!(
+            p::frame(p::SET_GAME_MODE_CONFIG, &data, id, session).unwrap(),
+            raw
+        );
+    }
+}
+
+#[test]
+fn keep_alive() {
+    let raw = writes_out(p::KEEP_ALIVE)[0];
+    let (_, data, id, session) = fields(&raw);
+    assert_eq!(data.len(), 0);
+    assert_eq!(p::frame(p::KEEP_ALIVE, &[], id, session).unwrap(), raw);
+}

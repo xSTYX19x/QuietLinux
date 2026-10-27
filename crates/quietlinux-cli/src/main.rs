@@ -2,6 +2,7 @@
 
 mod calibrate;
 mod report;
+mod settings;
 
 use std::io::{self, BufRead, Write};
 use std::process::ExitCode;
@@ -10,6 +11,7 @@ use std::str::FromStr;
 use clap::{Parser, Subcommand};
 use quietlinux_core::Rgb;
 use quietlinux_core::device::{self, fmt_version};
+use quietlinux_core::info::Colors;
 use quietlinux_core::keymap::{self, KEYS, Key, Layout};
 use quietlinux_core::layout::{self, Zone};
 use quietlinux_core::protocol::Led;
@@ -61,6 +63,23 @@ enum Command {
     /// Change the lighting
     #[command(subcommand)]
     Light(Light),
+    /// Bind a media action to M1–M5 or the knob (stored in the keyboard)
+    ///
+    /// Example: quietlinux bind M3 stop. Keys: M1, M2, M3, M4, M5, Knob (press),
+    /// KnobLeft, KnobRight (turns). Factory bindings: M1 play-pause, M2 next-track,
+    /// M3 previous-track, M4 stop, M5 mic-mute, Knob mute, KnobLeft volume-down,
+    /// KnobRight volume-up.
+    Bind {
+        key: settings::BindKey,
+        /// volume-up, volume-down, mute, mic-mute, next-track, previous-track, play-pause, stop
+        action: settings::MediaAction,
+    },
+    /// Choose the shortcuts game mode blocks (stored in the keyboard; Fn+Pause toggles game mode)
+    GameMode {
+        /// `none` or a comma-separated list of shift-tab, alt-f4, win, alt-tab, caps-lock
+        #[arg(long, value_name = "SHORTCUTS")]
+        block: settings::GameModeBlocks,
+    },
     /// Light the keys one by one to check the key map
     ///
     /// Press Enter when the lit key is the one shown, otherwise type what is lit.
@@ -81,6 +100,27 @@ enum Light {
         /// Brightness in percent
         #[arg(long, default_value_t = 100, value_parser = clap::value_parser!(u8).range(0..=100))]
         brightness: u8,
+    },
+    /// Effect stored in the keyboard: static, color-wave, tornado, breathing, reactive, matrix
+    ///
+    /// Examples: quietlinux light effect breathing; quietlinux light effect static --color ff1493
+    Effect {
+        effect: settings::Effect,
+        /// One color (default for static: e63000; for the others IO Center's rainbow gradient)
+        #[arg(long, conflicts_with = "gradient")]
+        color: Option<Rgb>,
+        /// Gradient: colors spread evenly (ff0000,0000ff) or with positions (ff0000@0,0000ff@100)
+        #[arg(long)]
+        gradient: Option<settings::Gradient>,
+        /// Brightness in percent
+        #[arg(long, default_value_t = 100, value_parser = clap::value_parser!(u8).range(0..=100))]
+        brightness: u8,
+        /// Speed in percent
+        #[arg(long, default_value_t = 50, value_parser = clap::value_parser!(u8).range(0..=100))]
+        speed: u8,
+        /// up, down, left, right, clockwise, counterclockwise, omnidirectional, horizontal, vertical, cross
+        #[arg(long, default_value = "up")]
+        direction: settings::Direction,
     },
     /// Show the effect stored in the keyboard again (leaves realtime mode)
     Stored,
@@ -272,6 +312,43 @@ fn run(cli: Cli) -> Result<ExitCode, device::Error> {
             let (_, mut session) = device::open(usb_path, cli.allow_unknown_firmware)?;
             session.set_static(color, brightness)?;
         }
+        Command::Light(Light::Effect {
+            effect,
+            color,
+            gradient,
+            brightness,
+            speed,
+            direction,
+        }) => {
+            let colors = match (color, gradient) {
+                (Some(c), _) => Colors::Single(c),
+                (None, Some(g)) => Colors::Gradient(g.0),
+                (None, None) if effect == settings::Effect::STATIC => {
+                    Colors::Single(Rgb::new(0xe6, 0x30, 0x00))
+                }
+                (None, None) => Colors::Gradient(settings::rainbow()),
+            };
+            let mut session = open_session(usb_path, cli.allow_unknown_firmware)?;
+            session.set_effect(effect.0, direction.0, brightness, speed, &colors)?;
+        }
+        Command::Bind { key, action } => {
+            let mut session = open_session(usb_path, cli.allow_unknown_firmware)?;
+            session.set_media_binding(key.key_id, action.0)?;
+            println!("{}: {action}", key.name);
+        }
+        Command::GameMode { block } => {
+            let mut session = open_session(usb_path, cli.allow_unknown_firmware)?;
+            session.set_game_mode_blocks(block.0)?;
+            let blocked = quietlinux_core::info::game_mode_blocks(block.0);
+            println!(
+                "Game mode blocks: {}",
+                if blocked.is_empty() {
+                    "nothing".to_owned()
+                } else {
+                    blocked.join(", ")
+                }
+            );
+        }
         Command::Light(Light::Stored) => {
             let (_, mut session) = device::open(usb_path, cli.allow_unknown_firmware)?;
             session.show_stored_effect()?;
@@ -323,6 +400,16 @@ fn run(cli: Cli) -> Result<ExitCode, device::Error> {
         }
     }
     Ok(ExitCode::SUCCESS)
+}
+
+/// Open the keyboard and a session, as IO Center does before changing settings.
+fn open_session(
+    usb_path: Option<&str>,
+    allow_unknown_firmware: bool,
+) -> Result<device::Session<device::Hidraw>, device::Error> {
+    let (_, mut session) = device::open(usb_path, allow_unknown_firmware)?;
+    session.open_session()?;
+    Ok(session)
 }
 
 fn main() -> ExitCode {

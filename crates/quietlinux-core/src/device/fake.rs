@@ -26,6 +26,12 @@ pub struct FakeKeyboard {
     pub pending: VecDeque<Packet>,
     /// Reply data for other requests (sent fragmented if long).
     pub answers: HashMap<Command, Vec<u8>>,
+    /// Last `10:06` payload.
+    pub layer_config: Option<Vec<u8>>,
+    /// Bindings set with `11:02`: key ID → action bytes.
+    pub bindings: HashMap<u8, Vec<u8>>,
+    /// Game mode flags set with `07:03`.
+    pub game_mode_flags: u8,
     fragments: Vec<Packet>,
 }
 
@@ -38,6 +44,9 @@ impl FakeKeyboard {
             received: Vec::new(),
             pending: VecDeque::new(),
             answers: HashMap::new(),
+            layer_config: None,
+            bindings: HashMap::new(),
+            game_mode_flags: 0,
             fragments: Vec::new(),
         }
     }
@@ -98,7 +107,21 @@ impl FakeKeyboard {
                     self.leds.clear();
                 }
             }
-            p::SET_LAYER_CONFIG => self.reply(&fragments[0], &[]),
+            p::SET_LAYER_CONFIG => {
+                self.layer_config = Some(msg.data.clone());
+                self.reply(&fragments[0], &[]);
+            }
+            p::SET_BINDING if !msg.is_notification() => {
+                if let [key, _layer, action @ ..] = msg.data.as_slice() {
+                    self.bindings.insert(*key, action.to_vec());
+                }
+                self.reply(&fragments[0], &[]);
+            }
+            p::SET_GAME_MODE_CONFIG => {
+                self.game_mode_flags = msg.data.first().copied().unwrap_or_default();
+                self.reply(&fragments[0], &[]);
+            }
+            p::KEEP_ALIVE => self.reply(&fragments[0], &[]),
             p::OPEN_SESSION => {
                 // like the reference keyboard: echo the connection ID, session 2, timeout 3
                 let mut data = msg.data.get(..4).unwrap_or(&[0; 4]).to_vec();

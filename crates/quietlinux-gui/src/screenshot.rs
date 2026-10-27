@@ -38,8 +38,23 @@ pub fn run(path: &Path, page: i32, theme: i32) -> Result<(), Box<dyn Error>> {
     ui.set_page(page);
     ui.set_theme(theme);
     match page {
-        1 => with_controller(|c, ui| c.select_key(ui, "Knob")),
-        2 => {
+        1 => with_controller(|c, ui| {
+            // a few painted keys
+            for (code, hex) in [
+                ("KeyW", "e63000"),
+                ("KeyA", "e63000"),
+                ("KeyS", "e63000"),
+                ("KeyD", "e63000"),
+                ("Space", "1e90ff"),
+                ("Escape", "ffd700"),
+            ] {
+                ui.set_brush(hex.into());
+                c.paint_key(ui, code, false);
+            }
+            ui.set_zone_top("f4dbae".into());
+        }),
+        2 => with_controller(|c, ui| c.select_key(ui, "Knob")),
+        3 => {
             ui.set_macro_current(0);
             with_controller(|c, ui| c.select_macro(ui, 0));
         }

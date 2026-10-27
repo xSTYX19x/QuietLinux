@@ -49,6 +49,22 @@ On a firmware version QuietLinux was not tested with, the title says
 - **Off** / **On** switch the lighting off and on, like IO Center's switch. The
   effect stays stored.
 
+## Per key
+
+![The per key tab](images/gui-per-key.png)
+
+Colors for single keys, like `quietlinux light set`:
+
+- Choose the **Brush** color (hex digits or **Pick …**), then click keys to
+  paint them; right-click switches a key off. **All keys** paints every key,
+  **Clear** switches everything off.
+- **Top bar**, **Left strip** and **Right strip** color the light bars;
+  empty means off.
+- Changes show on the keyboard at once (realtime mode).
+- These colors are **not stored** in the keyboard: unplugging it ends them,
+  and so do **Back to effect** or applying an effect in the Lighting tab. A
+  background service that keeps them is planned ([todo.md](todo.md)).
+
 ## Keys
 
 ![The keys tab](images/gui-keys.png)
@@ -103,5 +119,4 @@ keyboard has no other way), as described in
 
 ## Not in the window yet
 
-Per-key colors (`light set`) and recording macros by typing them: see
-[todo.md](todo.md).
+Recording macros by typing them: see [todo.md](todo.md).

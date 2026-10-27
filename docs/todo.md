@@ -284,7 +284,8 @@ logic. Dependencies stay minimal (today: clap, rustix) and are checked in CI
 - [x] Backup and apply in the window (a file name field; check before apply)
 - [x] Game mode shortcuts in the window; game mode on/off shown in the title line (read every 2 s)
 - [x] Knob: press, turn left and turn right in the key editor
-- [ ] Per-key colors (`light set`) in the window
+- [x] Per-key colors in the window: brush with color wheel, click to paint, right-click to clear, light bar zones; sent at once (realtime, volatile)
+- [ ] Save and load per-key color layouts (files), and keep them shown (background service)
 - [ ] A file chooser for the backup (needs the XDG desktop portal; today a file name field)
 - [ ] Screen reader support: Slint's "accessibility" feature is off because its D-Bus stack needs quick-xml 0.38 (RUSTSEC-2026-0194/-0195); turn it on once AccessKit moves to quick-xml 0.41+
 - [ ] Remove the `cargo deny` ignores for unmaintained crates (ttf-parser, zvariant, zbus_names) when Slint/winit move on

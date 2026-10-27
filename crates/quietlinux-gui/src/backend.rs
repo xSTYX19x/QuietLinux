@@ -11,7 +11,7 @@ use quietlinux_core::device::{self, LightingMode, Session, Transport};
 use quietlinux_core::info::{self, Action, Binding, Colors, Macro};
 use quietlinux_core::keymap::{self, Layout};
 use quietlinux_core::macros::{self, Changes, RepeatMode};
-use quietlinux_core::protocol as p;
+use quietlinux_core::protocol::{self as p, Led};
 
 /// What the window asks for.
 #[derive(Debug, Clone)]
@@ -122,6 +122,23 @@ impl Backend {
             Self::Demo(kb) => {
                 let mut session = Session::new(&mut **kb, false).map_err(|e| e.to_string())?;
                 handle(&mut session, request)
+            }
+        }
+    }
+
+    /// Per-LED colors (realtime mode, volatile); LEDs not given are off. Nothing
+    /// is read back: painting keys should feel immediate.
+    pub fn set_leds(&mut self, leds: &[Led]) -> Result<(), String> {
+        match self {
+            Self::Hardware { usb_path } => {
+                let (_, mut session) =
+                    device::open(usb_path.as_deref(), false).map_err(|e| e.to_string())?;
+                session.open_session().map_err(|e| e.to_string())?;
+                session.set_leds(leds).map_err(|e| e.to_string())
+            }
+            Self::Demo(kb) => {
+                let mut session = Session::new(&mut **kb, false).map_err(|e| e.to_string())?;
+                session.set_leds(leds).map_err(|e| e.to_string())
             }
         }
     }
@@ -398,6 +415,12 @@ mod tests {
             kb.game_mode_on = true; // Fn+Pause
         }
         assert_eq!(backend.game_mode_on(), Ok(Some(true)));
+        let red = quietlinux_core::Rgb::new(255, 0, 0);
+        backend.set_leds(&[Led::new(0x57, red)]).unwrap();
+        if let Backend::Demo(kb) = &backend {
+            assert_eq!(kb.mode, p::MODE_REALTIME);
+            assert_eq!(kb.leds.get(&0x57), Some(&red));
+        }
         let reply = backend.handle(Request::GameMode(0x04)).unwrap();
         assert_eq!(reply.state.game_mode_flags, 0x04);
     }

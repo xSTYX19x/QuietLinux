@@ -11,6 +11,7 @@ mod screenshot;
 mod wheel;
 
 use std::cell::RefCell;
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::mpsc;
@@ -20,9 +21,10 @@ use clap::Parser;
 use quietlinux_core::Rgb;
 use quietlinux_core::config;
 use quietlinux_core::info::Colors;
-use quietlinux_core::keymap::{self, Layout};
+use quietlinux_core::keymap::{self, KEYS, Layout};
+use quietlinux_core::layout::Zone;
 use quietlinux_core::macros::{self, RepeatMode};
-use quietlinux_core::protocol as p;
+use quietlinux_core::protocol::{self as p, Led};
 use quietlinux_core::settings::{
     self, Direction, Effect, LightingAction, MediaAction, MouseButton,
 };
@@ -55,7 +57,7 @@ struct Cli {
     /// Draw the window of the demo mode into an image (PPM) and quit; for the docs
     #[arg(long, value_name = "FILE", hide = true)]
     screenshot: Option<PathBuf>,
-    /// Tab for --screenshot: 0 lighting, 1 keys, 2 macros
+    /// Tab for --screenshot: 0 lighting, 1 per key, 2 keys, 3 macros, 4 settings
     #[arg(long, default_value_t = 0, hide = true)]
     page: i32,
     /// Theme for --screenshot: 0 system, 1 light, 2 dark
@@ -78,6 +80,10 @@ const BIND_KINDS: [(&str, &str); 7] = [
 /// stored in the keyboard, so not every step of a drag is written.
 const COLOR_DELAY: Duration = Duration::from_millis(400);
 
+/// Painted keys are sent this long after the last click, so that quick clicks
+/// go out together. Per-key colors are volatile: no flash memory is written.
+const PAINT_DELAY: Duration = Duration::from_millis(150);
+
 /// How often the window asks whether game mode is on (Fn+Pause switches it).
 const GAME_MODE_POLL: Duration = Duration::from_secs(2);
 
@@ -87,6 +93,8 @@ enum Job {
     Request(Request),
     /// Read only whether game mode is on; answered quietly.
     PollGameMode,
+    /// Per-LED colors; the state is not read again.
+    Leds(Vec<Led>),
 }
 
 /// The default backup file.
@@ -113,6 +121,13 @@ struct Controller {
     polling: bool,
     /// Applies changed colors after [`COLOR_DELAY`].
     color_timer: slint::Timer,
+    /// Per-key colors painted in the window, by LED index.
+    painted: BTreeMap<u8, Rgb>,
+    /// Sends the painted colors after [`PAINT_DELAY`].
+    paint_timer: slint::Timer,
+    /// Painted colors are on their way; `paint_again`: changed since.
+    painting: bool,
+    paint_again: bool,
     /// Key and target the key editor shows (to tell a target change from a kind change).
     editor_key: String,
     editor_target: i32,
@@ -127,6 +142,10 @@ impl Controller {
             pending: Pending::Other,
             polling: false,
             color_timer: slint::Timer::default(),
+            painted: BTreeMap::new(),
+            paint_timer: slint::Timer::default(),
+            painting: false,
+            paint_again: false,
             editor_key: String::new(),
             editor_target: 0,
         }
@@ -280,7 +299,15 @@ impl Controller {
                 let changed = targets(c.code)
                     .iter()
                     .any(|&(_, id, fn_layer)| self.binding(id, fn_layer).is_some());
+                let painted = keymap::by_code(c.code).and_then(|k| self.painted.get(&k.led));
+                let (color, ink) = painted
+                    .map_or((slint::Color::default(), slint::Color::default()), |&rgb| {
+                        (to_color(rgb), ink(rgb))
+                    });
                 KeyCap {
+                    painted: painted.is_some(),
+                    color,
+                    ink,
                     code: c.code.into(),
                     // the knob is drawn as a circle, without text
                     legend: if c.round { "" } else { legends.legend(c.code) }.into(),
@@ -538,6 +565,91 @@ impl Controller {
         }
     }
 
+    fn paint_key(&mut self, ui: &AppWindow, code: &str, erase: bool) {
+        let Some(key) = keymap::by_code(code) else {
+            return;
+        };
+        if erase {
+            self.painted.remove(&key.led);
+        } else {
+            let Some(brush) = brush(ui) else {
+                return;
+            };
+            self.painted.insert(key.led, brush);
+        }
+        self.show_keys(ui);
+        self.schedule_paint();
+    }
+
+    fn paint_all(&mut self, ui: &AppWindow) {
+        let Some(brush) = brush(ui) else {
+            return;
+        };
+        self.painted = KEYS.iter().map(|k| (k.led, brush)).collect();
+        self.show_keys(ui);
+        self.schedule_paint();
+    }
+
+    fn paint_clear(&mut self, ui: &AppWindow) {
+        self.painted.clear();
+        ui.set_zone_top("".into());
+        ui.set_zone_left("".into());
+        ui.set_zone_right("".into());
+        self.show_keys(ui);
+        self.schedule_paint();
+    }
+
+    fn schedule_paint(&mut self) {
+        self.paint_timer
+            .start(slint::TimerMode::SingleShot, PAINT_DELAY, || {
+                with_controller(Controller::send_paint);
+            });
+    }
+
+    /// Send the painted keys and zones: one realtime update with every LED.
+    fn send_paint(&mut self, ui: &AppWindow) {
+        let Some(requests) = &self.requests else {
+            return;
+        };
+        if self.painting || ui.get_busy() {
+            self.paint_again = true;
+            return;
+        }
+        let mut leds: Vec<Led> = self
+            .painted
+            .iter()
+            .map(|(&led, &rgb)| Led::new(led, rgb))
+            .collect();
+        for (zone, hex) in [
+            (Zone::Top, ui.get_zone_top()),
+            (Zone::Left, ui.get_zone_left()),
+            (Zone::Right, ui.get_zone_right()),
+        ] {
+            // empty or not yet a color: the zone stays off
+            if let Ok(rgb) = hex.trim().parse::<Rgb>() {
+                leds.extend(zone.leds().map(|led| Led::new(led, rgb)));
+            }
+        }
+        self.painting = requests.send(Job::Leds(leds)).is_ok();
+    }
+
+    fn painted(&mut self, ui: &AppWindow, result: Result<(), String>) {
+        self.painting = false;
+        match result {
+            Ok(()) => {
+                ui.set_status_error(false);
+                ui.set_status(
+                    "Per-key colors shown (until the keyboard is unplugged or an effect is applied)."
+                        .into(),
+                );
+            }
+            Err(e) => show_error(ui, &e),
+        }
+        if std::mem::take(&mut self.paint_again) {
+            self.send_paint(ui);
+        }
+    }
+
     /// A color changed: apply the effect soon, unless more changes follow.
     fn colors_changed(&mut self, _: &AppWindow) {
         self.color_timer
@@ -657,6 +769,32 @@ impl Controller {
     }
 }
 
+/// The brush color, or `None` (and an error shown) if it is no color.
+fn brush(ui: &AppWindow) -> Option<Rgb> {
+    let hex = ui.get_brush();
+    match hex.trim().parse::<Rgb>() {
+        Ok(rgb) => Some(rgb),
+        Err(e) => {
+            show_error(ui, &format!("brush {hex:?}: {e}"));
+            None
+        }
+    }
+}
+
+fn to_color(rgb: Rgb) -> slint::Color {
+    slint::Color::from_rgb_u8(rgb.r, rgb.g, rgb.b)
+}
+
+/// Black or white, whichever reads better on `rgb`.
+fn ink(rgb: Rgb) -> slint::Color {
+    let luma = 299 * u32::from(rgb.r) + 587 * u32::from(rgb.g) + 114 * u32::from(rgb.b);
+    if luma > 140_000 {
+        slint::Color::from_rgb_u8(0, 0, 0)
+    } else {
+        slint::Color::from_rgb_u8(255, 255, 255)
+    }
+}
+
 fn wheel_pick(p: wheel::Pick) -> WheelPick {
     WheelPick {
         hex: p.color.to_string().into(),
@@ -736,6 +874,12 @@ fn set_up(ui: &AppWindow) {
     ui.on_refresh(|| with_controller(|c, ui| c.send(ui, Request::Refresh)));
     ui.on_store_effect(|| with_controller(Controller::store_effect));
     ui.on_colors_changed(|| with_controller(Controller::colors_changed));
+    ui.on_paint_key(|code| with_controller(|c, ui| c.paint_key(ui, &code, false)));
+    ui.on_erase_key(|code| with_controller(|c, ui| c.paint_key(ui, &code, true)));
+    ui.on_paint_all(|| with_controller(Controller::paint_all));
+    ui.on_paint_clear(|| with_controller(Controller::paint_clear));
+    ui.on_zones_changed(|| with_controller(|c, _| c.schedule_paint()));
+    ui.on_back_to_effect(|| with_controller(|c, ui| c.send(ui, Request::LightOn)));
     ui.on_light_off(|| with_controller(|c, ui| c.send(ui, Request::LightOff)));
     ui.on_light_on(|| with_controller(|c, ui| c.send(ui, Request::LightOn)));
     ui.on_key_clicked(|code| with_controller(|c, ui| c.select_key(ui, &code)));
@@ -764,6 +908,12 @@ fn spawn_backend(mut backend: Backend) -> mpsc::Sender<Job> {
                     let outcome = backend.handle(request);
                     slint::invoke_from_event_loop(move || {
                         with_controller(|c, ui| c.apply(ui, outcome));
+                    })
+                }
+                Job::Leds(leds) => {
+                    let result = backend.set_leds(&leds);
+                    slint::invoke_from_event_loop(move || {
+                        with_controller(|c, ui| c.painted(ui, result));
                     })
                 }
                 Job::PollGameMode => {

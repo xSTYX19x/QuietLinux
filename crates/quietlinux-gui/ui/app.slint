@@ -17,6 +17,10 @@ export struct KeyCap {
     round: bool,
     // the binding differs from the factory one (on any layer)
     changed: bool,
+    // per-key color, and a legend color that stays readable on it
+    painted: bool,
+    color: color,
+    ink: color,
 }
 
 // A point on the color wheel (x, y from -1 to 1, value 0 to 1) and its color.
@@ -33,7 +37,11 @@ component KeyboardView inherits Rectangle {
     // size of the drawing in key units
     in property <float> units-wide: 1;
     in property <float> units-high: 1;
+    // show the per-key colors instead of the bindings
+    in property <bool> paint;
     callback clicked(code: string);
+    // right click
+    callback erased(code: string);
 
     property <length> u: min(self.width / units-wide, self.height / units-high);
     // centered horizontally
@@ -47,9 +55,11 @@ component KeyboardView inherits Rectangle {
         width: cap.w * root.u - 3px;
         height: cap.h * root.u - 3px;
         border-radius: cap.round ? self.width / 2 : 4px;
-        border-width: cap.changed ? 2px : 1px;
-        border-color: cap.changed ? Palette.accent-background : Palette.border;
-        background: cap.code == root.selected
+        border-width: !root.paint && cap.changed ? 2px : 1px;
+        border-color: !root.paint && cap.changed ? Palette.accent-background : Palette.border;
+        background: root.paint && cap.painted
+            ? cap.color
+            : !root.paint && cap.code == root.selected
             ? Palette.selection-background
             : (touch.has-hover ? Palette.alternate-background : Palette.control-background);
 
@@ -58,7 +68,9 @@ component KeyboardView inherits Rectangle {
             height: parent.height - 4px;
             text: cap.legend;
             font-size: max(8px, root.u * 0.26);
-            color: cap.code == root.selected ? Palette.selection-foreground : Palette.control-foreground;
+            color: root.paint && cap.painted
+                ? cap.ink
+                : !root.paint && cap.code == root.selected ? Palette.selection-foreground : Palette.control-foreground;
             horizontal-alignment: center;
             vertical-alignment: center;
             wrap: word-wrap;
@@ -69,6 +81,11 @@ component KeyboardView inherits Rectangle {
             clicked => {
                 root.clicked(cap.code);
             }
+            pointer-event(event) => {
+                if event.button == PointerEventButton.right && event.kind == PointerEventKind.down {
+                    root.erased(cap.code);
+                }
+            }
         }
     }
 }
@@ -76,6 +93,8 @@ component KeyboardView inherits Rectangle {
 // A color as six hex digits, with a swatch and a color wheel to pick it.
 component ColorField inherits HorizontalLayout {
     in property <string> label;
+    in property <length> label-width: 90px;
+    in property <string> placeholder: "e63000";
     in-out property <string> hex;
     in property <color> swatch;
     in property <image> wheel;
@@ -96,7 +115,7 @@ component ColorField inherits HorizontalLayout {
     Text {
         text: root.label;
         vertical-alignment: center;
-        min-width: 90px;
+        min-width: root.label-width;
     }
 
     Rectangle {
@@ -117,7 +136,7 @@ component ColorField inherits HorizontalLayout {
 
     LineEdit {
         text <=> root.hex;
-        placeholder-text: "e63000";
+        placeholder-text: root.placeholder;
         width: 110px;
         edited => {
             root.committed();
@@ -401,6 +420,154 @@ component LightingPage inherits VerticalBox {
                 }
             }
         }
+    }
+}
+
+component PerKeyPage inherits VerticalBox {
+    in property <[KeyCap]> keys;
+    in property <float> keyboard-width;
+    in property <float> keyboard-height;
+    in property <image> wheel;
+    in-out property <string> brush;
+    in-out property <string> top;
+    in-out property <string> left-strip;
+    in-out property <string> right-strip;
+    in property <bool> enabled;
+    pure callback swatch(hex: string) -> color;
+    pure callback wheel-pick(x: float, y: float, value: float) -> WheelPick;
+    pure callback wheel-find(hex: string) -> WheelPick;
+    callback paint(code: string);
+    callback erase(code: string);
+    callback all-keys();
+    callback clear();
+    callback zones-changed();
+    callback back-to-effect();
+
+    HorizontalLayout {
+        spacing: 12px;
+        ColorField {
+            label: "Brush";
+            label-width: 50px;
+            hex <=> root.brush;
+            swatch: root.swatch(root.brush);
+            wheel: root.wheel;
+            wheel-pick(x, y, v) => {
+                return root.wheel-pick(x, y, v);
+            }
+            wheel-find(hex) => {
+                return root.wheel-find(hex);
+            }
+        }
+
+        Button {
+            text: "All keys";
+            enabled: root.enabled;
+            clicked => {
+                root.all-keys();
+            }
+        }
+
+        Button {
+            text: "Clear";
+            enabled: root.enabled;
+            clicked => {
+                root.clear();
+            }
+        }
+
+        Rectangle {
+            horizontal-stretch: 1;
+        }
+
+        Button {
+            text: "Back to effect";
+            enabled: root.enabled;
+            clicked => {
+                root.back-to-effect();
+            }
+        }
+    }
+
+    KeyboardView {
+        keys: root.keys;
+        units-wide: root.keyboard-width;
+        units-high: root.keyboard-height;
+        paint: true;
+        vertical-stretch: 1;
+        clicked(code) => {
+            if root.enabled {
+                root.paint(code);
+            }
+        }
+        erased(code) => {
+            if root.enabled {
+                root.erase(code);
+            }
+        }
+    }
+
+    HorizontalLayout {
+        spacing: 16px;
+        alignment: start;
+        ColorField {
+            label: "Top bar";
+            label-width: 60px;
+            placeholder: "off";
+            hex <=> root.top;
+            swatch: root.swatch(root.top);
+            wheel: root.wheel;
+            wheel-pick(x, y, v) => {
+                return root.wheel-pick(x, y, v);
+            }
+            wheel-find(hex) => {
+                return root.wheel-find(hex);
+            }
+            committed => {
+                root.zones-changed();
+            }
+        }
+
+        ColorField {
+            label: "Left strip";
+            label-width: 70px;
+            placeholder: "off";
+            hex <=> root.left-strip;
+            swatch: root.swatch(root.left-strip);
+            wheel: root.wheel;
+            wheel-pick(x, y, v) => {
+                return root.wheel-pick(x, y, v);
+            }
+            wheel-find(hex) => {
+                return root.wheel-find(hex);
+            }
+            committed => {
+                root.zones-changed();
+            }
+        }
+
+        ColorField {
+            label: "Right strip";
+            label-width: 75px;
+            placeholder: "off";
+            hex <=> root.right-strip;
+            swatch: root.swatch(root.right-strip);
+            wheel: root.wheel;
+            wheel-pick(x, y, v) => {
+                return root.wheel-pick(x, y, v);
+            }
+            wheel-find(hex) => {
+                return root.wheel-find(hex);
+            }
+            committed => {
+                root.zones-changed();
+            }
+        }
+    }
+
+    Text {
+        text: "Click a key to paint it with the brush, right-click to switch it off. The colors show at once. They are not stored in the keyboard: unplugging it or applying an effect ends them.";
+        color: Palette.alternate-foreground;
+        wrap: word-wrap;
     }
 }
 
@@ -788,6 +955,18 @@ export component AppWindow inherits Window {
     callback light-off();
     callback light-on();
 
+    // per key
+    in-out property <string> brush: "e63000";
+    in-out property <string> zone-top;
+    in-out property <string> zone-left;
+    in-out property <string> zone-right;
+    callback paint-key(code: string);
+    callback erase-key(code: string);
+    callback paint-all();
+    callback paint-clear();
+    callback zones-changed();
+    callback back-to-effect();
+
     // keys
     in property <[KeyCap]> keys;
     in property <float> keyboard-width;
@@ -920,6 +1099,48 @@ export component AppWindow inherits Window {
                     }
                     light-on => {
                         root.light-on();
+                    }
+                }
+            }
+
+            Tab {
+                title: "Per key";
+                PerKeyPage {
+                    keys: root.keys;
+                    keyboard-width: root.keyboard-width;
+                    keyboard-height: root.keyboard-height;
+                    wheel: root.wheel;
+                    brush <=> root.brush;
+                    top <=> root.zone-top;
+                    left-strip <=> root.zone-left;
+                    right-strip <=> root.zone-right;
+                    enabled: root.can-write;
+                    swatch(hex) => {
+                        return root.swatch(hex);
+                    }
+                    wheel-pick(x, y, v) => {
+                        return root.wheel-pick(x, y, v);
+                    }
+                    wheel-find(hex) => {
+                        return root.wheel-find(hex);
+                    }
+                    paint(code) => {
+                        root.paint-key(code);
+                    }
+                    erase(code) => {
+                        root.erase-key(code);
+                    }
+                    all-keys => {
+                        root.paint-all();
+                    }
+                    clear => {
+                        root.paint-clear();
+                    }
+                    zones-changed => {
+                        root.zones-changed();
+                    }
+                    back-to-effect => {
+                        root.back-to-effect();
                     }
                 }
             }

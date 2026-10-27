@@ -29,7 +29,7 @@ Not affiliated with or endorsed by be quiet!. See [Safety](#safety).
 | Key map with layout-independent key names, legends for UK, German and French ISO | ✅ |
 | Macros stored in the keyboard: list, show, create, edit, delete (`macro`) | ✅ |
 | Per-key lighting that stays (IO Center keeps it alive from the PC too), open file/folder/website, profile switching keys | planned (background service) |
-| Graphical interface (`quietlinux-gui`): lighting, key bindings, macros; demo mode with a simulated keyboard | ✅ first version |
+| Graphical interface (`quietlinux-gui`): lighting with a color wheel, per-key colors, key bindings, macros, backup, game mode; demo mode with a simulated keyboard | ✅ first version |
 | Firmware updates | **never**, see [Safety](#safety) |
 
 Tested with: Light Mount Silent Linear, German ISO layout, firmware

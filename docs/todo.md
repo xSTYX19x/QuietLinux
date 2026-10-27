@@ -100,7 +100,7 @@ Windows app and the web app in phase 2. ✔ = already known thanks to bbossa.
 - [x] Find out: are macros stored in the device or played back by the host? Stored and played by the keyboard; write format captured from the Windows app (`12:02`–`12:08`, see protocol.md)
 - [x] Bind a macro to a key (`bind KEY macro ID`, backup/apply); tested on the reference keyboard (2026-10-27)
 - [x] Read a macro (`12:03`, `12:05`, `12:07`): captured from IO Center for Windows starting; reads match its writes byte for byte
-- [x] `macro list|show|create|edit|delete`; every write is read back and compared
+- [x] `macro list|show|create|edit|delete`; every write is read back and compared; tested on the reference keyboard (2026-10-27), with `light off`
 - [ ] Macros in `backup`/`apply`
 - [ ] Recording a macro on the keyboard (`12:09`/`12:0a`, `12:05` notifications)
 
@@ -268,7 +268,7 @@ logic. Dependencies stay minimal (today: clap, rustix) and are checked in CI
 - [x] `backup FILE` and `apply FILE [--dry-run]` (TOML; bindings, game mode, optional effect)
 - [ ] `light effect …` for every effect
 - [ ] `keymap get|set|reset`
-- [x] `macro list|show|create|edit|delete`, `bind KEY macro ID`, `light off`
+- [x] `macro list|show|create|edit|delete`, `bind KEY macro ID`, `light off`; tested on the reference keyboard (2026-10-27)
 - [ ] `profile list|switch|export|import`
 - [ ] `settings game-mode|quick-tap …`
 - [ ] Shell completions (bash/zsh/fish), `--json` output for scripts

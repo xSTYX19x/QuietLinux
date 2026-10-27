@@ -266,11 +266,11 @@ logic. Dependencies stay minimal (today: clap, rustix) and are checked in CI
 ### 6.3 Phase 4 – CLI
 - [x] `status`, `info`, `events`, `zones`, `keys`, `calibrate`, `light static`, `light stored`, `light set` (zones and single keys)
 - [x] `backup FILE` and `apply FILE [--dry-run]` (TOML; bindings, game mode, optional effect)
-- [ ] `light effect …` for every effect
+- [x] `light effect …` for every effect
 - [ ] `keymap get|set|reset`
 - [x] `macro list|show|create|edit|delete`, `bind KEY macro ID`, `light off`; tested on the reference keyboard (2026-10-27)
 - [ ] `profile list|switch|export|import`
-- [ ] `settings game-mode|quick-tap …`
+- [x] `game-mode --block` (quick tap: not on the Light Mount)
 - [ ] Shell completions (bash/zsh/fish), `--json` output for scripts
 
 ### 6.4 Phase 5 – GUI

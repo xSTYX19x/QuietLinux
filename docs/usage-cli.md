@@ -292,8 +292,8 @@ Shortcuts: `shift-tab`, `alt-f4`, `win`, `alt-tab`, `caps-lock`.
 
 ## `backup FILE [--force]`
 
-Saves the key bindings that differ from the factory ones and the game mode
-shortcuts to a TOML file. Read-only (it opens a session like IO Center, which
+Saves the key bindings that differ from the factory ones, the game mode
+shortcuts and the macros to a TOML file. Read-only (it opens a session like IO Center, which
 changes no setting). `-` writes to standard output; an existing file is only
 overwritten with `--force`.
 
@@ -324,6 +324,12 @@ M2 = "key F13"
 M5 = "macro 2"
 "Fn+Home" = "raw 08 03"  # profile: next: QuietLinux cannot write this yet; `apply` keeps it
 
+[[macros]]
+id = 2
+name = "select-copy"
+repeat = "once"
+events = "+ctrl KeyA -ctrl 50ms +ctrl KeyC -ctrl"
+
 # [effect]
 # effect = "static"
 # ...
@@ -336,7 +342,12 @@ M5 = "macro 2"
   `shortcut …`, `macro …`, `disable`, `default`); `"Fn+KEY"` is the Fn layer.
   Bindings QuietLinux cannot write yet (websites, profiles, …) are stored as
   `raw` bytes.
-- Only the binding to a macro is saved, not the macro itself.
+- Macros are stored with their events in the syntax of `macro create`
+  (`+ctrl KeyA -ctrl` is the same as `ctrl+KeyA`). Events without a name are
+  stored as `raw_events` (4 hex bytes each), a config `apply` has no name for
+  as `config`.
+- **The file contains what your macros type.** Keep it private; do not attach
+  it to an issue.
 
 ## `apply FILE [--dry-run]`
 
@@ -356,7 +367,13 @@ $ quietlinux apply ~/lightmount.toml --dry-run
 - With a `[bindings]` section, the file describes all changed keys: keys not
   listed get their factory binding back, **except** bindings QuietLinux cannot
   recreate (they are kept, with a note).
-- A binding to a macro the keyboard does not have is skipped, with a note.
+- A binding to a macro the keyboard does not have (and the file does not
+  create) is skipped, with a note.
+- With `[[macros]]` (or `macros = []`, which the backup of a keyboard without
+  macros contains), the file lists all macros: `apply` writes them all, deletes
+  those not listed, and reads them back to check. A macro a key stays bound to
+  is not deleted (note). Without macros in the file, they are left alone.
+  Macros are written before the bindings, so a binding can name a new macro.
 - `[keyboard]` is information only.
 - `[effect]` (optional): `effect`, one of `color`, `dual` (two colors) or
   `gradient` (list like `["ff0000@0", "0000ff@100"]`), `brightness`, `speed`,

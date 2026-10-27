@@ -101,7 +101,7 @@ Windows app and the web app in phase 2. ✔ = already known thanks to bbossa.
 - [x] Bind a macro to a key (`bind KEY macro ID`, backup/apply); tested on the reference keyboard (2026-10-27)
 - [x] Read a macro (`12:03`, `12:05`, `12:07`): captured from IO Center for Windows starting; reads match its writes byte for byte
 - [x] `macro list|show|create|edit|delete`; every write is read back and compared; tested on the reference keyboard (2026-10-27), with `light off`
-- [ ] Macros in `backup`/`apply`
+- [x] Macros in `backup`/`apply`
 - [ ] Recording a macro on the keyboard (`12:09`/`12:0a`, `12:05` notifications)
 
 ### 2.4 Profiles

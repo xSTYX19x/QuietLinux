@@ -91,7 +91,7 @@ enum Command {
     /// Example: quietlinux macro create select-copy ctrl+KeyA 50ms ctrl+KeyC
     #[command(subcommand)]
     Macro(MacroCommand),
-    /// Save the keyboard's key bindings and game mode shortcuts to a file (read-only)
+    /// Save the keyboard's key bindings, game mode shortcuts and macros to a file (read-only)
     ///
     /// `-` writes to standard output. The effect cannot be read from the Light Mount;
     /// the file contains a template to add one.
@@ -556,9 +556,14 @@ fn run(cli: Cli) -> Result<ExitCode, Box<dyn std::error::Error>> {
                 print!("{text}");
             } else {
                 std::fs::write(&file, text).map_err(|e| format!("{}: {e}", file.display()))?;
+                let macros = snapshot.macros.as_ref().map_or_else(
+                    || "macros not reported".to_owned(),
+                    |m| format!("{} macro(s)", m.len()),
+                );
                 eprintln!(
-                    "Saved to {}: {} binding(s), game mode shortcuts. The effect is not included \
-                     (the keyboard does not report it).",
+                    "Saved to {}: {} binding(s), game mode shortcuts, {macros}. The effect is not \
+                     included (the keyboard does not report it). The file holds what your macros \
+                     type: keep it private.",
                     file.display(),
                     snapshot.bindings.len()
                 );

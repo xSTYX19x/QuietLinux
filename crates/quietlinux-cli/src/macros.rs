@@ -49,6 +49,16 @@ impl FromStr for RepeatMode {
     }
 }
 
+impl RepeatMode {
+    /// The name `--repeat` takes, `None` for modes IO Center does not offer.
+    pub fn name(self) -> Option<&'static str> {
+        REPEAT_MODES
+            .iter()
+            .find(|(_, v)| *v == self.0)
+            .map(|(name, _)| *name)
+    }
+}
+
 /// HID usage of a key name or modifier name in a macro.
 fn usage_of(name: &str) -> Result<u8, String> {
     if let Some(i) = MODIFIERS
@@ -184,6 +194,38 @@ pub fn events_text(events: &[MacroEvent], delay_ms: u16) -> String {
     out
 }
 
+/// Events as a backup file stores them: tokens if they read back the same, else
+/// the raw bytes as hex (`raw` is true then).
+pub fn stored_events(events: &[MacroEvent]) -> (bool, String) {
+    let text = events_text(events, DEFAULT_DELAY_MS);
+    if parse_events(std::slice::from_ref(&text), DEFAULT_DELAY_MS).as_deref() == Ok(events) {
+        return (false, text);
+    }
+    let hex: Vec<String> = events
+        .iter()
+        .map(|e| {
+            let [lo, hi] = e.delay_ms.to_le_bytes();
+            format!("{:02x} {:02x} {lo:02x} {hi:02x}", e.kind, e.usage)
+        })
+        .collect();
+    (true, hex.join("  "))
+}
+
+/// Events from the raw hex of [`stored_events`]: 4 bytes per event.
+pub fn parse_raw_events(hex: &str) -> Result<Vec<MacroEvent>, String> {
+    let bytes = hex
+        .split_whitespace()
+        .map(|b| u8::from_str_radix(b, 16).map_err(|_| format!("invalid byte {b:?}")))
+        .collect::<Result<Vec<u8>, String>>()?;
+    if bytes.len() % 4 != 0 {
+        return Err("raw events: 4 bytes per event".to_owned());
+    }
+    Ok(bytes
+        .chunks_exact(4)
+        .map(|e| event(e[0], e[1], u16::from_le_bytes([e[2], e[3]])))
+        .collect())
+}
+
 fn check_name(name: &str) -> Result<(), String> {
     if name.is_empty()
         || name.len() > MAX_NAME
@@ -197,7 +239,7 @@ fn check_name(name: &str) -> Result<(), String> {
 }
 
 /// Write all macros, then read them back: the keyboard must report what was written.
-fn write_verified<T: Transport>(
+pub fn write_verified<T: Transport>(
     session: &mut Session<T>,
     macros: &[Macro],
 ) -> Result<(), Box<dyn std::error::Error>> {

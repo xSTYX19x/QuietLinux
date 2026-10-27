@@ -1,7 +1,8 @@
 //! `quietlinux backup` and `quietlinux apply`: the keyboard's settings as a TOML file.
 //!
 //! A backup holds what the keyboard reports and QuietLinux can write back: the key
-//! bindings that differ from the factory ones and the game mode shortcuts. The
+//! bindings that differ from the factory ones, the game mode shortcuts and the
+//! macros. The
 //! Light Mount does not report its effect, so an `[effect]` section is only applied
 //! when the user writes one. See docs/usage-cli.md for the format.
 
@@ -9,11 +10,12 @@ use std::collections::{BTreeMap, HashMap};
 use std::fmt::{self, Write as _};
 
 use quietlinux_core::device::{Error, LightingMode, Session, Transport};
-use quietlinux_core::info::{self, Action, Binding, Colors, Layout, parse_action};
+use quietlinux_core::info::{self, Action, Binding, Colors, Layout, Macro, parse_action};
 use quietlinux_core::keymap;
 use quietlinux_core::protocol as p;
 use serde::Deserialize;
 
+use crate::macros::{self, RepeatMode};
 use crate::report::read_bindings;
 use crate::settings::{
     BindKey, Direction, DualColor, Effect, GameModeBlocks, Gradient, KeyCombo, LightingAction,
@@ -38,8 +40,8 @@ pub struct Snapshot {
     pub bindings_enabled: Option<bool>,
     /// Bindings that differ from the factory ones.
     pub bindings: Vec<Binding>,
-    /// IDs of the macros stored in the keyboard, if it reports them.
-    pub macros: Option<Vec<u16>>,
+    /// The macros stored in the keyboard, if it reports them.
+    pub macros: Option<Vec<Macro>>,
 }
 
 pub fn read_snapshot<T: Transport>(session: &mut Session<T>) -> Result<Snapshot, Error> {
@@ -69,7 +71,7 @@ pub fn read_snapshot<T: Transport>(session: &mut Session<T>) -> Result<Snapshot,
     let game_mode_on = first(session.query(p::GET_GAME_MODE_STATE, &[])).map(|s| s & 1 == 1);
     let bindings_enabled = first(session.query(p::GET_BINDINGS_CONFIG, &[])).map(|e| e == 1);
     let (_, bindings) = read_bindings(session)?;
-    let macros = session.macro_ids().ok();
+    let macros = session.read_macros().ok();
     Ok(Snapshot {
         model: identity.as_ref().and_then(info::DeviceInfo::model_name),
         firmware: identity.map(|i| {
@@ -222,6 +224,13 @@ pub fn backup_text(s: &Snapshot) -> String {
         "# Restore them with `quietlinux apply FILE` (try `--dry-run` first)."
     );
     let _ = writeln!(t, "version = {VERSION}");
+    if s.macros.as_ref().is_some_and(Vec::is_empty) {
+        let _ = writeln!(
+            t,
+            "# The keyboard has no macros: `apply` deletes any it finds."
+        );
+        let _ = writeln!(t, "macros = []");
+    }
     let _ = writeln!(t);
     let _ = writeln!(
         t,
@@ -289,8 +298,66 @@ pub fn backup_text(s: &Snapshot) -> String {
             );
         }
     }
+    match &s.macros {
+        Some(list) if !list.is_empty() => macro_sections(&mut t, list),
+        Some(_) => {}
+        None => {
+            let _ = writeln!(t);
+            let _ = writeln!(
+                t,
+                "# The keyboard did not report its macros: `apply` leaves them alone."
+            );
+        }
+    }
     t.push_str(EFFECT_TEMPLATE);
     t
+}
+
+/// A TOML basic string.
+fn toml_string(s: &str) -> String {
+    let mut out = String::from("\"");
+    for c in s.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            c if c.is_control() => {
+                let _ = write!(out, "\\u{:04X}", u32::from(c));
+            }
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
+}
+
+fn macro_sections(t: &mut String, list: &[Macro]) {
+    let _ = writeln!(t);
+    for line in [
+        "# Macros stored in the keyboard, events in the syntax of `quietlinux macro",
+        "# create` (100 ms after each event unless a pause is given). `apply` makes the",
+        "# keyboard's macros exactly these: macros not listed are deleted. Without",
+        "# [[macros]], `apply` leaves the macros alone. This is what the macros type:",
+        "# keep the file private.",
+    ] {
+        let _ = writeln!(t, "{line}");
+    }
+    for m in list {
+        let _ = writeln!(t, "[[macros]]");
+        let _ = writeln!(t, "id = {}", m.id);
+        let _ = writeln!(t, "name = {}", toml_string(&m.name));
+        match RepeatMode(m.repeat()).name() {
+            Some(name) if m.config[1..] == p::MACRO_DEFAULT_CONFIG[1..] => {
+                let _ = writeln!(t, "repeat = \"{name}\"");
+            }
+            _ => {
+                let hex: Vec<String> = m.config.iter().map(|b| format!("{b:02x}")).collect();
+                let _ = writeln!(t, "config = \"{}\"", hex.join(" "));
+            }
+        }
+        let (raw, text) = macros::stored_events(&m.events);
+        let key = if raw { "raw_events" } else { "events" };
+        let _ = writeln!(t, "{key} = {}", toml_string(&text));
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -303,6 +370,49 @@ struct File {
     game_mode: Option<GameModeSection>,
     bindings: Option<BTreeMap<String, String>>,
     effect: Option<EffectSection>,
+    macros: Option<Vec<MacroSection>>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct MacroSection {
+    id: u16,
+    name: String,
+    repeat: Option<String>,
+    /// All 4 config bytes as hex, instead of `repeat`.
+    config: Option<String>,
+    events: Option<String>,
+    raw_events: Option<String>,
+}
+
+fn macro_setting(m: MacroSection) -> Result<Macro, String> {
+    if m.id == 0 {
+        return Err("id 0: macro IDs start at 1".to_owned());
+    }
+    if m.name.len() > usize::from(u8::MAX) {
+        return Err("name: at most 255 bytes".to_owned());
+    }
+    let events = match (m.events, m.raw_events) {
+        (Some(text), None) => macros::parse_events(&[text], macros::DEFAULT_DELAY_MS)?,
+        (None, Some(hex)) => macros::parse_raw_events(&hex)?,
+        _ => return Err("give one of events, raw_events".to_owned()),
+    };
+    let mut new = Macro::new(m.id, &m.name, events);
+    match (m.repeat, m.config) {
+        (Some(repeat), None) => new.set_repeat(repeat.parse::<RepeatMode>()?.0),
+        (None, Some(hex)) => {
+            let bytes = hex
+                .split_whitespace()
+                .map(|b| {
+                    u8::from_str_radix(b, 16).map_err(|_| format!("config: invalid byte {b:?}"))
+                })
+                .collect::<Result<Vec<u8>, String>>()?;
+            new.config = bytes.try_into().map_err(|_| "config: 4 bytes".to_owned())?;
+        }
+        (None, None) => {}
+        (Some(_), Some(_)) => return Err("give only one of repeat, config".to_owned()),
+    }
+    Ok(new)
 }
 
 #[derive(Debug, Deserialize)]
@@ -347,6 +457,8 @@ pub struct Settings {
     pub game_mode: Option<u8>,
     pub bindings: Option<Vec<(Target, Desired)>>,
     pub effect: Option<EffectSetting>,
+    /// All macros, sorted by ID.
+    pub macros: Option<Vec<Macro>>,
 }
 
 /// Parse and check a config file; nothing is sent to the keyboard.
@@ -398,10 +510,28 @@ pub fn parse(text: &str) -> Result<Settings, String> {
         .map(effect_setting)
         .transpose()
         .map_err(|e| format!("[effect] {e}"))?;
+    let macros = file
+        .macros
+        .map(|list| {
+            let mut list = list
+                .into_iter()
+                .map(|m| {
+                    let id = m.id;
+                    macro_setting(m).map_err(|e| format!("[[macros]] id {id}: {e}"))
+                })
+                .collect::<Result<Vec<Macro>, String>>()?;
+            list.sort_by_key(|m| m.id);
+            if let Some(w) = list.windows(2).find(|w| w[0].id == w[1].id) {
+                return Err(format!("[[macros]]: id {} given twice", w[0].id));
+            }
+            Ok(list)
+        })
+        .transpose()?;
     Ok(Settings {
         game_mode,
         bindings,
         effect,
+        macros,
     })
 }
 
@@ -452,6 +582,11 @@ pub enum Op {
         fn_layer: bool,
     },
     Effect(EffectSetting),
+    /// Write all macros (`summary` says what changes, without the contents).
+    Macros {
+        macros: Vec<Macro>,
+        summary: String,
+    },
 }
 
 impl fmt::Display for Op {
@@ -471,6 +606,7 @@ impl fmt::Display for Op {
             }
             Op::Bind { name, action, .. } => write!(f, "{name}: {action}"),
             Op::Reset { name, .. } => write!(f, "{name}: factory binding"),
+            Op::Macros { summary, .. } => write!(f, "macros: {summary}"),
             Op::Effect(e) => write!(
                 f,
                 "effect: {}, colors {}, brightness {}, speed {}, direction {}",
@@ -495,6 +631,7 @@ pub fn plan(settings: &Settings, current: &Snapshot) -> Plan {
             plan.ops.push(Op::GameMode(flags));
         }
     }
+    let macro_ids = plan_macros(&mut plan, settings, current);
     if let Some(bindings) = &settings.bindings {
         let mut now: HashMap<(u8, bool), &Binding> = current
             .bindings
@@ -516,7 +653,7 @@ pub fn plan(settings: &Settings, current: &Snapshot) -> Plan {
                     }
                 }
                 Desired::Action(Action::Macro(id))
-                    if current.macros.as_ref().is_some_and(|m| !m.contains(id)) =>
+                    if macro_ids.as_ref().is_some_and(|m| !m.contains(id)) =>
                 {
                     plan.notes.push(format!(
                         "{name}: the keyboard has no macro {id}, left as it is"
@@ -578,10 +715,87 @@ pub fn plan(settings: &Settings, current: &Snapshot) -> Plan {
     plan
 }
 
+/// The macro ID a binding will name, if any.
+fn bound_macro(desired: &Desired) -> Option<u16> {
+    match desired {
+        Desired::Action(Action::Macro(id)) => Some(*id),
+        Desired::Raw(bytes) => match parse_action(bytes) {
+            Some((Action::Macro(id), _)) => Some(id),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+/// Plan the macros; returns the IDs the keyboard will have, if known.
+fn plan_macros(plan: &mut Plan, settings: &Settings, current: &Snapshot) -> Option<Vec<u16>> {
+    let now = current.macros.as_ref();
+    let Some(wanted) = &settings.macros else {
+        return now.map(|list| list.iter().map(|m| m.id).collect());
+    };
+    let Some(now) = now else {
+        plan.notes
+            .push("macros: the keyboard did not report its macros, left alone".to_owned());
+        return None;
+    };
+    // macros keys stay bound to are not deleted
+    let bound: Vec<u16> = match &settings.bindings {
+        Some(bindings) => bindings
+            .iter()
+            .filter_map(|(_, d)| bound_macro(d))
+            .collect(),
+        None => current
+            .bindings
+            .iter()
+            .filter_map(|b| match b.action {
+                Action::Macro(id) => Some(id),
+                _ => None,
+            })
+            .collect(),
+    };
+    let mut wanted = wanted.clone();
+    for m in now {
+        if bound.contains(&m.id) && wanted.iter().all(|w| w.id != m.id) {
+            plan.notes.push(format!(
+                "macro {} ({:?}): kept, a key stays bound to it",
+                m.id, m.name
+            ));
+            wanted.push(m.clone());
+        }
+    }
+    wanted.sort_by_key(|m| m.id);
+    if wanted != *now {
+        let changed = wanted
+            .iter()
+            .filter(|w| now.iter().any(|n| n.id == w.id && n != *w))
+            .count();
+        let new = wanted
+            .iter()
+            .filter(|w| now.iter().all(|n| n.id != w.id))
+            .count();
+        let deleted = now
+            .iter()
+            .filter(|n| wanted.iter().all(|w| w.id != n.id))
+            .count();
+        plan.ops.push(Op::Macros {
+            summary: format!(
+                "{changed} changed, {new} new, {deleted} deleted ({} in all)",
+                wanted.len()
+            ),
+            macros: wanted.clone(),
+        });
+    }
+    Some(wanted.iter().map(|m| m.id).collect())
+}
+
 /// Make the changes.
-pub fn execute<T: Transport>(session: &mut Session<T>, plan: &Plan) -> Result<(), Error> {
+pub fn execute<T: Transport>(
+    session: &mut Session<T>,
+    plan: &Plan,
+) -> Result<(), Box<dyn std::error::Error>> {
     for op in &plan.ops {
         match op {
+            Op::Macros { macros, .. } => macros::write_verified(session, macros)?,
             Op::GameMode(flags) => session.set_game_mode_blocks(*flags)?,
             Op::Bind {
                 key_id,
@@ -624,7 +838,18 @@ mod tests {
             game_mode_on: Some(false),
             bindings_enabled: Some(true),
             bindings: parse_bindings(&CAPTURED_BINDINGS).unwrap().1,
-            macros: Some(vec![1, 2]),
+            macros: Some(vec![
+                Macro::new(
+                    1,
+                    "Makro 1",
+                    macros::parse_events(&["KeyA KeyB".into()], 100).unwrap(),
+                ),
+                Macro::new(
+                    2,
+                    "q\"x",
+                    macros::parse_events(&["ctrl+KeyC 7ms".into()], 100).unwrap(),
+                ),
+            ]),
         }
     }
 
@@ -645,6 +870,133 @@ mod tests {
         ] {
             assert!(text.contains(line), "missing {line:?} in\n{text}");
         }
+    }
+
+    #[test]
+    fn backup_contains_the_macros() {
+        let mut current = snapshot();
+        let macros = current.macros.as_mut().unwrap();
+        macros[1].set_repeat(p::MACRO_WHILE_HELD);
+        macros.push(Macro {
+            id: 5,
+            name: "odd".into(),
+            config: [9, 9, 0, 0],
+            events: vec![p::MacroEvent {
+                kind: 6,
+                usage: 0xe9,
+                delay_ms: 300,
+            }],
+        });
+        let text = backup_text(&current);
+        for line in [
+            "[[macros]]\nid = 1\nname = \"Makro 1\"\nrepeat = \"once\"\nevents = \"KeyA KeyB\"\n",
+            "id = 2\nname = \"q\\\"x\"\nrepeat = \"while-held\"\nevents = \"+ctrl KeyC -ctrl 7ms\"\n",
+            "id = 5\nname = \"odd\"\nconfig = \"09 09 00 00\"\nraw_events = \"06 e9 2c 01\"\n",
+            "keep the file private",
+        ] {
+            assert!(text.contains(line), "missing {line:?} in\n{text}");
+        }
+        assert!(!text.contains("macros = []"));
+        let settings = parse(&text).unwrap();
+        assert_eq!(settings.macros.as_ref(), current.macros.as_ref());
+        assert_eq!(plan(&settings, &current), Plan::default());
+    }
+
+    #[test]
+    fn no_macros() {
+        let mut current = snapshot();
+        current.macros = Some(Vec::new());
+        current.bindings.clear();
+        let text = backup_text(&current);
+        assert!(text.contains("\nmacros = []\n"), "{text}");
+        assert_eq!(parse(&text).unwrap().macros, Some(Vec::new()));
+        // a keyboard that does not report them: nothing in the file, apply leaves them
+        current.macros = None;
+        let text = backup_text(&current);
+        assert!(text.contains("did not report its macros"));
+        assert_eq!(parse(&text).unwrap().macros, None);
+    }
+
+    #[test]
+    fn plan_macros() {
+        // the file has macro 1 (changed) and a new 3, not 2: M5 stays bound to 2
+        let text = "version = 1\n\
+                    [[macros]]\nid = 1\nname = \"Makro 1\"\nevents = \"KeyC\"\n\
+                    [[macros]]\nid = 3\nname = \"new\"\nrepeat = \"repeat\"\nevents = \"KeyA\"\n";
+        let settings = parse(text).unwrap();
+        let plan = plan(&settings, &snapshot());
+        let shown: Vec<String> = plan.ops.iter().map(ToString::to_string).collect();
+        assert_eq!(shown, ["macros: 1 changed, 1 new, 0 deleted (3 in all)"]);
+        assert_eq!(
+            plan.notes,
+            ["macro 2 (\"q\\\"x\"): kept, a key stays bound to it"]
+        );
+        let Op::Macros { macros, .. } = &plan.ops[0] else {
+            panic!()
+        };
+        assert_eq!(macros.iter().map(|m| m.id).collect::<Vec<_>>(), [1, 2, 3]);
+        // with bindings that no longer name macro 2, it is deleted; M4 may name the new 3
+        let text = format!(
+            "{text}[bindings]\nM1 = \"media mic-mute\"\nM2 = \"key F13\"\nM3 = \"media next-track\"\n\
+             M4 = \"macro 3\"\nM5 = \"macro 9\"\n"
+        );
+        let plan = super::plan(&parse(&text).unwrap(), &snapshot());
+        let shown: Vec<String> = plan.ops.iter().map(ToString::to_string).collect();
+        assert_eq!(
+            shown,
+            [
+                "macros: 1 changed, 1 new, 1 deleted (2 in all)",
+                "M4: macro 3"
+            ]
+        );
+        assert_eq!(
+            plan.notes,
+            ["M5: the keyboard has no macro 9, left as it is"]
+        );
+    }
+
+    #[test]
+    fn macro_parse_errors() {
+        for (section, expected) in [
+            ("id = 0\nname = \"a\"\nevents = \"KeyA\"", "IDs start at 1"),
+            ("id = 1\nname = \"a\"", "one of events, raw_events"),
+            (
+                "id = 1\nname = \"a\"\nevents = \"KeyA\"\nrepeat = \"often\"",
+                "often",
+            ),
+            ("id = 1\nname = \"a\"\nraw_events = \"02 04 00\"", "4 bytes"),
+            (
+                "id = 1\nname = \"a\"\nevents = \"KeyA\"\nconfig = \"00 02\"",
+                "config: 4 bytes",
+            ),
+        ] {
+            let err = parse(&format!("version = 1\n[[macros]]\n{section}\n")).unwrap_err();
+            assert!(err.contains(expected), "{section:?}: {err}");
+        }
+        let twice = "version = 1\n[[macros]]\nid = 1\nname = \"a\"\nevents = \"KeyA\"\n\
+                     [[macros]]\nid = 1\nname = \"b\"\nevents = \"KeyB\"\n";
+        assert!(parse(twice).unwrap_err().contains("given twice"));
+    }
+
+    #[test]
+    fn macros_restored_on_a_simulated_keyboard() {
+        let mut kb = FakeKeyboard::tested();
+        kb.answers.insert(p::GET_GAME_MODE_CONFIG, vec![0x1f]);
+        kb.answers.insert(p::GET_BINDINGS, vec![0, 0]);
+        for m in snapshot().macros.unwrap() {
+            kb.macros.insert(m.id, m);
+        }
+        let mut session = Session::new(&mut kb, false).unwrap();
+        let text = backup_text(&read_snapshot(&mut session).unwrap());
+        // the macros change, then the backup is applied
+        let mut changed = snapshot().macros.unwrap();
+        changed[0].name = "other".into();
+        changed.remove(1);
+        macros::write_verified(&mut session, &changed).unwrap();
+        let current = read_snapshot(&mut session).unwrap();
+        let plan = plan(&parse(&text).unwrap(), &current);
+        execute(&mut session, &plan).unwrap();
+        assert_eq!(session.read_macros().unwrap(), snapshot().macros.unwrap());
     }
 
     #[test]

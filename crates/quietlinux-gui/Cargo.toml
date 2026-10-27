@@ -17,6 +17,7 @@ path = "src/main.rs"
 # `fake`: the simulated keyboard of the demo mode (--demo)
 quietlinux-core = { workspace = true, features = ["fake"] }
 clap.workspace = true
+toml.workspace = true
 # Software renderer: no GPU or OpenGL needed, little memory for a small window.
 slint = { version = "1.18.1", default-features = false, features = [
     "std",

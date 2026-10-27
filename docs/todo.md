@@ -102,7 +102,7 @@ Windows app and the web app in phase 2. ✔ = already known thanks to bbossa.
 - [x] Read a macro (`12:03`, `12:05`, `12:07`): captured from IO Center for Windows starting; reads match its writes byte for byte
 - [x] `macro list|show|create|edit|delete`; every write is read back and compared; tested on the reference keyboard (2026-10-27), with `light off`
 - [x] Macros in `backup`/`apply`
-- [ ] Recording a macro on the keyboard (`12:09`/`12:0a`, `12:05` notifications)
+- [ ] Recording a macro on the keyboard (`12:09`/`12:0a`, `12:05` notifications): see the GUI's macro recording in 6.4
 
 ### 2.4 Profiles
 - [x] Find out how many profiles the device holds: none. IO Center for Windows keeps profiles on the PC and writes all settings when switching [cap]
@@ -284,7 +284,9 @@ logic. Dependencies stay minimal (today: clap, rustix) and are checked in CI
 - [ ] Backup and apply in the window (file chooser)
 - [ ] Game mode shortcuts, per-key colors (`light set`) in the window
 - [ ] Live preview of an effect
-- [ ] Macro recording (`12:09`/`12:0a`)
+- [ ] Color wheel to pick colors (effect colors, later per-key colors), next to the hex field
+- [ ] Record a macro by typing it: capture the key presses (press and release, with the pauses) and turn them into macro events; find out whether the keyboard's own recording (`12:09`/`12:0a`, `12:05` notifications, as IO Center for Windows does) or the key events of interface 2 work better
+- [x] Light and dark theme, or the system's (saved in `~/.config/quietlinux/gui.toml`)
 - [x] Own look, no imitation of be quiet! branding or logos
 
 ### 6.5 Phase 6 – Daemon (optional)

@@ -6,6 +6,7 @@
 
 mod backend;
 mod keyboard;
+mod prefs;
 mod screenshot;
 
 use std::cell::RefCell;
@@ -54,6 +55,9 @@ struct Cli {
     /// Tab for --screenshot: 0 lighting, 1 keys, 2 macros
     #[arg(long, default_value_t = 0, hide = true)]
     page: i32,
+    /// Theme for --screenshot: 0 system, 1 light, 2 dark
+    #[arg(long, default_value_t = 1, hide = true)]
+    theme: i32,
 }
 
 /// Binding kinds of the key editor: the word `bind` takes, and the label.
@@ -532,10 +536,18 @@ fn spawn_backend(mut backend: Backend) -> mpsc::Sender<Request> {
 
 fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
     if let Some(file) = cli.screenshot {
-        return screenshot::run(&file, cli.page);
+        return screenshot::run(&file, cli.page, cli.theme);
     }
     let ui = AppWindow::new()?;
     set_up(&ui);
+    ui.set_theme(prefs::theme());
+    ui.on_theme_chosen(|| {
+        with_controller(|_, ui| {
+            if let Err(e) = prefs::save_theme(ui.get_theme()) {
+                show_error(ui, &format!("theme not saved: {e}"));
+            }
+        });
+    });
     let backend = if cli.demo {
         ui.set_device_title("Demo: simulated Light Mount".into());
         Backend::demo()

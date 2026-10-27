@@ -23,7 +23,7 @@ impl Platform for Offscreen {
     }
 }
 
-pub fn run(path: &Path, page: i32) -> Result<(), Box<dyn Error>> {
+pub fn run(path: &Path, page: i32, theme: i32) -> Result<(), Box<dyn Error>> {
     let window = MinimalSoftwareWindow::new(RepaintBufferType::NewBuffer);
     slint::platform::set_platform(Box::new(Offscreen(window.clone())))
         .map_err(|e| format!("{e:?}"))?;
@@ -41,6 +41,7 @@ pub fn run(path: &Path, page: i32) -> Result<(), Box<dyn Error>> {
     let outcome = Backend::demo().handle(Request::Refresh);
     with_controller(|c, ui| c.apply(ui, true, outcome));
     ui.set_page(page);
+    ui.set_theme(theme);
     match page {
         1 => with_controller(|c, ui| c.select_key(ui, "M5")),
         2 => {

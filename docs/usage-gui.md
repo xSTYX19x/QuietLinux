@@ -14,6 +14,9 @@ reads it again). While a change is being sent, the status line at the bottom
 says "Working …"; errors appear there in red. The window does not watch key
 presses.
 
+The box next to **Reload** chooses the light or dark theme, or the system's.
+The choice is saved in `~/.config/quietlinux/gui.toml`.
+
 On a firmware version QuietLinux was not tested with, the title says
 "read-only" and every change is refused, like the command line without
 `--allow-unknown-firmware`.
@@ -25,7 +28,7 @@ On a firmware version QuietLinux was not tested with, the title says
 - **Effect**, **Colors**, **Brightness**, **Speed** and **Direction** as in
   `quietlinux light effect`. Colors are six hex digits (`e63000`); "Rainbow" is
   IO Center's color gradient.
-- **Store effect** stores the effect in the keyboard. The Light Mount does not
+- **Apply** stores the effect in the keyboard. The Light Mount does not
   report its effect, so the tab shows what you set last, not what the keyboard
   shows.
 - **Off** / **On** switch the lighting off and on, like IO Center's switch. The

@@ -3542,6 +3542,7 @@ dependencies = [
  "quietlinux-core",
  "slint",
  "slint-build",
+ "toml",
 ]
 
 [[package]]

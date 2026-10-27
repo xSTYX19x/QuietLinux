@@ -217,7 +217,7 @@ component LightingPage inherits VerticalBox {
                 alignment: start;
                 spacing: 8px;
                 Button {
-                    text: "Store effect";
+                    text: "Apply";
                     primary: true;
                     enabled: root.enabled;
                     clicked => {
@@ -476,7 +476,15 @@ export component AppWindow inherits Window {
     in property <bool> busy;
     in property <bool> connected;
     in-out property <int> page;
+    // 0 the system's, 1 light, 2 dark
+    in-out property <int> theme;
+    callback theme-chosen();
     callback refresh();
+
+    changed theme => {
+        Palette.color-scheme = root.theme == 1 ? ColorScheme.light
+            : root.theme == 2 ? ColorScheme.dark : ColorScheme.unknown;
+    }
 
     // lighting
     in property <[string]> effects;
@@ -534,6 +542,15 @@ export component AppWindow inherits Window {
                 font-weight: 600;
                 vertical-alignment: center;
                 horizontal-stretch: 1;
+            }
+
+            ComboBox {
+                width: 170px;
+                model: ["System theme", "Light", "Dark"];
+                current-index <=> root.theme;
+                selected => {
+                    root.theme-chosen();
+                }
             }
 
             Button {

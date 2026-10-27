@@ -203,7 +203,8 @@ Result: **[protocol.md](protocol.md)**, the complete protocol description
 - **Rust:** memory-safe without a garbage collector, starts instantly, small
   single binaries without a runtime. The vendor interface needs only
   `read`/`write` on `/dev/hidraw*` (no ioctl), so the core needs **no `unsafe`
-  at all** (`unsafe_code = "forbid"` for the whole workspace).
+  at all** (`unsafe_code = "forbid"`; in the GUI crate "deny", because the code
+  Slint generates allows unsafe code for itself).
 - **Slint:** lightweight declarative GUI (UI in `.slint` files, logic in Rust),
   native on Wayland, redraws only on changes, typically a few tens of MB of RAM
   instead of 100+ MB for Qt/Python or Electron. License: GPLv3 option,
@@ -224,9 +225,11 @@ crates/
     layout.rs          LED indexes per zone
     keymap.rs          physical keys: W3C names, LED index, position; keycap legends per layout
     color.rs           RGB colors
-    model/             (planned) profiles, effects, key map, macros (serde, TOML)
+    settings.rs        names of effects, directions, actions for command lines and files
+    macros.rs          macros as text; changing the stored macros
+    config.rs          backup/apply file (serde, TOML)
   quietlinux-cli/      binary `quietlinux` (clap)
-  quietlinux-gui/      (planned) binary `quietlinux-gui` (Slint)
+  quietlinux-gui/      binary `quietlinux-gui` (Slint, software renderer; `--demo` with the simulated keyboard)
   quietlinux-daemon/   (planned) host-side actions, reapply after replug/resume
 tools/qlcap/           capture decoder (pcap, pcapng, WebHID logs)
 tools/webhid-logger.js DevTools snippet that logs WebHID reports
@@ -275,11 +278,14 @@ logic. Dependencies stay minimal (today: clap, rustix) and are checked in CI
 - [ ] Shell completions (bash/zsh/fish), `--json` output for scripts
 
 ### 6.4 Phase 5 – GUI
-- [ ] Keyboard view (layout from LampArray positions + zones), click a key → binding/color
-- [ ] Sections like IO Center: lighting, key bindings, macros, profiles, product settings
-- [ ] Live preview, "save to keyboard"
-- [ ] Macro editor with recording
-- [ ] Own look, no imitation of be quiet! branding or logos
+- [x] Keyboard view (schematic ISO layout, legends of the reported layout), click a key → its bindings
+- [x] Tabs: lighting (effect, colors, brightness, speed, direction, on/off), key bindings (both layers), macros (list, create, edit, delete)
+- [x] Demo mode (`--demo`) with the simulated keyboard; offscreen screenshots for the docs (`--screenshot`)
+- [ ] Backup and apply in the window (file chooser)
+- [ ] Game mode shortcuts, per-key colors (`light set`) in the window
+- [ ] Live preview of an effect
+- [ ] Macro recording (`12:09`/`12:0a`)
+- [x] Own look, no imitation of be quiet! branding or logos
 
 ### 6.5 Phase 6 – Daemon (optional)
 - [ ] Evaluate keeping hidraw access to the daemon only (system service with its own user, GUI/CLI talk to it over D-Bus), so that user processes cannot read key presses from interface 2
@@ -288,7 +294,7 @@ logic. Dependencies stay minimal (today: clap, rustix) and are checked in CI
 - [ ] systemd user service
 
 ### 6.6 Phase 7 – Release
-- [ ] Docs: `README.md`, `docs/installation.md` ✔, `docs/usage-cli.md` ✔, `docs/usage-gui.md`, `docs/protocol.md` ✔, `docs/troubleshooting.md`, `docs/contributing.md` (including how to capture for another firmware version or layout)
+- [ ] Docs: `README.md`, `docs/installation.md` ✔, `docs/usage-cli.md` ✔, `docs/usage-gui.md` ✔, `docs/protocol.md` ✔, `docs/troubleshooting.md`, `docs/contributing.md` (including how to capture for another firmware version or layout)
 - [ ] Install script for binary + udev rule
 - [ ] Packages: AUR (PKGBUILD), `cargo install`, prebuilt binaries in releases, maybe .deb/Flatpak
 - [ ] GitHub release, issue template "device report"
@@ -308,7 +314,7 @@ logic. Dependencies stay minimal (today: clap, rustix) and are checked in CI
 8. No network access, no open ports, no web/gRPC server. If GUI and daemon need to talk: a Unix socket in `$XDG_RUNTIME_DIR` with mode `0600`, or the D-Bus session bus.
 9. Start host-side actions (open program/URL) directly with an argument list, **never through a shell** (`sh -c`), so that config files cannot inject commands. Only run actions the user configured.
 10. Treat everything coming from the keyboard as untrusted: check lengths and CRC, never panic on broken frames, fuzz the parsers.
-11. `unsafe_code = "forbid"` in the whole workspace, few dependencies, `cargo deny` in CI.
+11. `unsafe_code = "forbid"` in the workspace ("deny" in the GUI crate: Slint's generated code), few dependencies, `cargo deny` in CI.
 
 ## 8. AI notice (as used in the README)
 

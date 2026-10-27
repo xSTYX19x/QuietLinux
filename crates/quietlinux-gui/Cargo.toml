@@ -1,0 +1,44 @@
+[package]
+name = "quietlinux-gui"
+description = "Graphical interface for the be quiet! Light Mount keyboard"
+version.workspace = true
+edition.workspace = true
+# Slint 1.18 needs Rust 1.92; core and CLI keep the workspace's 1.85.
+rust-version = "1.92"
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "quietlinux-gui"
+path = "src/main.rs"
+
+[dependencies]
+# `fake`: the simulated keyboard of the demo mode (--demo)
+quietlinux-core = { workspace = true, features = ["fake"] }
+clap.workspace = true
+# Software renderer: no GPU or OpenGL needed, little memory for a small window.
+slint = { version = "1.18.1", default-features = false, features = [
+    "std",
+    "compat-1-2",
+    "backend-winit",
+    "renderer-software",
+    "accessibility",
+] }
+
+[build-dependencies]
+slint-build = "1.18.1"
+
+# The workspace lints, except `unsafe_code`: "deny" instead of "forbid", because
+# the code Slint generates from ui/app.slint allows unsafe code for itself. The
+# hand-written code of this crate contains none; deny still rejects any.
+[lints.rust]
+unsafe_code = "deny"
+missing_debug_implementations = "warn"
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"

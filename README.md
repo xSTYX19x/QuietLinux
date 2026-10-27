@@ -8,7 +8,7 @@
 
 A free Linux tool to configure the **be quiet! Light Mount** keyboard
 (USB `373f:0002`) without the vendor's IO Center: lighting, key bindings,
-macros and profiles, with a command line tool and (later) a graphical one.
+macros and profiles, with a command line tool and a graphical one.
 
 **Status: early development.** What works today is listed below; the rest is
 planned in [docs/todo.md](docs/todo.md).
@@ -29,7 +29,7 @@ Not affiliated with or endorsed by be quiet!. See [Safety](#safety).
 | Key map with layout-independent key names, legends for UK, German and French ISO | ✅ |
 | Macros stored in the keyboard: list, show, create, edit, delete (`macro`) | ✅ |
 | Per-key lighting that stays (IO Center keeps it alive from the PC too), open file/folder/website, profile switching keys | planned (background service) |
-| Graphical interface | planned |
+| Graphical interface (`quietlinux-gui`): lighting, key bindings, macros; demo mode with a simulated keyboard | ✅ first version |
 | Firmware updates | **never**, see [Safety](#safety) |
 
 Tested with: Light Mount Silent Linear, German ISO layout, firmware
@@ -48,14 +48,19 @@ sudo udevadm control --reload && sudo udevadm trigger
 ./target/release/quietlinux status
 ./target/release/quietlinux light set keys=ff2a00 top=f4dbae knob=ffffff
 ./target/release/quietlinux light stored   # back to the stored effect
+./target/release/quietlinux-gui            # the graphical interface
 ```
 
-Details: [installation](docs/installation.md), [command line usage](docs/usage-cli.md).
+Details: [installation](docs/installation.md), [command line usage](docs/usage-cli.md),
+[graphical interface](docs/usage-gui.md).
+
+![The keys tab of quietlinux-gui](docs/images/gui-keys.png)
 
 ## Documentation
 
 - [docs/installation.md](docs/installation.md): build, udev rule, permissions
 - [docs/usage-cli.md](docs/usage-cli.md): every command with examples
+- [docs/usage-gui.md](docs/usage-gui.md): the graphical interface
 - [docs/protocol.md](docs/protocol.md): what is known about the keyboard's protocol
 - [docs/capturing.md](docs/capturing.md): how to record and decode the vendor software's traffic
 - [docs/todo.md](docs/todo.md): roadmap
@@ -82,9 +87,12 @@ Details: [installation](docs/installation.md), [command line usage](docs/usage-c
   unchanged. Thank you!
 - [echtzeit-solutions/monsgeek-akko-linux](https://github.com/echtzeit-solutions/monsgeek-akko-linux)
   inspired the structure and the capture-based approach (no code used).
+- The graphical interface is built with [Slint](https://slint.dev), used under
+  its GPL-3.0 license option.
 
 Details in [NOTICE](NOTICE).
 
 ## License
 
-[GPL-3.0-or-later](LICENSE).
+[GPL-3.0-or-later](LICENSE). The `quietlinux-gui` binary includes Slint
+(GPL-3.0-only option) and is therefore distributed under GPL-3.0.

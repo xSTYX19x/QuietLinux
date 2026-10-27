@@ -1,0 +1,644 @@
+// QuietLinux main window. All logic is in Rust (src/main.rs); this file only lays
+// out the controls and forwards the user's actions as callbacks.
+
+import {
+    Button, CheckBox, ComboBox, GroupBox, HorizontalBox, LineEdit, Palette, Slider,
+    StandardListView, TabWidget, TextEdit, VerticalBox,
+} from "std-widgets.slint";
+
+export struct KeyCap {
+    code: string,
+    legend: string,
+    // position and size in key units (1 u = 19 mm)
+    x: float,
+    y: float,
+    w: float,
+    h: float,
+    round: bool,
+    // the binding differs from the factory one (normal or Fn layer)
+    changed: bool,
+}
+
+component KeyboardView inherits Rectangle {
+    in property <[KeyCap]> keys;
+    in property <string> selected;
+    // size of the drawing in key units
+    in property <float> units-wide: 1;
+    in property <float> units-high: 1;
+    callback clicked(code: string);
+
+    property <length> u: min(self.width / units-wide, self.height / units-high);
+    // centered horizontally
+    property <length> left: (self.width - root.units-wide * root.u) / 2;
+    min-height: 160px;
+    preferred-height: 260px;
+
+    for cap in root.keys: Rectangle {
+        x: root.left + cap.x * root.u + 1.5px;
+        y: cap.y * root.u + 1.5px;
+        width: cap.w * root.u - 3px;
+        height: cap.h * root.u - 3px;
+        border-radius: cap.round ? self.width / 2 : 4px;
+        border-width: cap.changed ? 2px : 1px;
+        border-color: cap.changed ? Palette.accent-background : Palette.border;
+        background: cap.code == root.selected
+            ? Palette.selection-background
+            : (touch.has-hover ? Palette.alternate-background : Palette.control-background);
+
+        Text {
+            width: parent.width - 4px;
+            height: parent.height - 4px;
+            text: cap.legend;
+            font-size: max(8px, root.u * 0.26);
+            color: cap.code == root.selected ? Palette.selection-foreground : Palette.control-foreground;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            wrap: word-wrap;
+            overflow: elide;
+        }
+
+        touch := TouchArea {
+            clicked => {
+                root.clicked(cap.code);
+            }
+        }
+    }
+}
+
+// A color as six hex digits, with a swatch.
+component ColorField inherits HorizontalLayout {
+    in property <string> label;
+    in-out property <string> hex;
+    in property <color> swatch;
+    spacing: 8px;
+    alignment: start;
+
+    Text {
+        text: root.label;
+        vertical-alignment: center;
+        min-width: 90px;
+    }
+
+    Rectangle {
+        width: 28px;
+        height: 28px;
+        border-radius: 4px;
+        border-width: 1px;
+        border-color: Palette.border;
+        background: root.swatch;
+    }
+
+    LineEdit {
+        text <=> root.hex;
+        placeholder-text: "e63000";
+        input-type: text;
+        width: 110px;
+    }
+}
+
+component LightingPage inherits VerticalBox {
+    in property <[string]> effects;
+    in property <[string]> directions;
+    in-out property <int> effect-index;
+    in-out property <int> color-mode;
+    in-out property <string> color1;
+    in-out property <string> color2;
+    in-out property <float> brightness;
+    in-out property <float> speed;
+    in-out property <int> direction-index;
+    in property <bool> enabled;
+    pure callback swatch(hex: string) -> color;
+    callback store-effect();
+    callback light-off();
+    callback light-on();
+    alignment: start;
+
+    GroupBox {
+        title: "Effect (stored in the keyboard)";
+        VerticalLayout {
+            spacing: 10px;
+
+            HorizontalLayout {
+                spacing: 8px;
+                Text {
+                    text: "Effect";
+                    vertical-alignment: center;
+                    min-width: 90px;
+                }
+
+                ComboBox {
+                    model: root.effects;
+                    current-index <=> root.effect-index;
+                }
+            }
+
+            HorizontalLayout {
+                spacing: 8px;
+                Text {
+                    text: "Colors";
+                    vertical-alignment: center;
+                    min-width: 90px;
+                }
+
+                ComboBox {
+                    model: ["One color", "Two colors", "Rainbow"];
+                    current-index <=> root.color-mode;
+                }
+            }
+
+            if root.color-mode <= 1: ColorField {
+                label: root.color-mode == 0 ? "Color" : "First color";
+                hex <=> root.color1;
+                swatch: root.swatch(root.color1);
+            }
+            if root.color-mode == 1: ColorField {
+                label: "Second color";
+                hex <=> root.color2;
+                swatch: root.swatch(root.color2);
+            }
+
+            HorizontalLayout {
+                spacing: 8px;
+                Text {
+                    text: "Brightness";
+                    vertical-alignment: center;
+                    min-width: 90px;
+                }
+
+                Slider {
+                    minimum: 0;
+                    maximum: 100;
+                    value <=> root.brightness;
+                }
+
+                Text {
+                    text: "\{round(root.brightness)} %";
+                    vertical-alignment: center;
+                    min-width: 48px;
+                }
+            }
+
+            HorizontalLayout {
+                spacing: 8px;
+                Text {
+                    text: "Speed";
+                    vertical-alignment: center;
+                    min-width: 90px;
+                }
+
+                Slider {
+                    minimum: 0;
+                    maximum: 100;
+                    value <=> root.speed;
+                }
+
+                Text {
+                    text: "\{round(root.speed)} %";
+                    vertical-alignment: center;
+                    min-width: 48px;
+                }
+            }
+
+            HorizontalLayout {
+                spacing: 8px;
+                Text {
+                    text: "Direction";
+                    vertical-alignment: center;
+                    min-width: 90px;
+                }
+
+                ComboBox {
+                    model: root.directions;
+                    current-index <=> root.direction-index;
+                }
+            }
+
+            HorizontalLayout {
+                alignment: start;
+                spacing: 8px;
+                Button {
+                    text: "Store effect";
+                    primary: true;
+                    enabled: root.enabled;
+                    clicked => {
+                        root.store-effect();
+                    }
+                }
+            }
+        }
+    }
+
+    GroupBox {
+        title: "Lighting";
+        HorizontalLayout {
+            alignment: start;
+            spacing: 8px;
+            Button {
+                text: "Off";
+                enabled: root.enabled;
+                clicked => {
+                    root.light-off();
+                }
+            }
+
+            Button {
+                text: "On";
+                enabled: root.enabled;
+                clicked => {
+                    root.light-on();
+                }
+            }
+        }
+    }
+}
+
+component KeysPage inherits VerticalBox {
+    in property <[KeyCap]> keys;
+    in property <float> keyboard-width;
+    in property <float> keyboard-height;
+    in-out property <string> selected-key;
+    in property <string> key-title;
+    in property <string> normal-binding;
+    in property <string> fn-binding;
+    in property <string> key-note;
+    in property <bool> key-editable;
+    in property <[string]> bind-kinds;
+    in property <[string]> bind-values;
+    in-out property <int> bind-layer;
+    in-out property <int> bind-kind;
+    in-out property <int> bind-value-index;
+    in-out property <string> bind-text;
+    in property <bool> enabled;
+    callback key-clicked(code: string);
+    callback editor-changed();
+    callback apply-binding();
+
+    KeyboardView {
+        keys: root.keys;
+        units-wide: root.keyboard-width;
+        units-high: root.keyboard-height;
+        selected: root.selected-key;
+        vertical-stretch: 1;
+        clicked(code) => {
+            root.key-clicked(code);
+        }
+    }
+
+    Text {
+        text: "Keys with a highlighted border are bound to something other than their factory binding.";
+        color: Palette.alternate-foreground;
+        wrap: word-wrap;
+    }
+
+    GroupBox {
+        title: root.key-title;
+        vertical-stretch: 0;
+        VerticalLayout {
+            spacing: 8px;
+
+            Text {
+                text: "Normal: " + root.normal-binding;
+            }
+
+            Text {
+                text: "With Fn: " + root.fn-binding;
+            }
+
+            if root.key-note != "": Text {
+                text: root.key-note;
+                color: Palette.alternate-foreground;
+                wrap: word-wrap;
+            }
+
+            if root.key-editable: HorizontalLayout {
+                spacing: 8px;
+
+                ComboBox {
+                    model: ["Normal", "With Fn"];
+                    current-index <=> root.bind-layer;
+                    selected => {
+                        root.editor-changed();
+                    }
+                }
+
+                ComboBox {
+                    model: root.bind-kinds;
+                    current-index <=> root.bind-kind;
+                    selected => {
+                        root.editor-changed();
+                    }
+                }
+
+                if root.bind-kind == 1: LineEdit {
+                    text <=> root.bind-text;
+                    placeholder-text: "ctrl+KeyC";
+                    min-width: 160px;
+                }
+                if root.bind-values.length > 0 && root.bind-kind != 1: ComboBox {
+                    model: root.bind-values;
+                    current-index <=> root.bind-value-index;
+                }
+
+                Button {
+                    text: "Apply";
+                    primary: true;
+                    enabled: root.enabled;
+                    clicked => {
+                        root.apply-binding();
+                    }
+                }
+            }
+        }
+    }
+}
+
+component MacrosPage inherits HorizontalBox {
+    in property <[StandardListViewItem]> items;
+    in-out property <int> current;
+    in-out property <string> name;
+    in-out property <int> repeat;
+    in-out property <string> events;
+    in property <bool> enabled;
+    callback selected(index: int);
+    callback new-macro();
+    callback save();
+    callback delete();
+
+    VerticalLayout {
+        spacing: 8px;
+        width: 240px;
+
+        StandardListView {
+            model: root.items;
+            current-item <=> root.current;
+            current-item-changed(index) => {
+                root.selected(index);
+            }
+        }
+
+        Button {
+            text: "New macro";
+            enabled: root.enabled;
+            clicked => {
+                root.new-macro();
+            }
+        }
+    }
+
+    VerticalLayout {
+        spacing: 8px;
+        alignment: start;
+
+        Text {
+            text: root.current < 0 ? "New macro" : "Macro";
+            font-weight: 600;
+        }
+
+        HorizontalLayout {
+            spacing: 8px;
+            Text {
+                text: "Name";
+                vertical-alignment: center;
+                min-width: 70px;
+            }
+
+            LineEdit {
+                text <=> root.name;
+                placeholder-text: "up to 32 characters";
+            }
+        }
+
+        HorizontalLayout {
+            spacing: 8px;
+            Text {
+                text: "Repeat";
+                vertical-alignment: center;
+                min-width: 70px;
+            }
+
+            ComboBox {
+                model: ["Once", "While held", "Repeat"];
+                current-index <=> root.repeat;
+            }
+        }
+
+        Text {
+            text: "Events";
+        }
+
+        TextEdit {
+            text <=> root.events;
+            min-height: 120px;
+            wrap: word-wrap;
+        }
+
+        Text {
+            text: "KeyA taps a key, ctrl+KeyC a combination, +shift / -shift press / release a key, 250ms is a pause. Without a pause, 100 ms follow each event.";
+            color: Palette.alternate-foreground;
+            wrap: word-wrap;
+        }
+
+        HorizontalLayout {
+            alignment: start;
+            spacing: 8px;
+            Button {
+                text: root.current < 0 ? "Create" : "Save";
+                primary: true;
+                enabled: root.enabled;
+                clicked => {
+                    root.save();
+                }
+            }
+
+            if root.current >= 0: Button {
+                text: "Delete";
+                enabled: root.enabled;
+                clicked => {
+                    root.delete();
+                }
+            }
+        }
+    }
+}
+
+export component AppWindow inherits Window {
+    title: "QuietLinux";
+    icon: @image-url("icon.svg");
+    preferred-width: 1100px;
+    preferred-height: 720px;
+    min-width: 760px;
+    min-height: 520px;
+    background: Palette.background;
+
+    in property <string> device-title: "Looking for the keyboard …";
+    in property <string> status;
+    in property <bool> status-error;
+    in property <bool> busy;
+    in property <bool> connected;
+    in-out property <int> page;
+    callback refresh();
+
+    // lighting
+    in property <[string]> effects;
+    in property <[string]> directions;
+    in-out property <int> effect-index;
+    in-out property <int> color-mode;
+    in-out property <string> color1: "e63000";
+    in-out property <string> color2: "ffffff";
+    in-out property <float> brightness: 100;
+    in-out property <float> speed: 50;
+    in-out property <int> direction-index;
+    pure callback swatch(hex: string) -> color;
+    callback store-effect();
+    callback light-off();
+    callback light-on();
+
+    // keys
+    in property <[KeyCap]> keys;
+    in property <float> keyboard-width;
+    in property <float> keyboard-height;
+    in-out property <string> selected-key;
+    in property <string> key-title: "Click a key";
+    in property <string> normal-binding: "–";
+    in property <string> fn-binding: "–";
+    in property <string> key-note;
+    in property <bool> key-editable;
+    in property <[string]> bind-kinds;
+    in property <[string]> bind-values;
+    in-out property <int> bind-layer;
+    in-out property <int> bind-kind;
+    in-out property <int> bind-value-index;
+    in-out property <string> bind-text;
+    callback key-clicked(code: string);
+    callback editor-changed();
+    callback apply-binding();
+
+    // macros
+    in property <[StandardListViewItem]> macro-items;
+    in-out property <int> macro-current: -1;
+    in-out property <string> macro-name;
+    in-out property <int> macro-repeat;
+    in-out property <string> macro-events;
+    callback macro-selected(index: int);
+    callback macro-new();
+    callback macro-save();
+    callback macro-delete();
+
+    property <bool> can-write: root.connected && !root.busy;
+
+    VerticalLayout {
+        HorizontalBox {
+            Text {
+                text: root.device-title;
+                font-size: 16px;
+                font-weight: 600;
+                vertical-alignment: center;
+                horizontal-stretch: 1;
+            }
+
+            Button {
+                text: root.connected ? "Reload" : "Connect";
+                enabled: !root.busy;
+                clicked => {
+                    root.refresh();
+                }
+            }
+        }
+
+        TabWidget {
+            current-index <=> root.page;
+
+            Tab {
+                title: "Lighting";
+                LightingPage {
+                    effects: root.effects;
+                    directions: root.directions;
+                    effect-index <=> root.effect-index;
+                    color-mode <=> root.color-mode;
+                    color1 <=> root.color1;
+                    color2 <=> root.color2;
+                    brightness <=> root.brightness;
+                    speed <=> root.speed;
+                    direction-index <=> root.direction-index;
+                    enabled: root.can-write;
+                    swatch(hex) => {
+                        return root.swatch(hex);
+                    }
+                    store-effect => {
+                        root.store-effect();
+                    }
+                    light-off => {
+                        root.light-off();
+                    }
+                    light-on => {
+                        root.light-on();
+                    }
+                }
+            }
+
+            Tab {
+                title: "Keys";
+                KeysPage {
+                    keys: root.keys;
+                    keyboard-width: root.keyboard-width;
+                    keyboard-height: root.keyboard-height;
+                    selected-key <=> root.selected-key;
+                    key-title: root.key-title;
+                    normal-binding: root.normal-binding;
+                    fn-binding: root.fn-binding;
+                    key-note: root.key-note;
+                    key-editable: root.key-editable;
+                    bind-kinds: root.bind-kinds;
+                    bind-values: root.bind-values;
+                    bind-layer <=> root.bind-layer;
+                    bind-kind <=> root.bind-kind;
+                    bind-value-index <=> root.bind-value-index;
+                    bind-text <=> root.bind-text;
+                    enabled: root.can-write;
+                    key-clicked(code) => {
+                        root.key-clicked(code);
+                    }
+                    editor-changed => {
+                        root.editor-changed();
+                    }
+                    apply-binding => {
+                        root.apply-binding();
+                    }
+                }
+            }
+
+            Tab {
+                title: "Macros";
+                MacrosPage {
+                    items: root.macro-items;
+                    current <=> root.macro-current;
+                    name <=> root.macro-name;
+                    repeat <=> root.macro-repeat;
+                    events <=> root.macro-events;
+                    enabled: root.can-write;
+                    selected(index) => {
+                        root.macro-selected(index);
+                    }
+                    new-macro => {
+                        root.macro-new();
+                    }
+                    save => {
+                        root.macro-save();
+                    }
+                    delete => {
+                        root.macro-delete();
+                    }
+                }
+            }
+        }
+
+        HorizontalBox {
+            Text {
+                text: root.busy ? "Working …" : root.status;
+                color: root.status-error && !root.busy ? #d03030 : Palette.alternate-foreground;
+                wrap: word-wrap;
+                horizontal-stretch: 1;
+            }
+        }
+    }
+}

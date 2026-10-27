@@ -236,6 +236,20 @@ impl FakeKeyboard {
                 self.reply(&fragments[0], &[]);
             }
             p::KEEP_ALIVE => self.reply(&fragments[0], &[]),
+            // without a fixed answer: the bindings set so far, all in one reply
+            p::GET_BINDINGS if !self.answers.contains_key(&msg.cmd) => {
+                let mut entries: Vec<(&(u8, u8), &Vec<u8>)> = self.bindings.iter().collect();
+                entries.sort();
+                let mut data = u16::try_from(entries.len()).unwrap().to_le_bytes().to_vec();
+                for ((key, layer), action) in entries {
+                    data.extend_from_slice(&[*key, *layer]);
+                    data.extend_from_slice(action);
+                }
+                let request = fragments[0];
+                let packets = p::message(msg.cmd, &data, p::request_id_of(&request), request[2])
+                    .expect("bindings fit");
+                self.pending.extend(packets);
+            }
             p::OPEN_SESSION => {
                 // like the reference keyboard: echo the connection ID, session 2, timeout 3
                 let mut data = msg.data.get(..4).unwrap_or(&[0; 4]).to_vec();

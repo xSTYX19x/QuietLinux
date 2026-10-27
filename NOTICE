@@ -27,6 +27,13 @@ keyboard_bequiet_lightmount_rgb
   The test fixtures in crates/quietlinux-core/tests/fixtures/ are copied
   unchanged from its tests/fixtures/ directory.
 
+Slint
+  https://slint.dev
+  License: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR
+  LicenseRef-Slint-Software-3.0; used under GPL-3.0-only.
+  quietlinux-gui is built with it, so that binary as a whole is distributed
+  under GPL-3.0.
+
 monsgeek-akko-linux
   https://github.com/echtzeit-solutions/monsgeek-akko-linux
   License: GPL-3.0

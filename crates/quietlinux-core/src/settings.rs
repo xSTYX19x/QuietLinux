@@ -133,9 +133,13 @@ macro_rules! named_value {
 
         impl $name {
             /// The command line name of the value, if it has one.
-            #[allow(dead_code)]
             pub fn name(self) -> Option<&'static str> {
                 $table.iter().find(|(_, v)| *v == self.0).map(|(n, _)| *n)
+            }
+
+            /// All values with a name, in table order.
+            pub fn all() -> Vec<Self> {
+                $table.iter().map(|&(_, v)| Self(v)).collect()
             }
         }
 

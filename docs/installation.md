@@ -4,7 +4,11 @@
 
 - A be quiet! Light Mount keyboard (USB `373f:0002`). Check with `lsusb -d 373f:0002`.
 - Linux with udev and systemd-logind (any current desktop distribution).
-- To build: Rust 1.85 or newer (`rustup` or your distribution's `rust`/`cargo` package).
+- To build: Rust 1.85 or newer for the command line tool, 1.92 or newer for the
+  graphical interface (`rustup` or your distribution's `rust`/`cargo` package).
+- For the graphical interface also the fontconfig headers and `pkg-config`
+  (Debian/Ubuntu: `libfontconfig-dev pkg-config`, Fedora: `fontconfig-devel`,
+  Arch: `fontconfig pkgconf`). It runs on Wayland and X11 and needs no GPU.
 
 ## Build
 
@@ -14,11 +18,14 @@ cd QuietLinux
 cargo build --release
 ```
 
-The binary is `target/release/quietlinux` (under 1 MB, no runtime dependencies).
-To have it in your `PATH`:
+This builds `target/release/quietlinux` (the command line tool, under 1 MB, no
+runtime dependencies) and `target/release/quietlinux-gui` (the graphical
+interface). Only the command line tool: `cargo build --release -p quietlinux-cli`.
+To have them in your `PATH`:
 
 ```sh
 install -Dm755 target/release/quietlinux ~/.local/bin/quietlinux
+install -Dm755 target/release/quietlinux-gui ~/.local/bin/quietlinux-gui
 ```
 
 ## Permissions (udev rule)
@@ -77,7 +84,7 @@ whichever writes last wins.
 ## Uninstall
 
 ```sh
-rm ~/.local/bin/quietlinux
+rm ~/.local/bin/quietlinux ~/.local/bin/quietlinux-gui
 sudo rm /etc/udev/rules.d/70-quietlinux.rules
 sudo udevadm control --reload
 ```

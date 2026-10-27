@@ -2,6 +2,7 @@
 //!
 //! - [`protocol`]: vendor frames (interface 2), pure functions without I/O.
 //! - [`hid_descriptor`]: minimal HID report descriptor parsing.
+//! - [`info`]: decoding of read-only replies and key events.
 //! - [`layout`]: vendor LED indexes per zone.
 //! - [`keymap`]: physical keys (W3C names, LED index, position) and keycap legends.
 //! - [`color`]: RGB colors.
@@ -14,6 +15,7 @@
 pub mod color;
 pub mod device;
 pub mod hid_descriptor;
+pub mod info;
 pub mod keymap;
 pub mod layout;
 pub mod protocol;

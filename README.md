@@ -19,7 +19,8 @@ Not affiliated with or endorsed by be quiet!. See [Safety](#safety).
 
 | Feature | Status |
 |---|---|
-| Find the keyboard, read firmware version and lighting mode | ✅ |
+| Find the keyboard; read firmware, layout, lighting, game mode, quick tap and key bindings (`info`) | ✅ |
+| Show the key presses the keyboard reports (`events`) | ✅ |
 | Static color effect with brightness (stored in the keyboard) | ✅ |
 | Per-LED colors by zone (keys, top bar, knob, side strips) or by key (volatile) | ✅ |
 | Key map with layout-independent key names, legends for UK, German and French ISO | ✅ |

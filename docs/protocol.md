@@ -13,9 +13,13 @@ Every finding is marked with its source:
 | **[web]** | names, numbers and message layouts read from the JavaScript that IO Center Web serves to every browser (`iocenter.bequiet.com`, bundle `index-Zx3Q0vHz.js`, read 2026-10-27) | documented by the vendor's own client, **not yet verified on the keyboard** |
 
 The web source was read only to learn the protocol, for interoperability. No
-code from it is part of this project. Before QuietLinux sends a **[web]**-only
-message, it is captured from IO Center and turned into a test fixture (see
-[capturing.md](capturing.md)).
+code from it is part of this project.
+
+QuietLinux sends **[web]**-only messages only if they are read-only requests
+(the list `READ_ONLY` in `crates/quietlinux-core/src/protocol.rs`; they cannot
+change the keyboard, and the library refuses anything else through that path).
+Every request that changes the keyboard is first captured from IO Center and
+turned into a test fixture (see [capturing.md](capturing.md)).
 
 ## USB interfaces [cap]
 
@@ -306,14 +310,16 @@ background service.
 
 Notifications: `11:01` BindingChanged, **`11:02` ActionFired** [cap], `11:03` ConfigChanged.
 
-`11:02` ActionFired data [cap]:
+`11:02` ActionFired data: `[key ID][flags: bit 7 = Fn layer][state][action type][action data…]`,
+the action in the same format as in bindings. [cap] (layout matched with [web])
 
-```text
-plain key: [key ID][00][01][01][00][HID usage]
-Fn layer:  [key ID][80][01][function] ...
-```
+| Captured | Meaning |
+|---|---|
+| `53 00 01 01 00 50` | ← (`53`), state 1, standard key, no modifiers, HID usage `50` (←) |
+| `5c 80 01 09 03` | Fn+→, backlight action 3 (IO Center's table calls 3 "previous effect", its default binding for Fn+→ is "next effect") |
+| `4b 80 01 1b` | Fn alone, action type `1b` (unknown) |
 
-Known Fn functions: `09` lighting effect change (Fn+←/→), `1b` Fn alone. [cap]
+`quietlinux events` shows these notifications live.
 
 ### `12` MACROS [web]
 

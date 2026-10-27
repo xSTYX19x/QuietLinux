@@ -86,6 +86,43 @@ pub const PERFORM_REALTIME_UPDATES: Command = Command::new(FEATURE_LIGHTINGS, 0x
 /// Notification: a key with a host-side binding was pressed (bbossa: "key event").
 pub const ACTION_FIRED: Command = Command::new(FEATURE_BINDINGS, 0x02);
 
+/// Read-only requests (IO Center Web layouts, see `docs/protocol.md`). Only these
+/// can be sent with [`crate::device::Session::query`]: none of them changes the keyboard.
+pub const READ_ONLY: [Command; 16] = [
+    Command::new(FEATURE_ROOT, 0x04),       // GetSupportedFeatures
+    Command::new(FEATURE_ROOT, 0x05),       // GetQLinkVersion
+    Command::new(FEATURE_ROOT, 0x06),       // GetActiveSessionInfo
+    GET_DEVICE_INFO,                        // GetDeviceInfo
+    Command::new(FEATURE_USB_DEVICE, 0x01), // GetPollingRate
+    Command::new(FEATURE_KEYBOARD, 0x01),   // GetLayout
+    Command::new(FEATURE_KEYBOARD, 0x02),   // GetConfig (game mode flags)
+    Command::new(FEATURE_KEYBOARD, 0x04),   // GetState (game mode on/off)
+    Command::new(FEATURE_KEYBOARD, 0x06),   // GetSnapTapConfig
+    GET_LIGHTING_MODE,                      // GetLightingMode
+    Command::new(FEATURE_LIGHTINGS, 0x03),  // GetLayersLayout
+    Command::new(FEATURE_LIGHTINGS, 0x05),  // GetLayerConfig
+    Command::new(FEATURE_LIGHTINGS, 0x0e),  // GetGlobalLayers
+    Command::new(FEATURE_LIGHTINGS, 0x0f),  // GetCalibration
+    Command::new(FEATURE_BINDINGS, 0x01),   // GetBindings
+    Command::new(FEATURE_BINDINGS, 0x04),   // GetConfig (bindings enabled)
+];
+
+pub const GET_SUPPORTED_FEATURES: Command = READ_ONLY[0];
+pub const GET_QLINK_VERSION: Command = READ_ONLY[1];
+pub const GET_POLLING_RATE: Command = READ_ONLY[4];
+pub const GET_LAYOUT: Command = READ_ONLY[5];
+pub const GET_GAME_MODE_CONFIG: Command = READ_ONLY[6];
+pub const GET_GAME_MODE_STATE: Command = READ_ONLY[7];
+pub const GET_SNAP_TAP_CONFIG: Command = READ_ONLY[8];
+pub const GET_LAYER_CONFIG: Command = READ_ONLY[11];
+pub const GET_CALIBRATION: Command = READ_ONLY[13];
+pub const GET_BINDINGS: Command = READ_ONLY[14];
+pub const GET_BINDINGS_CONFIG: Command = READ_ONLY[15];
+
+pub fn is_read_only(cmd: Command) -> bool {
+    READ_ONLY.contains(&cmd)
+}
+
 /// Name of a command (or of a notification: `notification` is true for request ID 0),
 /// as IO Center Web calls it. `None` for unknown ones.
 // One arm per (feature, command): names repeat across features.

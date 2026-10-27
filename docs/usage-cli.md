@@ -40,6 +40,50 @@ Lighting modes:
 - `custom`: stored per-key colors (set with IO Center; not supported by QuietLinux yet).
 - `off`: lighting off.
 
+## `info`
+
+Reads everything the keyboard reports, with read-only requests only:
+
+```console
+$ quietlinux info
+Light Mount:    USB 1-2 (/dev/hidraw6)
+Model:          Light Mount (0x0002), revision 1
+Firmware:       2.3.0 (tested)
+QLink:          …
+Features:       root v1, device info v1, keyboard v1, lighting v1, USB device v1, bindings v1
+Layout:         ISO, German
+Polling rate:   1000 Hz
+Lighting mode:  effect
+Effect:         static, colors e63000, brightness 100, speed 50, direction up
+Calibration:    …
+Game mode:      off, blocks nothing
+Quick tap:      no pairs
+Key bindings:   on, 15 of 15 decoded
+  M1                   media: play/pause
+  KnobLeft             media: volume down
+  Fn+ArrowUp           lighting: brighter
+  …
+```
+
+(Values above are examples.) A line reads `unavailable (…)` when the keyboard
+refuses or ignores a request; please report such lines in an issue together
+with the firmware version.
+
+## `events [--count N]`
+
+Shows the key presses the keyboard reports on its vendor interface, with the
+key name, key ID and action, until Ctrl+C (or `N` events). Useful to check key
+IDs and to see what the keyboard sends for special keys.
+
+```console
+$ quietlinux events
+Press keys on the Light Mount (Ctrl+C to stop). Only keys the keyboard reports appear.
+Fn+ArrowRight (5c)       lighting: previous effect                [5c 80 01 09 03]
+```
+
+It shows what you type on the Light Mount while it runs: do not type anything
+private. Nothing is stored or sent anywhere.
+
 ## `zones`
 
 Lists the lighting zones and their vendor LED indexes. Does not touch the keyboard.

@@ -232,16 +232,19 @@ logic. Dependencies stay minimal (today: clap, rustix) and are checked in CI
 - [x] Protocol layer + tests against bbossa's fixtures
 - [x] Transport + device checks (VID/PID, interfaces, report descriptors, known firmware)
 - [x] Protocol names from IO Center Web (features, commands, status codes); reply status checked; request ID never 0
-- [ ] Vendor key IDs (`KEY_ID2`) in the key map, and the knob's turn left/right as binding targets
-- [ ] `quietlinux events`: show key IDs of pressed keys (read-only, from `11:02` notifications), to confirm K42/K45 and the key ID table
-- [ ] Read-only commands first: `01:04` features, `01:05` QLink version, `07:01` layout (auto-select legends), `07:02`/`07:04` game mode, `06:01` polling rate, `10:05` layer config, `11:01` bindings, `11:04` bindings enabled
+- [x] Vendor key IDs (`KEY_ID2`) in the key map, and the knob's turn left/right (`KnobLeft`, `KnobRight`)
+- [x] `quietlinux events`: show key IDs of pressed keys (read-only, from `11:02` notifications)
+- [ ] Run `quietlinux events` on the reference keyboard: confirm K42/K45 (`Backslash`/`IntlBackslash`) and which keys are reported at all
+- [x] Read-only requests through an allowlist (`READ_ONLY`, `Session::query`), fragmented replies, `quietlinux info`
+- [ ] Run `quietlinux info` on the reference keyboard and compare with the [web] layouts in `protocol.md`
+- [ ] Use `07:01` layout to pick the keycap legends automatically
 - [ ] Protocol layer for every command confirmed in phase 2, with fixtures
 - [ ] **Read** the device state first, write afterwards
 - [ ] Backup/restore: save the complete device state to a file before writing
 - [ ] Fuzz the parsers (`cargo fuzz`)
 
 ### 6.3 Phase 4 – CLI
-- [x] `status`, `zones`, `keys`, `calibrate`, `light static`, `light stored`, `light set` (zones and single keys)
+- [x] `status`, `info`, `events`, `zones`, `keys`, `calibrate`, `light static`, `light stored`, `light set` (zones and single keys)
 - [ ] `backup`, `restore`
 - [ ] `light effect …` for every effect
 - [ ] `keymap get|set|reset`, `macro list|add|edit|delete|assign`
@@ -270,7 +273,7 @@ logic. Dependencies stay minimal (today: clap, rustix) and are checked in CI
 ## 7. Safety rules (apply to the whole project)
 
 1. **Never send firmware updates or replay firmware-related frames.** Firmware updates are explicitly out of scope.
-2. Only send frames whose format is backed by captures and documented.
+2. Only send frames whose format is backed by captures and documented. Exception: read-only requests documented by IO Center Web (allowlist `READ_ONLY`), which cannot change the keyboard.
 3. Write only to known firmware versions, read-only otherwise (as bbossa does).
 4. Before writing key maps or macros for the first time: know the way back (factory reset command or complete backup/restore).
 5. Mind flash wear: frequent changes (preview, alerts) only through volatile commands.

@@ -3,13 +3,13 @@
 //! Enabled in tests and with the `fake` feature. It answers like the real keyboard,
 //! as far as its protocol is known, and records everything it receives.
 
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::io;
 use std::time::Duration;
 
 use super::{KNOWN_VERSIONS, Transport};
 use crate::Rgb;
-use crate::protocol::{self as p, Packet};
+use crate::protocol::{self as p, Command, Packet};
 
 /// Answers like the Light Mount, from what is known of its protocol.
 #[derive(Debug, Clone)]
@@ -24,6 +24,8 @@ pub struct FakeKeyboard {
     pub received: Vec<Packet>,
     /// Packets waiting to be read by the host.
     pub pending: VecDeque<Packet>,
+    /// Reply data for other requests (sent fragmented if long).
+    pub answers: HashMap<Command, Vec<u8>>,
     fragments: Vec<Packet>,
 }
 
@@ -35,6 +37,7 @@ impl FakeKeyboard {
             leds: BTreeMap::new(),
             received: Vec::new(),
             pending: VecDeque::new(),
+            answers: HashMap::new(),
             fragments: Vec::new(),
         }
     }
@@ -51,6 +54,12 @@ impl FakeKeyboard {
             .filter(|r| p::fragment_index(r) == 0)
             .map(|r| p::command_of(r).to_string())
             .collect()
+    }
+
+    /// Queue a notification (request ID 0), as the keyboard sends on a key press.
+    pub fn notify(&mut self, cmd: Command, data: &[u8]) {
+        let packet = p::frame(cmd, data, 0, p::SESSION).expect("short notification");
+        self.pending.push_back(packet);
     }
 
     fn reply(&mut self, request: &Packet, data: &[u8]) {
@@ -90,6 +99,17 @@ impl FakeKeyboard {
                 }
             }
             p::SET_LAYER_CONFIG => self.reply(&fragments[0], &[]),
+            cmd if self.answers.contains_key(&cmd) => {
+                let request = fragments[0];
+                let packets = p::message(
+                    cmd,
+                    &self.answers[&cmd],
+                    p::request_id_of(&request),
+                    request[2],
+                )
+                .expect("answer fits");
+                self.pending.extend(packets);
+            }
             p::PERFORM_REALTIME_UPDATES => {
                 if let Some(update) = p::parse_leds(&fragments) {
                     self.leds

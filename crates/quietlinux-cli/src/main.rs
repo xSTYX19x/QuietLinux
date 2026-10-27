@@ -1,6 +1,7 @@
 //! `quietlinux`: command line tool for the be quiet! Light Mount keyboard.
 
 mod calibrate;
+mod report;
 
 use std::io::{self, BufRead, Write};
 use std::process::ExitCode;
@@ -42,6 +43,17 @@ struct Cli {
 enum Command {
     /// Show the keyboard, its firmware version and its lighting mode (read-only)
     Status,
+    /// Show everything the keyboard reports: features, layout, lighting, game mode,
+    /// quick tap, key bindings (read-only)
+    Info,
+    /// Show key presses the keyboard reports, with their key IDs (read-only; Ctrl+C to stop)
+    ///
+    /// Shows what you type on the Light Mount while it runs: do not type anything private.
+    Events {
+        /// Stop after this many events
+        #[arg(long)]
+        count: Option<usize>,
+    },
     /// List the lighting zones and their LED indexes (does not touch the keyboard)
     Zones,
     /// List the keys: LED index, name and legend (does not touch the keyboard)
@@ -186,6 +198,8 @@ fn ask_terminal(key: &Key, layout: Layout) -> Answer {
     }
 }
 
+// One arm per command: splitting the dispatch would not make it clearer.
+#[allow(clippy::too_many_lines)]
 fn run(cli: Cli) -> Result<ExitCode, device::Error> {
     let usb_path = cli.usb_path.as_deref();
     match cli.command {
@@ -229,6 +243,25 @@ fn run(cli: Cli) -> Result<ExitCode, device::Error> {
                 fmt_version(&identity.version)
             );
             println!("Lighting mode:    {}", session.lighting_mode()?);
+        }
+        Command::Info => {
+            let (keyboard, mut session) = device::open(usb_path, cli.allow_unknown_firmware)?;
+            println!(
+                "{:<15} USB {} ({})",
+                "Light Mount:",
+                keyboard.usb_path,
+                keyboard.vendor_node().display()
+            );
+            for line in report::info_lines(&mut session) {
+                println!("{line}");
+            }
+        }
+        Command::Events { count } => {
+            let (_, mut session) = device::open(usb_path, cli.allow_unknown_firmware)?;
+            eprintln!(
+                "Press keys on the Light Mount (Ctrl+C to stop). Only keys the keyboard reports appear."
+            );
+            report::watch(&mut session, count, |line| println!("{line}"))?;
         }
         Command::Light(Light::Static { color, brightness }) => {
             let (_, mut session) = device::open(usb_path, cli.allow_unknown_firmware)?;

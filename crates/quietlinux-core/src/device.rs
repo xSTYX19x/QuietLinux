@@ -21,7 +21,7 @@ use rustix::event::{PollFd, PollFlags, Timespec, poll};
 
 use crate::Rgb;
 use crate::hid_descriptor::{Usage, top_level_usage};
-use crate::protocol::{self as p, Command, Led, PACKET_SIZE, Packet, ProtocolError};
+use crate::protocol::{self as p, Command, Led, Message, PACKET_SIZE, Packet, ProtocolError};
 
 #[cfg(any(test, feature = "fake"))]
 pub mod fake;
@@ -366,6 +366,11 @@ pub struct Identity {
 }
 
 impl Identity {
+    /// Model, revision and firmware version decoded from the `03:01` reply.
+    pub fn info(&self) -> Option<crate::info::DeviceInfo> {
+        crate::info::DeviceInfo::parse(&self.version)
+    }
+
     /// True for a firmware version this project was tested with.
     pub fn known(&self) -> bool {
         KNOWN_VERSIONS.iter().any(|v| v.as_slice() == self.version)
@@ -460,8 +465,7 @@ impl<T: Transport> Session<T> {
             allow_unknown_firmware,
         };
         let id = session.next_request_id();
-        let resp = session.request(&p::get_device_info(id))?;
-        session.identity.version = p::device_info_of(&resp).to_vec();
+        session.identity.version = session.request(&p::get_device_info(id))?.data;
         Ok(session)
     }
 
@@ -471,6 +475,10 @@ impl<T: Transport> Session<T> {
 
     pub fn transport(&self) -> &T {
         &self.transport
+    }
+
+    pub fn transport_mut(&mut self) -> &mut T {
+        &mut self.transport
     }
 
     /// True when writing is allowed: known firmware, or explicitly forced.
@@ -499,30 +507,75 @@ impl<T: Transport> Session<T> {
         Ok(())
     }
 
-    /// Send one packet and wait for the reply with the same request ID and command.
-    /// Other packets (notifications such as key events) are skipped.
-    fn request(&mut self, packet: &Packet) -> Result<Packet> {
+    /// Send one packet and wait for the reply with the same request ID and command,
+    /// reassembled if it spans several packets. Notifications (such as key events)
+    /// are skipped.
+    fn request(&mut self, packet: &Packet) -> Result<Message> {
         let cmd = p::command_of(packet);
         self.send(std::slice::from_ref(packet))?;
         let deadline = Instant::now() + REPLY_TIMEOUT;
+        let mut fragments: Vec<Packet> = Vec::new();
+        loop {
+            let left = deadline.saturating_duration_since(Instant::now());
+            let Some(resp) = (if left.is_zero() {
+                None
+            } else {
+                self.transport.recv(left).map_err(Error::Transport)?
+            }) else {
+                return Err(Error::NoReply(cmd));
+            };
+            let expected = if fragments.is_empty() {
+                p::is_reply(&resp, packet)
+            } else {
+                usize::from(p::fragment_index(&resp)) == fragments.len()
+            };
+            if !expected {
+                continue;
+            }
+            if !p::crc_ok(&resp) {
+                return Err(Error::InvalidReply(cmd));
+            }
+            fragments.push(resp);
+            if p::has_more(&resp) {
+                continue;
+            }
+            let message = p::reassemble(&fragments).ok_or(Error::InvalidReply(cmd))?;
+            return match message.status {
+                p::STATUS_SUCCESS => Ok(message),
+                status => Err(Error::Status { cmd, status }),
+            };
+        }
+    }
+
+    /// Send a read-only request (one of [`p::READ_ONLY`]) and return the reply.
+    /// Anything else is refused without sending.
+    pub fn query(&mut self, cmd: Command, payload: &[u8]) -> Result<Message> {
+        if !p::is_read_only(cmd) {
+            return Err(Error::Unsupported(format!(
+                "{cmd} is not a read-only request"
+            )));
+        }
+        let id = self.next_request_id();
+        let packet = p::frame(cmd, payload, id, p::SESSION)?;
+        self.request(&packet)
+    }
+
+    /// Next notification from the keyboard (such as a key event), or `None` after
+    /// `timeout`. Replies to earlier requests and broken packets are skipped.
+    pub fn next_notification(&mut self, timeout: Duration) -> Result<Option<Message>> {
+        let deadline = Instant::now() + timeout;
         loop {
             let left = deadline.saturating_duration_since(Instant::now());
             if left.is_zero() {
-                return Err(Error::NoReply(cmd));
+                return Ok(None);
             }
-            let resp = self.transport.recv(left).map_err(Error::Transport)?;
-            match resp {
-                None => return Err(Error::NoReply(cmd)),
-                Some(resp) if p::is_reply(&resp, packet) => {
-                    if !p::crc_ok(&resp) {
-                        return Err(Error::InvalidReply(cmd));
-                    }
-                    return match p::status_of(&resp) {
-                        p::STATUS_SUCCESS => Ok(resp),
-                        status => Err(Error::Status { cmd, status }),
-                    };
+            let Some(packet) = self.transport.recv(left).map_err(Error::Transport)? else {
+                return Ok(None);
+            };
+            if p::crc_ok(&packet) && p::is_notification(&packet) && !p::has_more(&packet) {
+                if let Some(message) = p::reassemble(std::slice::from_ref(&packet)) {
+                    return Ok(Some(message));
                 }
-                Some(_) => {}
             }
         }
     }
@@ -530,9 +583,11 @@ impl<T: Transport> Session<T> {
     /// Current lighting mode (`10:01`), read like IO Center does before any change.
     pub fn lighting_mode(&mut self) -> Result<LightingMode> {
         let id = self.next_request_id();
-        let resp = self.request(&p::get_lighting_mode(id, p::SESSION))?;
-        p::lighting_mode_of(&resp)
-            .map(LightingMode::from)
+        let reply = self.request(&p::get_lighting_mode(id, p::SESSION))?;
+        reply
+            .data
+            .first()
+            .map(|&mode| LightingMode::from(mode))
             .ok_or(Error::InvalidReply(p::GET_LIGHTING_MODE))
     }
 
@@ -693,6 +748,57 @@ mod tests {
         session.lighting_mode().unwrap();
         let ids: Vec<u8> = kb.received.iter().map(p::request_id_of).collect();
         assert_eq!(ids, [0xff, 0x01]);
+    }
+
+    #[test]
+    fn query_reads_fragmented_replies() {
+        let mut kb = FakeKeyboard::new(&KNOWN, p::MODE_GENERAL);
+        let long: Vec<u8> = (0..150).collect();
+        kb.answers.insert(p::GET_BINDINGS, long.clone());
+        kb.notify(p::ACTION_FIRED, &[0x53, 0, 1, 1, 0, 0x50]); // a key press in between is skipped
+        let mut session = Session::with_request_id(&mut kb, false, 1).unwrap();
+        let reply = session.query(p::GET_BINDINGS, &[0, 0]).unwrap();
+        assert_eq!(reply.data, long);
+        assert_eq!(reply.cmd, p::GET_BINDINGS);
+    }
+
+    #[test]
+    fn query_refuses_writes() {
+        let mut kb = FakeKeyboard::new(&KNOWN, p::MODE_GENERAL);
+        let mut session = Session::with_request_id(&mut kb, false, 1).unwrap();
+        for cmd in [
+            p::SET_LIGHTING_MODE,
+            p::SET_LAYER_CONFIG,
+            p::GET_SERIAL_NUMBER,
+            Command::new(p::FEATURE_DFU, 1),
+        ] {
+            assert!(
+                matches!(session.query(cmd, &[]), Err(Error::Unsupported(_))),
+                "{cmd}"
+            );
+        }
+        assert_eq!(kb.commands(), ["03:01"]);
+    }
+
+    #[test]
+    fn notifications() {
+        let mut kb = FakeKeyboard::new(&KNOWN, p::MODE_GENERAL);
+        let mut session = Session::with_request_id(&mut kb, false, 1).unwrap();
+        assert_eq!(
+            session.next_notification(Duration::from_millis(1)).unwrap(),
+            None
+        );
+        session
+            .transport_mut()
+            .notify(p::ACTION_FIRED, &[0x5c, 0x80, 0x01, 0x09, 0x03]);
+        let event = session
+            .next_notification(Duration::from_millis(1))
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            (event.cmd, event.request_id, event.data.as_slice()),
+            (p::ACTION_FIRED, 0, &[0x5c, 0x80, 0x01, 0x09, 0x03][..])
+        );
     }
 
     #[test]

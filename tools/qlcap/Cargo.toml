@@ -1,0 +1,17 @@
+[package]
+name = "qlcap"
+description = "Decode captures of the be quiet! Light Mount vendor protocol (pcap, pcapng, WebHID logs)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+[dependencies]
+quietlinux-core.workspace = true
+clap.workspace = true
+
+[lints]
+workspace = true

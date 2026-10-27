@@ -55,6 +55,7 @@ Details: [installation](docs/installation.md), [command line usage](docs/usage-c
 - [docs/installation.md](docs/installation.md): build, udev rule, permissions
 - [docs/usage-cli.md](docs/usage-cli.md): every command with examples
 - [docs/protocol.md](docs/protocol.md): what is known about the keyboard's protocol
+- [docs/capturing.md](docs/capturing.md): how to record and decode the vendor software's traffic
 - [docs/todo.md](docs/todo.md): roadmap
 
 ## Safety

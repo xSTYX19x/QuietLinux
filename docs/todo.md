@@ -136,9 +136,9 @@ Goal: reproducible, well-labeled captures to read the protocol from.
 
 ### 4.1 WebHID (IO Center Web in Chrome, directly on Linux)
 - [x] udev rule so that Chrome (WebHID) and our tools can open hidraw without root (`packaging/udev/70-quietlinux.rules`, interfaces 2 and 3 only)
-- [ ] Install the rule on the development machine and remove conflicting older rules
-- [ ] **usbmon + Wireshark/tshark**: `modprobe usbmon`, capture on the keyboard's bus, filter by device
-- [ ] **WebHID hook in DevTools**: small JS snippet that logs `HIDDevice.sendReport`, `sendFeatureReport`, `receiveFeatureReport` and `inputreport` (with timestamps and a plain-text note). Gives clean logs without USB overhead that can be matched with what was just clicked in the UI
+- [x] Install the rule on the development machine and remove conflicting older rules
+- [x] Guide for usbmon + Wireshark/tshark in `docs/capturing.md`
+- [x] **WebHID hook in DevTools** (`tools/webhid-logger.js`): small JS snippet that logs `HIDDevice.sendReport`, `sendFeatureReport`, `receiveFeatureReport` and `inputreport` (with timestamps and a plain-text note). Gives clean logs without USB overhead that can be matched with what was just clicked in the UI
 - [ ] Check whether the web app ships its command tables (command codes, effect IDs, key codes) in its JavaScript. That would be the fastest and most complete source. We only read it for interoperability and copy no code
 
 ### 4.2 Windows PC (IO Center.exe)
@@ -150,12 +150,12 @@ no reset problems when handing the device over.
 - [ ] **Turn off Windows Dynamic Lighting** (Settings › Personalization › Dynamic Lighting), otherwise Windows takes over the lighting
 - [ ] Capture on the USBPcap root hub of the keyboard, save as `.pcapng`, transfer with a note
 - [ ] Mind bbossa's warning: IO Center sessions may reset key bindings. Note the state beforehand
-- [ ] Write the step-by-step guide as `docs/capturing.md`, so that other users can contribute captures
+- [x] Write the step-by-step guide as `docs/capturing.md`, so that other users can contribute captures
 
 ### 4.3 Analysis tools (`tools/`)
-- [ ] `pcap2frames`: pcapng → text list of vendor frames (direction, time, hex, CRC check, `cmd:sub`, fragments reassembled)
-- [ ] `framediff`: compare two captures in which exactly one setting was changed
-- [ ] Anonymizer: removes the serial number (`03:02` replies) and other device-specific values before data becomes a test fixture
+- [x] `qlcap frames`: pcap/pcapng (usbmon, USBPcap) or WebHID log → vendor messages (direction, time, `cmd:sub`, fragments reassembled, serial redacted)
+- [ ] `framediff`: compare two captures in which exactly one setting was changed (for now: `diff` of two `qlcap frames` outputs, see `docs/capturing.md`)
+- [x] `qlcap fixtures`: anonymized fixture lines (no `03:02` replies, no key events)
 
 ## 5. Phase 2 – Data collection
 
@@ -214,7 +214,8 @@ crates/
   quietlinux-cli/      binary `quietlinux` (clap)
   quietlinux-gui/      (planned) binary `quietlinux-gui` (Slint)
   quietlinux-daemon/   (planned) host-side actions, reapply after replug/resume
-tools/                 (planned) capture analysis (pcap2frames, framediff, anonymizer)
+tools/qlcap/           capture decoder (pcap, pcapng, WebHID logs)
+tools/webhid-logger.js DevTools snippet that logs WebHID reports
 packaging/udev/        udev rule
 docs/
 ```

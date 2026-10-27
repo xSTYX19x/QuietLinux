@@ -154,6 +154,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "qlcap"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "quietlinux-core",
+]
+
+[[package]]
 name = "quietlinux-cli"
 version = "0.1.0"
 dependencies = [

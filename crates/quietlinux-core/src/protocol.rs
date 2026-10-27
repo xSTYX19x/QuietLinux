@@ -68,6 +68,24 @@ pub const SET_LIGHTING: Command = Command::new(0x10, 0x06);
 pub const SET_LEDS: Command = Command::new(0x10, 0x0d);
 /// Sent by the keyboard on its own, one per key press.
 pub const KEY_EVENT: Command = Command::new(0x11, 0x02);
+/// Open a session (IO Center); format not documented yet.
+pub const OPEN_SESSION: Command = Command::new(0x01, 0x01);
+
+/// Short name of a known command, for logs and capture analysis.
+pub fn command_name(cmd: Command) -> Option<&'static str> {
+    let name = match cmd {
+        OPEN_SESSION => "open session",
+        GET_VERSION => "version",
+        GET_SERIAL => "serial",
+        GET_MODE => "get mode",
+        SET_MODE => "set mode",
+        SET_LIGHTING => "effect",
+        SET_LEDS => "LEDs",
+        KEY_EVENT => "key event",
+        _ => return None,
+    };
+    Some(name)
+}
 
 /// Lighting mode where `10:06` effects apply.
 pub const MODE_EFFECTS: u8 = 0x01;

@@ -1,0 +1,225 @@
+//! `qlcap`: decode captures of the be quiet! Light Mount vendor protocol.
+//!
+//! Reads Wireshark captures (pcap/pcapng) from Linux usbmon or Windows USBPcap,
+//! and logs of `tools/webhid-logger.js`. See `docs/capturing.md`.
+
+mod capture;
+mod decode;
+mod usb;
+mod webhid;
+
+use std::path::{Path, PathBuf};
+use std::process::ExitCode;
+
+use clap::{Parser, Subcommand};
+
+use crate::capture::Format;
+use crate::decode::Event;
+
+#[derive(Debug, Parser)]
+#[command(
+    name = "qlcap",
+    version,
+    about = "Decode captures of the Light Mount vendor protocol"
+)]
+struct Cli {
+    #[command(subcommand)]
+    command: Command,
+}
+
+#[derive(Debug, Subcommand)]
+enum Command {
+    /// Print the vendor messages of a capture, one per line
+    Frames {
+        /// Capture file: .pcapng/.pcap (usbmon, USBPcap) or WebHID log
+        file: PathBuf,
+        /// Device to decode as BUS.ADDRESS (default: the one with the most vendor packets)
+        #[arg(long)]
+        device: Option<String>,
+        /// Leave out key events (11:02)
+        #[arg(long)]
+        no_key_events: bool,
+    },
+    /// Print the vendor messages as test fixture lines (hex); serial number and key events left out
+    Fixtures {
+        file: PathBuf,
+        #[arg(long)]
+        device: Option<String>,
+    },
+}
+
+fn load(path: &Path) -> Result<Vec<Event>, String> {
+    let bytes = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let events = match capture::detect(&bytes) {
+        Format::Text => {
+            let text = String::from_utf8(bytes)
+                .map_err(|_| format!("{}: neither a capture nor a WebHID log", path.display()))?;
+            webhid::parse(&text)?
+        }
+        format => {
+            let records = if format == Format::Pcap {
+                capture::read_pcap(&bytes)?
+            } else {
+                capture::read_pcapng(&bytes)?
+            };
+            records
+                .iter()
+                .filter_map(usb::transfer)
+                .map(Event::Transfer)
+                .collect()
+        }
+    };
+    Ok(events)
+}
+
+/// The device to decode; reports the choice on stderr.
+fn choose_device(events: &[Event], wanted: Option<&str>) -> Result<String, String> {
+    let devices = decode::devices(events);
+    let list = || {
+        devices
+            .iter()
+            .map(|(d, n)| format!("{d} ({n} packets)"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    let device = match wanted {
+        Some(wanted) if devices.iter().any(|(d, _)| d == wanted) => wanted.to_owned(),
+        Some(wanted) => {
+            return Err(format!(
+                "no vendor packets for device {wanted} (found: {})",
+                list()
+            ));
+        }
+        None => devices
+            .first()
+            .map(|(d, _)| d.clone())
+            .ok_or("no Light Mount vendor packets in this capture")?,
+    };
+    if devices.len() > 1 {
+        eprintln!(
+            "qlcap: decoding device {device}; devices with vendor packets: {}",
+            list()
+        );
+    }
+    Ok(device)
+}
+
+fn run(cli: Cli) -> Result<(), String> {
+    match cli.command {
+        Command::Frames {
+            file,
+            device,
+            no_key_events,
+        } => {
+            let events = load(&file)?;
+            let device = choose_device(&events, device.as_deref())?;
+            let start = decode::start_time(&events);
+            for line in decode::lines(&events, &device) {
+                if let Some(text) = decode::format(&line, start, !no_key_events) {
+                    println!("{text}");
+                }
+            }
+        }
+        Command::Fixtures { file, device } => {
+            let events = load(&file)?;
+            let device = choose_device(&events, device.as_deref())?;
+            let name = file
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            println!("# Extracted from {name} with qlcap (anonymized).");
+            for line in decode::lines(&events, &device) {
+                if let Some(text) = decode::fixture(&line) {
+                    println!("{text}");
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn main() -> ExitCode {
+    match run(Cli::parse()) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => {
+            eprintln!("qlcap: {e}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use quietlinux_core::protocol as p;
+
+    use super::*;
+    use crate::capture::tests::pcapng;
+    use crate::usb::tests::{usbmon_packet, usbpcap_packet};
+
+    #[test]
+    fn cli_definition() {
+        use clap::CommandFactory;
+        Cli::command().debug_assert();
+    }
+
+    fn decode_file(bytes: &[u8]) -> Vec<String> {
+        let dir =
+            std::env::temp_dir().join(format!("qlcap-test-{}-{}", std::process::id(), bytes.len()));
+        std::fs::write(&dir, bytes).unwrap();
+        let events = load(&dir).unwrap();
+        std::fs::remove_file(&dir).unwrap();
+        let device = choose_device(&events, None).unwrap();
+        let start = decode::start_time(&events);
+        decode::lines(&events, &device)
+            .iter()
+            .filter_map(|l| decode::format(l, start, true))
+            .collect()
+    }
+
+    #[test]
+    fn usbmon_capture_end_to_end() {
+        let request = p::get_mode(7, p::SESSION);
+        let reply = p::frame(p::GET_MODE, &[p::MODE_EFFECTS], 7, p::SESSION).unwrap();
+        let file = pcapng(
+            220,
+            &[
+                (0, &usbmon_packet(b'C', 0x81, 2, &[0; 8])), // another device
+                (1_000_000, &usbmon_packet(b'S', 0x04, 3, &request)),
+                (1_000_000, &usbmon_packet(b'C', 0x04, 3, &[])),
+                (2_500_000, &usbmon_packet(b'C', 0x83, 3, &reply)),
+            ],
+        );
+        let lines = decode_file(&file);
+        assert_eq!(lines.len(), 2, "{lines:?}");
+        assert!(
+            lines[0].contains("→  10:01 get mode") && lines[0].contains("seq 07"),
+            "{}",
+            lines[0]
+        );
+        assert!(
+            lines[1].trim_start().starts_with("2.500") && lines[1].ends_with("01"),
+            "{}",
+            lines[1]
+        );
+    }
+
+    #[test]
+    fn usbpcap_capture_end_to_end() {
+        let request = p::get_version(4);
+        let file = pcapng(249, &[(0, &usbpcap_packet(false, 0x04, 5, &request))]);
+        let lines = decode_file(&file);
+        assert!(lines[0].contains("03:01 version"), "{lines:?}");
+    }
+
+    #[test]
+    fn webhid_log_end_to_end() {
+        let request = decode::hex(&p::get_version(4)).replace(' ', "");
+        let log = format!(
+            "# quietlinux webhid log v1\n10.0 note opened IO Center\n12.0 out 373f:0002 0 {request}\n"
+        );
+        let lines = decode_file(log.as_bytes());
+        assert_eq!(lines.len(), 2);
+        assert!(lines[0].ends_with("# opened IO Center"));
+        assert!(lines[1].trim_start().starts_with("2.000"));
+    }
+}

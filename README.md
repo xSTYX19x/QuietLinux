@@ -22,11 +22,11 @@ Not affiliated with or endorsed by be quiet!. See [Safety](#safety).
 | Find the keyboard; read firmware, layout, lighting, game mode, quick tap and key bindings (`info`) | ✅ |
 | Show the key presses the keyboard reports (`events`) | ✅ |
 | Effects (static, color wave, tornado, breathing, reactive, matrix) with color or gradient, brightness, speed, direction (stored in the keyboard) | ✅ |
-| Media actions on M1–M5 and the knob | ✅ |
+| Key bindings on both layers (normal and Fn): keys and combinations, media, mouse buttons, lighting actions, disable, reset | ✅ |
 | Game mode: which shortcuts it blocks | ✅ |
 | Per-LED colors by zone (keys, top bar, knob, side strips) or by key (volatile) | ✅ |
 | Key map with layout-independent key names, legends for UK, German and French ISO | ✅ |
-| Key remapping of all keys, Fn layer, other action types | planned |
+| Macros, open file/folder/website, profiles | planned |
 | Macros | planned |
 | Profiles, quick tap | planned |
 | Graphical interface | planned |

@@ -87,6 +87,8 @@ pub const PERFORM_REALTIME_UPDATES: Command = Command::new(FEATURE_LIGHTINGS, 0x
 pub const ACTION_FIRED: Command = Command::new(FEATURE_BINDINGS, 0x02);
 /// Request: bind an action to a key. Same code as the `ACTION_FIRED` notification.
 pub const SET_BINDING: Command = Command::new(FEATURE_BINDINGS, 0x02);
+/// Request: reset a key's binding to its factory default.
+pub const CLEAR_BINDING: Command = Command::new(FEATURE_BINDINGS, 0x03);
 /// Game mode flags (keys game mode blocks).
 pub const SET_GAME_MODE_CONFIG: Command = Command::new(FEATURE_KEYBOARD, 0x03);
 /// Keeps a session open; IO Center Web sends it every 1.5 s (timeout 3 s).
@@ -627,6 +629,22 @@ pub fn layer_config_payload(
 
 /// Action type "media" of a binding.
 pub const ACTION_MEDIA: u8 = 0x02;
+/// Layer byte of bindings: normal keys.
+pub const LAYER_NORMAL: u8 = 0x00;
+/// Layer byte of bindings: Fn held (captured `80`; IO Center Web's code suggests `01`).
+pub const LAYER_FN: u8 = 0x80;
+
+/// `11:02` payload: `[key ID][layer][action bytes…]`. [cap]
+pub fn binding_payload(key_id: u8, layer: u8, action: &[u8]) -> Vec<u8> {
+    let mut payload = vec![key_id, layer];
+    payload.extend_from_slice(action);
+    payload
+}
+
+/// `11:03` payload: `[key ID][layer]`. [cap]
+pub fn clear_binding_payload(key_id: u8, layer: u8) -> [u8; 2] {
+    [key_id, layer]
+}
 
 /// `11:02` payload binding a media action to a key on the normal layer:
 /// `[key ID][layer 0][02][action]`. [cap]

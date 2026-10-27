@@ -61,17 +61,61 @@ const GAME_MODE: [(&str, u8); 5] = [
     ("caps-lock", 0x10),
 ];
 
-/// Keys `bind` may change: their factory bindings are media actions too, so a
-/// media binding can always be undone.
-pub const BINDABLE: [&str; 8] = [
-    "M1",
-    "M2",
-    "M3",
-    "M4",
-    "M5",
-    "Knob",
-    "KnobLeft",
-    "KnobRight",
+const MOUSE_BUTTONS: [(&str, u8); 5] = [
+    ("left", 0),
+    ("right", 1),
+    ("middle", 2),
+    ("forward", 3),
+    ("back", 4),
+];
+
+/// Lighting actions (selecting one effect is not captured yet).
+const LIGHTING: [(&str, u8); 4] = [
+    ("next-effect", 2),
+    ("previous-effect", 3),
+    ("brighter", 4),
+    ("darker", 5),
+];
+
+const SHORTCUTS: [(&str, u8); 21] = [
+    ("file-explorer", 1),
+    ("calculator", 2),
+    ("task-manager", 3),
+    ("lock-pc", 4),
+    ("shut-down", 5),
+    ("sleep", 6),
+    ("hibernate", 7),
+    ("snipping-tool", 8),
+    ("notepad", 9),
+    ("paint", 10),
+    ("airplane-mode", 11),
+    ("xbox-game-bar", 12),
+    ("system-settings", 13),
+    ("refresh", 14),
+    ("switch-app", 15),
+    ("close-app", 16),
+    ("copy", 17),
+    ("paste", 18),
+    ("cut", 19),
+    ("web-browser", 20),
+    ("email", 21),
+];
+
+/// Modifier names in key combinations (lowercase), and their bits.
+const MODIFIERS: [(&str, u8); 13] = [
+    ("ctrl", 0x01),
+    ("lctrl", 0x01),
+    ("shift", 0x02),
+    ("lshift", 0x02),
+    ("alt", 0x04),
+    ("lalt", 0x04),
+    ("win", 0x08),
+    ("lwin", 0x08),
+    ("rctrl", 0x10),
+    ("rshift", 0x20),
+    ("ralt", 0x40),
+    ("altgr", 0x40),
+    ("rwin", 0x80),
 ];
 
 macro_rules! named_value {
@@ -102,12 +146,15 @@ macro_rules! named_value {
 named_value!(Effect, EFFECTS, "effect");
 named_value!(Direction, DIRECTIONS, "direction");
 named_value!(MediaAction, MEDIA, "media action");
+named_value!(MouseButton, MOUSE_BUTTONS, "mouse button");
+named_value!(LightingAction, LIGHTING, "lighting action");
+named_value!(Shortcut, SHORTCUTS, "Windows shortcut");
 
 impl Effect {
     pub const STATIC: Effect = Effect(0);
 }
 
-/// A key `bind` may change, with its vendor key ID.
+/// A key `bind` may change, with its vendor key ID: any key or knob control, except Fn.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BindKey {
     pub name: &'static str,
@@ -118,15 +165,60 @@ impl FromStr for BindKey {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let name = BINDABLE.iter().find(|n| **n == s).ok_or_else(|| {
-            format!(
-                "{s:?} cannot be bound yet (possible: {})",
-                BINDABLE.join(", ")
-            )
+        if s == "Fn" {
+            return Err("the Fn key cannot be bound".to_owned());
+        }
+        let key_id = keymap::key_id_for_code(s).ok_or_else(|| {
+            format!("unknown key {s:?} (see `quietlinux keys`; knob turns: KnobLeft, KnobRight)")
         })?;
-        let key_id =
-            keymap::key_id_for_code(name).ok_or_else(|| format!("no key ID for {name}"))?;
+        let name = keymap::code_for_key_id(key_id).unwrap_or("?");
         Ok(Self { name, key_id })
+    }
+}
+
+/// A key combination for a binding: modifiers and at most one key, e.g. `ctrl+shift+KeyC`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct KeyCombo {
+    pub modifiers: u8,
+    /// HID usage, 0 for modifiers alone.
+    pub usage: u8,
+}
+
+impl FromStr for KeyCombo {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut combo = Self {
+            modifiers: 0,
+            usage: 0,
+        };
+        for part in s.split('+').map(str::trim) {
+            let lower = part.to_ascii_lowercase();
+            if let Some(&(_, bit)) = MODIFIERS.iter().find(|(name, _)| *name == lower) {
+                combo.modifiers |= bit;
+            } else if let Some(bit) = keymap::modifier_bit(part) {
+                combo.modifiers |= bit;
+            } else if let Some(usage) = keymap::hid_usage(part) {
+                if combo.usage != 0 {
+                    return Err(format!("{s:?}: only one key besides the modifiers"));
+                }
+                combo.usage = usage;
+            } else {
+                return Err(format!(
+                    "{part:?} is neither a modifier (ctrl, shift, alt, win, rctrl, rshift, altgr, rwin) \
+                     nor a key name (KeyA, Digit1, F13, Enter, … see `quietlinux keys`)"
+                ));
+            }
+        }
+        if combo
+            == (Self {
+                modifiers: 0,
+                usage: 0,
+            })
+        {
+            return Err("empty key combination".to_owned());
+        }
+        Ok(combo)
     }
 }
 
@@ -161,6 +253,22 @@ pub fn rainbow() -> Vec<(Rgb, u8)> {
         (Rgb::new(0xff, 0, 0), 100),
     ]
     .to_vec()
+}
+
+/// Two colors, `rrggbb,rrggbb`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DualColor(pub Rgb, pub Rgb);
+
+impl FromStr for DualColor {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let (a, b) = s
+            .split_once(',')
+            .ok_or_else(|| format!("expected two colors like e63000,ffffff, got {s:?}"))?;
+        let color = |c: &str| c.trim().parse::<Rgb>().map_err(|e| e.to_string());
+        Ok(Self(color(a)?, color(b)?))
+    }
 }
 
 /// Color stops of a gradient.
@@ -235,7 +343,32 @@ mod tests {
             })
         );
         assert_eq!("KnobLeft".parse::<BindKey>().unwrap().key_id, 0x6f);
-        assert!("KeyA".parse::<BindKey>().is_err());
+        assert_eq!("CapsLock".parse::<BindKey>().unwrap().key_id, 0x09); // captured
+        assert_eq!("F1".parse::<BindKey>().unwrap().key_id, 0x16); // captured
+        assert!("Fn".parse::<BindKey>().is_err());
+        assert!("capslock".parse::<BindKey>().is_err());
+    }
+
+    #[test]
+    fn key_combos() {
+        let combo = |modifiers, usage| Ok(KeyCombo { modifiers, usage });
+        assert_eq!("KeyA".parse(), combo(0, 0x04));
+        assert_eq!("ctrl+KeyC".parse(), combo(0x01, 0x06)); // captured
+        assert_eq!("F13".parse(), combo(0, 0x68)); // captured
+        assert_eq!("Ctrl + Shift + Escape".parse(), combo(0x03, 0x29));
+        assert_eq!("ControlLeft".parse(), combo(0x01, 0));
+        assert_eq!("altgr+KeyQ".parse(), combo(0x40, 0x14));
+        for bad in ["", "ctrl+KeyA+KeyB", "hyper+KeyA", "M1", "keya"] {
+            assert!(bad.parse::<KeyCombo>().is_err(), "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn action_names() {
+        assert_eq!("middle".parse(), Ok(MouseButton(2))); // captured
+        assert_eq!("next-effect".parse(), Ok(LightingAction(2))); // captured
+        assert_eq!("calculator".parse(), Ok(Shortcut(2))); // captured
+        assert!("select-effect".parse::<LightingAction>().is_err());
     }
 
     #[test]
@@ -247,6 +380,19 @@ mod tests {
             Ok(GameModeBlocks(0x1f))
         );
         assert!("win,escape".parse::<GameModeBlocks>().is_err());
+    }
+
+    #[test]
+    fn dual_colors() {
+        assert_eq!(
+            "e63000,ffffff".parse(),
+            Ok(DualColor(
+                Rgb::new(0xe6, 0x30, 0),
+                Rgb::new(0xff, 0xff, 0xff)
+            ))
+        );
+        assert!("e63000".parse::<DualColor>().is_err());
+        assert!("e63000,white".parse::<DualColor>().is_err());
     }
 
     #[test]

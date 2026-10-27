@@ -185,6 +185,100 @@ pub fn key_id_for_code(code: &str) -> Option<u8> {
     })
 }
 
+/// HID keyboard usage a key sends, by its name (W3C names, plus `F13`–`F24`, which
+/// the Light Mount has no keys for but can send). `None` for keys without one
+/// (M1–M5, Fn, the knob) and for modifiers, which are bits, see [`modifier_bit`].
+pub fn hid_usage(code: &str) -> Option<u8> {
+    const NAMED: [(&str, u8); 47] = [
+        ("Enter", 0x28),
+        ("Escape", 0x29),
+        ("Backspace", 0x2a),
+        ("Tab", 0x2b),
+        ("Space", 0x2c),
+        ("Minus", 0x2d),
+        ("Equal", 0x2e),
+        ("BracketLeft", 0x2f),
+        ("BracketRight", 0x30),
+        ("Backslash", 0x32), // the ISO key left of Enter (HID "non-US #")
+        ("Semicolon", 0x33),
+        ("Quote", 0x34),
+        ("Backquote", 0x35),
+        ("Comma", 0x36),
+        ("Period", 0x37),
+        ("Slash", 0x38),
+        ("CapsLock", 0x39),
+        ("PrintScreen", 0x46),
+        ("ScrollLock", 0x47),
+        ("Pause", 0x48),
+        ("Insert", 0x49),
+        ("Home", 0x4a),
+        ("PageUp", 0x4b),
+        ("Delete", 0x4c),
+        ("End", 0x4d),
+        ("PageDown", 0x4e),
+        ("ArrowRight", 0x4f),
+        ("ArrowLeft", 0x50),
+        ("ArrowDown", 0x51),
+        ("ArrowUp", 0x52),
+        ("NumLock", 0x53),
+        ("NumpadDivide", 0x54),
+        ("NumpadMultiply", 0x55),
+        ("NumpadSubtract", 0x56),
+        ("NumpadAdd", 0x57),
+        ("NumpadEnter", 0x58),
+        ("Numpad1", 0x59),
+        ("Numpad2", 0x5a),
+        ("Numpad3", 0x5b),
+        ("Numpad4", 0x5c),
+        ("Numpad5", 0x5d),
+        ("Numpad6", 0x5e),
+        ("Numpad7", 0x5f),
+        ("Numpad8", 0x60),
+        ("Numpad9", 0x61),
+        ("Numpad0", 0x62),
+        ("NumpadDecimal", 0x63),
+    ];
+    if let Some(&(_, usage)) = NAMED.iter().find(|(name, _)| *name == code) {
+        return Some(usage);
+    }
+    if code == "IntlBackslash" {
+        return Some(0x64);
+    }
+    if let Some(letter) = code.strip_prefix("Key").filter(|l| l.len() == 1) {
+        let c = letter.as_bytes()[0];
+        return c.is_ascii_uppercase().then(|| 0x04 + (c - b'A'));
+    }
+    if let Some(digit) = code.strip_prefix("Digit").filter(|d| d.len() == 1) {
+        let d = digit.as_bytes()[0];
+        return match d {
+            b'1'..=b'9' => Some(0x1e + (d - b'1')),
+            b'0' => Some(0x27),
+            _ => None,
+        };
+    }
+    let n: u8 = code.strip_prefix('F')?.parse().ok()?;
+    match n {
+        1..=12 => Some(0x3a + n - 1),
+        13..=24 => Some(0x68 + n - 13),
+        _ => None,
+    }
+}
+
+/// Modifier bit of a modifier key (HID order): left Ctrl, Shift, Alt, Win, then right.
+pub fn modifier_bit(code: &str) -> Option<u8> {
+    const MODIFIERS: [&str; 8] = [
+        "ControlLeft",
+        "ShiftLeft",
+        "AltLeft",
+        "MetaLeft",
+        "ControlRight",
+        "ShiftRight",
+        "AltRight",
+        "MetaRight",
+    ];
+    MODIFIERS.iter().position(|m| *m == code).map(|i| 1 << i)
+}
+
 /// The key with this layout-independent name (case-sensitive, like the W3C names).
 pub fn by_code(code: &str) -> Option<&'static Key> {
     KEYS.iter().find(|k| k.code == code)
@@ -416,6 +510,32 @@ mod tests {
         assert_eq!(code_for_key_id(0x02), Some("M1"));
         assert_eq!(code_for_key_id(0x6e), Some("KnobRight"));
         assert_eq!(code_for_key_id(0x30), None); // ANSI backslash: not on ISO
+    }
+
+    #[test]
+    fn hid_usages() {
+        assert_eq!(hid_usage("KeyA"), Some(0x04));
+        assert_eq!(hid_usage("KeyZ"), Some(0x1d));
+        assert_eq!(hid_usage("Digit1"), Some(0x1e));
+        assert_eq!(hid_usage("Digit0"), Some(0x27));
+        assert_eq!(hid_usage("F1"), Some(0x3a));
+        assert_eq!(hid_usage("F12"), Some(0x45));
+        assert_eq!(hid_usage("F13"), Some(0x68)); // captured: M2 bound to F13
+        assert_eq!(hid_usage("ArrowLeft"), Some(0x50)); // captured key event
+        assert_eq!(hid_usage("Backslash"), Some(0x32)); // captured key event (ISO #)
+        assert_eq!(hid_usage("IntlBackslash"), Some(0x64)); // captured key event (ISO <)
+        for none in ["M1", "Fn", "Knob", "ControlLeft", "F25", "Keya", "Digit10"] {
+            assert_eq!(hid_usage(none), None, "{none}");
+        }
+        assert_eq!(modifier_bit("ControlLeft"), Some(0x01));
+        assert_eq!(modifier_bit("MetaRight"), Some(0x80));
+        // every key with a usage that the keyboard has, except modifiers and specials
+        let without: Vec<&str> = KEYS
+            .iter()
+            .map(|k| k.code)
+            .filter(|c| hid_usage(c).is_none() && modifier_bit(c).is_none())
+            .collect();
+        assert_eq!(without, ["Knob", "M1", "M2", "M3", "M4", "M5", "Fn"]);
     }
 
     #[test]

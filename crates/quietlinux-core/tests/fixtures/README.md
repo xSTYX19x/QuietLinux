@@ -11,6 +11,7 @@ Reference frames used by the protocol tests. They need no keyboard.
 | `responses-10-01.hex` | lighting mode replies |
 | `descriptors/if0..3.bin` | HID report descriptors of the four interfaces |
 | `connect-web.hex` | IO Center Web connecting (identification, `01:01` OpenSession, reading the state), requests and replies |
+| `bindings-web.hex` | IO Center Web binding keys (key, combination, mouse, lighting, shortcut, F13, disable, reset, Fn layer), a dual color effect, game mode notifications |
 | `writes-web.hex` | IO Center Web changing settings: `10:06` effects/colors/brightness/speed, `11:02` a media binding, `07:03` game mode flags, `01:03` keep-alive |
 
 Format of the `.hex` files: one message per line, its 64-byte packets as hex
@@ -18,7 +19,7 @@ separated by spaces; `#` starts a comment.
 
 ## Origin
 
-`connect-web.hex` and `writes-web.hex` come from captures of IO Center Web made for QuietLinux
+`connect-web.hex`, `writes-web.hex` and `bindings-web.hex` come from captures of IO Center Web made for QuietLinux
 with `tools/webhid-logger.js`, extracted with `qlcap fixtures` (no serial
 number reply, no key events). Comments name the direction and the command.
 

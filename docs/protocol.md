@@ -192,7 +192,7 @@ IO Center stores a settings file there: a u32 length at offset 0, then text.
 | Command | Name | Payload | Reply |
 |---|---|---|---|
 | `06:01` | GetPollingRate | | rate in Hz (u16) |
-| `06:02` | SetPollingRate | `[rate u16]` | |
+| `06:02` | SetPollingRate | `[rate u16]` | | (IO Center Web offers no polling rate setting for the Light Mount: not captured) |
 
 ### `07` KEYBOARD [web]
 
@@ -213,8 +213,11 @@ Quick tap ("SnapTap") priorities: 0 last input, 1 first key always wins,
 2 second key always wins, 3 neutral (both released). IO Center offers up to
 5 pairs.
 
-Notifications: `07:01` ConfigChanged, `07:02` StateChanged (game mode switched,
-e.g. with Fn+Pause), `07:03` SnapTapConfigChanged. The Light Mount's game mode
+Notifications: `07:01` ConfigChanged, `07:02` StateChanged, `07:03`
+SnapTapConfigChanged. Switching game mode with Fn+Pause sends `07:01` with
+`[11][flags]`, then `07:02` with `[11][state]` (`01` on, `00` off); the meaning
+of `11` is unknown. [cap] IO Center Web has no switch for game mode, so `07:05`
+SetState is not captured. The Light Mount's game mode
 offers Shift+Tab, Alt+F4, Win and Alt+Tab (no Caps Lock).
 
 ### `10` LIGHTINGS
@@ -257,7 +260,7 @@ offers Shift+Tab, Alt+F4, Win and Alt+Tab (no Caps Lock).
   a quirk of the app.)
 - IO Center's default gradient for the animated effects (captured with
   breathing): `ff0000@0 ffff00@17 00ff00@33 00ffff@50 0000ff@67 ff00ff@83 ff0000@100`. [cap]
-- Color modes and their colors [web] (single color [cap]):
+- Color modes and their colors [web] (single, dual, gradient [cap]):
   - `0` single color: `[R][G][B]`
   - `1` dual color: `[R][G][B][R][G][B]`
   - `2` gradient: `[count]` then `count × [R][G][B][position]`
@@ -303,11 +306,14 @@ blue 0.43, which explains why unscaled colors look greenish. [web]
 |---|---|---|---|
 | `11:01` | GetBindings | `[index u16]` (index of the first entry to read) | `[2 count bytes]` then binding entries |
 | `11:02` | SetBinding | `[key ID][layer][action type][action data…]`; captured: `04 00 02 08` (M3, normal layer, media, stop) [cap] | (empty) |
-| `11:03` | ClearBinding | `[key ID][layer]` (back to the default) | |
+| `11:03` | ClearBinding | `[key ID][layer]` (back to the default) [cap] | (empty) |
 | `11:04` / `11:05` | Get/SetConfig | `[enabled]` | `[enabled]`: 1 = custom bindings active |
 | `11:06` | GetBinding | | |
 
-- Key IDs: see [Key IDs](#key-ids). Layers: `0` normal, `1` Fn.
+- Key IDs: see [Key IDs](#key-ids). Layer byte: `00` normal, `80` Fn held
+  (captured; IO Center Web's code suggests `01`). [cap]
+- To bind a key, IO Center Web sends `11:02`; before binding a combination it
+  first resets the key with `11:03`. [cap]
 - A GetBindings entry is `[key ID][flags: bit 7 = Fn layer][action type][action data…]`.
 - GetBindings returns only bindings that differ from the factory defaults: the
   reference keyboard answers with its 5 changed M keys (one of them bound to
@@ -317,7 +323,7 @@ Action types and their data:
 
 | Type | Action | Data |
 |---|---|---|
-| `00` | default (clears the binding; as SetBinding: disabled) | |
+| `00` | disabled (in SetBinding [cap] and in GetBindings) | |
 | `01` | standard key | `[modifiers][HID usage]`; keys from IO Center's extra function key list: `[00][HID usage]` |
 | `02` | media | `[action]`: 1 volume up, 2 volume down, 3 mute, 4 mic mute, 5 next, 6 previous, 7 play/pause, 8 stop, 9 open volume mixer, 10 specific sound |
 | `03` | mouse | button: `[01][button \| flags][auto-fire rate]` (buttons 0 left, 1 right, 2 middle, 3 forward, 4 back; flags `40` while pressed, `80` double click); scroll: `[02][0 up, 1 down, 2 left, 3 right]` |
@@ -359,6 +365,20 @@ The keyboard sends this notification for **every** key press, also for plain
 keys and modifiers alone (e.g. `0b 00 01 01 01 00`: left Ctrl, modifiers `01`,
 no usage), and none for releases. [cap] `quietlinux events` shows these
 notifications live.
+
+Captured bindings (all with an empty success reply) [cap]:
+
+| Payload | Meaning |
+|---|---|
+| `03 00 01 00 04` | M2 → key A |
+| `03 00 01 01 06` | M2 → Ctrl+C |
+| `03 00 01 00 68` | M2 → F13 |
+| `04 00 02 08` | M3 → media stop |
+| `03 00 03 01 02 00` | M2 → middle mouse button |
+| `03 00 09 02` | M2 → next effect |
+| `03 00 07 02` | M2 → Windows shortcut "calculator" |
+| `09 00 00` | Caps Lock disabled |
+| `16 80 02 07` | Fn+F1 → play/pause |
 
 ### `12` MACROS
 

@@ -11,7 +11,7 @@ use std::str::FromStr;
 use clap::{Parser, Subcommand};
 use quietlinux_core::Rgb;
 use quietlinux_core::device::{self, fmt_version};
-use quietlinux_core::info::Colors;
+use quietlinux_core::info::{Action, Colors};
 use quietlinux_core::keymap::{self, KEYS, Key, Layout};
 use quietlinux_core::layout::{self, Zone};
 use quietlinux_core::protocol::Led;
@@ -63,16 +63,22 @@ enum Command {
     /// Change the lighting
     #[command(subcommand)]
     Light(Light),
-    /// Bind a media action to M1–M5 or the knob (stored in the keyboard)
+    /// Change what a key does (stored in the keyboard)
     ///
-    /// Example: quietlinux bind M3 stop. Keys: M1, M2, M3, M4, M5, Knob (press),
-    /// KnobLeft, KnobRight (turns). Factory bindings: M1 play-pause, M2 next-track,
-    /// M3 previous-track, M4 stop, M5 mic-mute, Knob mute, KnobLeft volume-down,
-    /// KnobRight volume-up.
+    /// Examples: quietlinux bind M2 key ctrl+KeyC; quietlinux bind M3 media stop;
+    /// quietlinux bind --fn F1 media play-pause; quietlinux bind CapsLock disable;
+    /// quietlinux bind CapsLock default. Keys: see `quietlinux keys`, plus KnobLeft
+    /// and KnobRight for the knob's turns.
     Bind {
+        /// Change the Fn layer (the key pressed together with Fn)
+        #[arg(long = "fn")]
+        fn_layer: bool,
+        /// Allow changing Enter
+        #[arg(long)]
+        force: bool,
         key: settings::BindKey,
-        /// volume-up, volume-down, mute, mic-mute, next-track, previous-track, play-pause, stop
-        action: settings::MediaAction,
+        #[command(subcommand)]
+        action: BindAction,
     },
     /// Choose the shortcuts game mode blocks (stored in the keyboard; Fn+Pause toggles game mode)
     GameMode {
@@ -92,6 +98,50 @@ enum Command {
 }
 
 #[derive(Debug, Subcommand)]
+enum BindAction {
+    /// A key or key combination, e.g. KeyA, ctrl+KeyC, ctrl+shift+F13
+    Key { combo: settings::KeyCombo },
+    /// volume-up, volume-down, mute, mic-mute, next-track, previous-track, play-pause, stop
+    Media { action: settings::MediaAction },
+    /// A mouse button: left, right, middle, forward, back
+    Mouse { button: settings::MouseButton },
+    /// next-effect, previous-effect, brighter, darker
+    Lighting { action: settings::LightingAction },
+    /// A Windows shortcut (calculator, task-manager, …): performed by IO Center on
+    /// Windows; on Linux nothing happens yet
+    Shortcut { name: settings::Shortcut },
+    /// The key does nothing
+    Disable,
+    /// Back to the factory binding
+    Default,
+}
+
+impl BindAction {
+    /// The action to store, or `None` for the factory default.
+    fn action(&self) -> Option<Action> {
+        Some(match self {
+            BindAction::Key { combo } => Action::StandardKey {
+                modifiers: combo.modifiers,
+                usage: combo.usage,
+            },
+            BindAction::Media { action } => Action::Media(action.0),
+            BindAction::Mouse { button } => Action::MouseButton {
+                button: button.0,
+                flags: 0,
+                auto_fire: 0,
+            },
+            BindAction::Lighting { action } => Action::Backlight {
+                action: action.0,
+                effect: None,
+            },
+            BindAction::Shortcut { name } => Action::WindowsShortcut(name.0),
+            BindAction::Disable => Action::Disabled,
+            BindAction::Default => return None,
+        })
+    }
+}
+
+#[derive(Debug, Subcommand)]
 enum Light {
     /// Static color effect, stored in the keyboard
     Static {
@@ -107,8 +157,11 @@ enum Light {
     Effect {
         effect: settings::Effect,
         /// One color (default for static: e63000; for the others IO Center's rainbow gradient)
-        #[arg(long, conflicts_with = "gradient")]
+        #[arg(long, conflicts_with_all = ["gradient", "dual"])]
         color: Option<Rgb>,
+        /// Two colors, e.g. e63000,ffffff
+        #[arg(long, value_name = "COLOR,COLOR", conflicts_with = "gradient")]
+        dual: Option<settings::DualColor>,
         /// Gradient: colors spread evenly (ff0000,0000ff) or with positions (ff0000@0,0000ff@100)
         #[arg(long)]
         gradient: Option<settings::Gradient>,
@@ -315,26 +368,45 @@ fn run(cli: Cli) -> Result<ExitCode, device::Error> {
         Command::Light(Light::Effect {
             effect,
             color,
+            dual,
             gradient,
             brightness,
             speed,
             direction,
         }) => {
-            let colors = match (color, gradient) {
-                (Some(c), _) => Colors::Single(c),
-                (None, Some(g)) => Colors::Gradient(g.0),
-                (None, None) if effect == settings::Effect::STATIC => {
+            let colors = match (color, dual, gradient) {
+                (Some(c), _, _) => Colors::Single(c),
+                (None, Some(settings::DualColor(a, b)), _) => Colors::Dual(a, b),
+                (None, None, Some(g)) => Colors::Gradient(g.0),
+                (None, None, None) if effect == settings::Effect::STATIC => {
                     Colors::Single(Rgb::new(0xe6, 0x30, 0x00))
                 }
-                (None, None) => Colors::Gradient(settings::rainbow()),
+                (None, None, None) => Colors::Gradient(settings::rainbow()),
             };
             let mut session = open_session(usb_path, cli.allow_unknown_firmware)?;
             session.set_effect(effect.0, direction.0, brightness, speed, &colors)?;
         }
-        Command::Bind { key, action } => {
+        Command::Bind {
+            fn_layer,
+            force,
+            key,
+            action,
+        } => {
+            if key.name == "Enter" && !force {
+                return Err(device::Error::Unsupported(
+                    "changing Enter could leave you unable to confirm commands: add --force"
+                        .to_owned(),
+                ));
+            }
             let mut session = open_session(usb_path, cli.allow_unknown_firmware)?;
-            session.set_media_binding(key.key_id, action.0)?;
-            println!("{}: {action}", key.name);
+            let prefix = if fn_layer { "Fn+" } else { "" };
+            if let Some(action) = action.action() {
+                session.set_binding(key.key_id, fn_layer, &action)?;
+                println!("{prefix}{}: {action}", key.name);
+            } else {
+                session.clear_binding(key.key_id, fn_layer)?;
+                println!("{prefix}{}: factory binding", key.name);
+            }
         }
         Command::GameMode { block } => {
             let mut session = open_session(usb_path, cli.allow_unknown_firmware)?;

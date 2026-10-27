@@ -79,7 +79,8 @@ with the firmware version.
 Shows the key presses the keyboard reports on its vendor interface, with the
 key name, the legend in brackets, the key ID and the action (the HID usage the
 key sends, named like on a US keyboard), until Ctrl+C (or `N` events). The
-keyboard reports every key press, no releases. Useful to check key
+keyboard reports every key press, no releases. Switching game mode with
+Fn+Pause shows up too. Useful to check key
 IDs and to see what the keyboard sends for special keys.
 
 ```console
@@ -87,6 +88,7 @@ $ quietlinux events
 Press keys on the Light Mount (Ctrl+C to stop). Only keys the keyboard reports appear.
 KeyY [Z] (28)            key Y                                [28 00 01 01 00 1c]
 Fn+ArrowRight [→] (5c)   lighting: previous effect                [5c 80 01 09 03]
+game mode on                                                  [11 01]
 ```
 
 It shows what you type on the Light Mount while it runs: do not type anything
@@ -166,6 +168,7 @@ quietlinux light effect breathing                         # IO Center's rainbow 
 quietlinux light effect static --color ff1493 --brightness 40
 quietlinux light effect color-wave --speed 80 --direction left
 quietlinux light effect breathing --gradient ff0000,0000ff
+quietlinux light effect breathing --dual e63000,ffffff
 quietlinux light effect tornado --gradient ff0000@0,ffff00@30,0000ff@100
 ```
 
@@ -173,6 +176,7 @@ quietlinux light effect tornado --gradient ff0000@0,ffff00@30,0000ff@100
 |---|---|---|
 | `EFFECT` | `static`, `color-wave`, `tornado`, `breathing`, `reactive`, `matrix` | |
 | `--color` | one color, `rrggbb` | static: `e63000` (factory color); others: rainbow |
+| `--dual` | two colors, `rrggbb,rrggbb` | |
 | `--gradient` | 2–12 colors, evenly spread or with positions `@0`–`@100` | |
 | `--brightness` | 0–100 | 100 |
 | `--speed` | 0–100 | 50 |
@@ -185,23 +189,42 @@ Which directions an effect uses depends on the effect.
 Leaves realtime mode: the effect stored in the keyboard shows again. Use it to
 undo `light set` without unplugging the keyboard.
 
-## `bind KEY ACTION`
+## `bind [--fn] KEY ACTION`
 
-Binds a media action to one of the macro keys or the knob. Stored in the keyboard.
+Changes what a key does. Stored in the keyboard.
 
 ```sh
-quietlinux bind M3 stop
-quietlinux bind KnobRight next-track
-quietlinux bind M3 previous-track     # back to the factory binding
+quietlinux bind M2 key ctrl+KeyC          # a key combination
+quietlinux bind M2 key F13                # F13–F24 work too
+quietlinux bind M3 media stop
+quietlinux bind M4 mouse middle
+quietlinux bind M5 lighting next-effect
+quietlinux bind CapsLock disable
+quietlinux bind CapsLock default          # back to the factory binding
+quietlinux bind --fn F1 media play-pause  # Fn+F1
+quietlinux bind --fn F1 default
+quietlinux bind KnobRight media next-track
 ```
 
-- Keys: `M1`–`M5`, `Knob` (press), `KnobLeft`, `KnobRight` (turns).
-- Actions: `volume-up`, `volume-down`, `mute`, `mic-mute`, `next-track`,
-  `previous-track`, `play-pause`, `stop`.
+| Action | Values |
+|---|---|
+| `key COMBO` | modifiers `ctrl`, `shift`, `alt`, `win`, `rctrl`, `rshift`, `altgr`/`ralt`, `rwin` and at most one key name (`KeyA`, `Digit1`, `F1`–`F24`, `Enter`, `ArrowUp`, …, see `quietlinux keys`), joined with `+` |
+| `media ACTION` | `volume-up`, `volume-down`, `mute`, `mic-mute`, `next-track`, `previous-track`, `play-pause`, `stop` |
+| `mouse BUTTON` | `left`, `right`, `middle`, `forward`, `back` |
+| `lighting ACTION` | `next-effect`, `previous-effect`, `brighter`, `darker` |
+| `shortcut NAME` | Windows shortcuts (`calculator`, `task-manager`, `lock-pc`, …): IO Center performs them on Windows; on Linux nothing happens yet |
+| `disable` | the key does nothing |
+| `default` | back to the factory binding |
+
+- `KEY`: any key name from `quietlinux keys`, plus `KnobLeft` and `KnobRight`
+  for the knob's turns. `Fn` cannot be bound; `Enter` only with `--force`.
+- `--fn` changes the Fn layer: what the key does while Fn is held.
 - Factory bindings: M1 play-pause, M2 next-track, M3 previous-track, M4 stop,
-  M5 mic-mute, Knob mute, KnobLeft volume-down, KnobRight volume-up.
-- Other keys and other action types (keys, shortcuts, macros, …) come once
-  their messages are captured; `quietlinux info` shows the current bindings.
+  M5 mic-mute, Knob mute, KnobLeft volume-down, KnobRight volume-up; Fn+↑/↓
+  brighter/darker, Fn+←/→ previous/next effect.
+- `quietlinux info` lists all bindings that differ from the factory ones.
+- Not yet: macros, opening files/folders/websites, selecting a profile or an
+  effect, mouse double click and auto fire (their messages are not captured yet).
 
 ## `game-mode --block SHORTCUTS`
 

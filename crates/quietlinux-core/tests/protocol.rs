@@ -740,3 +740,128 @@ fn keep_alive() {
     assert_eq!(data.len(), 0);
     assert_eq!(p::frame(p::KEEP_ALIVE, &[], id, session).unwrap(), raw);
 }
+
+// --- IO Center Web binding keys (bindings-web.hex) ----------------------------------
+
+/// (direction, packet, capture name)
+fn bindings_web() -> Vec<(String, Packet, String)> {
+    let path = format!(
+        "{}/tests/fixtures/bindings-web.hex",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    std::fs::read_to_string(&path)
+        .unwrap()
+        .lines()
+        .filter(|l| !l.starts_with('#') && !l.trim().is_empty())
+        .map(|l| {
+            let (hex, comment) = l.split_once('#').unwrap();
+            let name = comment
+                .rsplit_once('(')
+                .unwrap()
+                .1
+                .trim_end_matches(')')
+                .to_owned();
+            (
+                comment.split_whitespace().next().unwrap().to_owned(),
+                parse_packet(hex.trim()),
+                name,
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn bindings_are_reproduced() {
+    use quietlinux_core::info::parse_action;
+
+    let mut seen = Vec::new();
+    for (dir, raw, name) in bindings_web() {
+        assert!(p::crc_ok(&raw));
+        if dir != "out" {
+            continue;
+        }
+        let (cmd, data, id, session) = fields(&raw);
+        let payload = match cmd {
+            p::SET_BINDING => {
+                let (action, used) = parse_action(&data[2..]).unwrap();
+                assert_eq!(used, data.len() - 2, "{name}");
+                seen.push(format!("{name}: {:02x} {:02x} {action}", data[0], data[1]));
+                p::binding_payload(data[0], data[1], &action.to_bytes().expect("captured type"))
+            }
+            p::CLEAR_BINDING => {
+                seen.push(format!("{name}: {:02x} {:02x} reset", data[0], data[1]));
+                p::clear_binding_payload(data[0], data[1]).to_vec()
+            }
+            _ => continue,
+        };
+        assert_eq!(payload, data, "{name}");
+        assert_eq!(p::frame(cmd, &payload, id, session).unwrap(), raw, "{name}");
+    }
+    assert_eq!(
+        seen,
+        [
+            "bind-key: 03 00 key A",
+            "bind-combo: 03 00 reset",
+            "bind-combo: 03 00 key C",
+            "bind-combo: 03 00 key LCtrl+C",
+            "bind-mouse: 03 00 mouse: middle button",
+            "bind-lighting: 03 00 lighting: next effect",
+            "bind-shortcut: 03 00 Windows shortcut: calculator",
+            "bind-m2-f13: 03 00 key F13",
+            "bind-disable: 09 00 disabled",
+            "bind-reset: 09 00 reset",
+            "bind-fn: 16 80 media: play/pause",
+        ]
+    );
+}
+
+#[test]
+fn dual_color_effect() {
+    use quietlinux_core::info::{Colors, LayerConfig};
+
+    let dual: Vec<Packet> = bindings_web()
+        .into_iter()
+        .filter(|(dir, raw, _)| {
+            dir == "out" && p::command_of(raw) == p::SET_LAYER_CONFIG && raw[12] == 0x01
+        })
+        .map(|(_, raw, _)| raw)
+        .collect();
+    assert_eq!(dual.len(), 3);
+    for raw in dual {
+        let (_, data, id, session) = fields(&raw);
+        let config = LayerConfig::parse(&data[1..]).unwrap();
+        assert!(matches!(config.colors, Colors::Dual(..)));
+        let payload = p::layer_config_payload(
+            0,
+            config.effect,
+            config.direction,
+            config.brightness,
+            config.speed,
+            &config.colors,
+        )
+        .unwrap();
+        assert_eq!(
+            p::frame(p::SET_LAYER_CONFIG, &payload, id, session).unwrap(),
+            raw
+        );
+    }
+}
+
+#[test]
+fn game_mode_notifications() {
+    let notes: Vec<(Command, Vec<u8>)> = bindings_web()
+        .into_iter()
+        .filter(|(_, raw, _)| p::is_notification(raw))
+        .map(|(_, raw, _)| (p::command_of(&raw), p::data(&raw).to_vec()))
+        .collect();
+    // Fn+Pause: game mode flags (unchanged 1f), then the state, on and off
+    assert_eq!(
+        notes,
+        [
+            (Command::new(0x07, 0x01), vec![0x11, 0x1f]),
+            (Command::new(0x07, 0x02), vec![0x11, 0x01]),
+            (Command::new(0x07, 0x01), vec![0x11, 0x1f]),
+            (Command::new(0x07, 0x02), vec![0x11, 0x00]),
+        ]
+    );
+}

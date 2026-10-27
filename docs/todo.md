@@ -244,8 +244,9 @@ logic. Dependencies stay minimal (today: clap, rustix) and are checked in CI
 - [x] Check whether the opened session makes `10:03`, `10:0e`, `10:0f`, `07:06` answer: no, INVALID_STATE stays
 - [x] Captures of IO Center Web writing: effects, colors, gradient, brightness, speed (`10:06`), a media binding (`11:02`), game mode flags (`07:03`), keep-alive (`01:03`) → `writes-web.hex`, every request reproduced in the tests
 - [x] CLI: `light effect`, `bind` (media actions on M1–M5 and the knob), `game-mode --block`; tested on the reference keyboard (2026-10-27)
-- [ ] Captures: standard key and shortcut bindings, Fn layer, disable a key, binding reset of a normal key; then `bind` for all keys
-- [ ] Captures: game mode on/off (`07:05`?), polling rate (`06:02`), dual color effect, custom (per-key) lighting mode
+- [x] Captures: key, combination, mouse, lighting, Windows shortcut, F13 bindings, Fn layer (`80`), disable, reset (`11:03`), dual color effect, game mode notifications → `bindings-web.hex`
+- [x] `bind` for all keys and both layers: key/combination, media, mouse button, lighting action, shortcut, disable, default; `light effect --dual`
+- [ ] Not offered by IO Center Web for the Light Mount: polling rate, game mode switch, custom (per-key) lighting mode, macros → Windows app captures
 - [ ] Macros are stored and played by the keyboard (M5 → macro 0 plays its keys as events); capture the Windows app creating/editing a macro to learn `12:01`–`12:08`
 - [ ] Protocol layer for every command confirmed in phase 2, with fixtures
 - [ ] **Read** the device state first, write afterwards

@@ -351,6 +351,30 @@ pub fn describe_notification(message: &Message, legends: keymap::Layout) -> Stri
             return format!("{key:<24} {action:<36} [{}]", hex(&message.data));
         }
     }
+    // Game mode switched with Fn+Pause: [?][value] [cap]
+    if message.cmd.feature == p::FEATURE_KEYBOARD {
+        if let Some(&value) = message.data.get(1) {
+            let text = match message.cmd.id {
+                0x01 => {
+                    let blocks = game_mode_blocks(value);
+                    let blocks = if blocks.is_empty() {
+                        "nothing".to_owned()
+                    } else {
+                        blocks.join(", ")
+                    };
+                    Some(format!("game mode blocks {blocks}"))
+                }
+                0x02 => Some(format!(
+                    "game mode {}",
+                    if value & 1 == 1 { "on" } else { "off" }
+                )),
+                _ => None,
+            };
+            if let Some(text) = text {
+                return format!("{text:<61} [{}]", hex(&message.data));
+            }
+        }
+    }
     format!(
         "{} {}  [{}]",
         message.cmd,
@@ -458,7 +482,7 @@ mod tests {
             .notify(p::ACTION_FIRED, &[0x5c, 0x80, 0x01, 0x09, 0x03]);
         session
             .transport_mut()
-            .notify(p::Command::new(0x07, 0x02), &[1]);
+            .notify(p::Command::new(0x07, 0x02), &[0x11, 0x01]);
         let mut lines = Vec::new();
         watch(&mut session, Some(2), keymap::Layout::De, |l| lines.push(l)).unwrap();
         assert!(
@@ -467,6 +491,6 @@ mod tests {
             lines[0]
         );
         assert!(lines[0].contains("lighting: previous effect"));
-        assert!(lines[1].starts_with("07:02 StateChanged"), "{}", lines[1]);
+        assert!(lines[1].starts_with("game mode on"), "{}", lines[1]);
     }
 }

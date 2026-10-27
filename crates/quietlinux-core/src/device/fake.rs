@@ -28,8 +28,8 @@ pub struct FakeKeyboard {
     pub answers: HashMap<Command, Vec<u8>>,
     /// Last `10:06` payload.
     pub layer_config: Option<Vec<u8>>,
-    /// Bindings set with `11:02`: key ID → action bytes.
-    pub bindings: HashMap<u8, Vec<u8>>,
+    /// Bindings set with `11:02` (and reset with `11:03`): (key ID, layer) → action bytes.
+    pub bindings: HashMap<(u8, u8), Vec<u8>>,
     /// Game mode flags set with `07:03`.
     pub game_mode_flags: u8,
     fragments: Vec<Packet>,
@@ -112,8 +112,14 @@ impl FakeKeyboard {
                 self.reply(&fragments[0], &[]);
             }
             p::SET_BINDING if !msg.is_notification() => {
-                if let [key, _layer, action @ ..] = msg.data.as_slice() {
-                    self.bindings.insert(*key, action.to_vec());
+                if let [key, layer, action @ ..] = msg.data.as_slice() {
+                    self.bindings.insert((*key, *layer), action.to_vec());
+                }
+                self.reply(&fragments[0], &[]);
+            }
+            p::CLEAR_BINDING => {
+                if let [key, layer] = msg.data.as_slice() {
+                    self.bindings.remove(&(*key, *layer));
                 }
                 self.reply(&fragments[0], &[]);
             }

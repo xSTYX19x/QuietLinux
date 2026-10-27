@@ -676,12 +676,45 @@ impl<T: Transport> Session<T> {
         Ok(())
     }
 
+    /// Bind an action to a key (`11:02`, stored in the keyboard), on the normal or the
+    /// Fn layer. Only action types captured from IO Center are sent.
+    pub fn set_binding(
+        &mut self,
+        key_id: u8,
+        fn_layer: bool,
+        action: &crate::info::Action,
+    ) -> Result<()> {
+        self.check_writable()?;
+        let bytes = action
+            .to_bytes()
+            .ok_or_else(|| Error::Unsupported(format!("binding action \"{action}\"")))?;
+        let layer = if fn_layer {
+            p::LAYER_FN
+        } else {
+            p::LAYER_NORMAL
+        };
+        let id = self.next_request_id();
+        let payload = p::binding_payload(key_id, layer, &bytes);
+        self.request(&p::frame(p::SET_BINDING, &payload, id, self.sid)?)?;
+        Ok(())
+    }
+
     /// Bind a media action to a key on the normal layer (`11:02`, stored in the keyboard).
     pub fn set_media_binding(&mut self, key_id: u8, action: u8) -> Result<()> {
+        self.set_binding(key_id, false, &crate::info::Action::Media(action))
+    }
+
+    /// Reset a key's binding to the factory default (`11:03`, stored in the keyboard).
+    pub fn clear_binding(&mut self, key_id: u8, fn_layer: bool) -> Result<()> {
         self.check_writable()?;
+        let layer = if fn_layer {
+            p::LAYER_FN
+        } else {
+            p::LAYER_NORMAL
+        };
         let id = self.next_request_id();
-        let payload = p::media_binding_payload(key_id, action);
-        self.request(&p::frame(p::SET_BINDING, &payload, id, self.sid)?)?;
+        let payload = p::clear_binding_payload(key_id, layer);
+        self.request(&p::frame(p::CLEAR_BINDING, &payload, id, self.sid)?)?;
         Ok(())
     }
 
@@ -914,12 +947,31 @@ mod tests {
         );
         assert_eq!(kb.mode, p::MODE_GENERAL);
         assert_eq!(kb.layer_config, Some(vec![0, 3, 0, 100, 50, 0, 1, 2, 3]));
-        assert_eq!(kb.bindings[&0x04], [0x02, 8]);
+        assert_eq!(kb.bindings[&(0x04, p::LAYER_NORMAL)], [0x02, 8]);
         assert_eq!(kb.game_mode_flags, 0x1e);
         assert!(
             kb.received[2..].iter().all(|r| r[2] == 2),
             "all after 01:01 use session 2"
         );
+    }
+
+    #[test]
+    fn bindings_on_both_layers_and_reset() {
+        use crate::info::Action;
+        let mut kb = FakeKeyboard::new(&KNOWN, p::MODE_GENERAL);
+        let mut session = Session::with_request_id(&mut kb, false, 1).unwrap();
+        session.set_binding(0x16, true, &Action::Media(7)).unwrap();
+        session.set_binding(0x09, false, &Action::Disabled).unwrap();
+        session.clear_binding(0x09, false).unwrap();
+        let refused = session.set_binding(
+            0x03,
+            false,
+            &Action::OpenWebsite("https://example.org".into()),
+        );
+        assert!(matches!(refused, Err(Error::Unsupported(_))));
+        assert_eq!(kb.commands(), ["03:01", "11:02", "11:02", "11:03"]);
+        assert_eq!(kb.bindings[&(0x16, p::LAYER_FN)], [0x02, 7]);
+        assert!(!kb.bindings.contains_key(&(0x09, p::LAYER_NORMAL)));
     }
 
     #[test]

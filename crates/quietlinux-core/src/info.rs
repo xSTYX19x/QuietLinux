@@ -528,6 +528,33 @@ pub fn parse_action(data: &[u8]) -> Option<(Action, usize)> {
     })
 }
 
+impl Action {
+    /// Bytes of a binding (`11:02`, after key ID and layer). Only the action types
+    /// captured from IO Center are encoded; `None` for the others, which QuietLinux
+    /// does not send yet.
+    pub fn to_bytes(&self) -> Option<Vec<u8>> {
+        Some(match self {
+            Action::Disabled => vec![0x00],
+            Action::StandardKey { modifiers, usage } => vec![0x01, *modifiers, *usage],
+            Action::Media(action) => vec![0x02, *action],
+            Action::MouseButton {
+                button,
+                flags,
+                auto_fire,
+            } if *button < 0x20 && *flags == flags & 0xe0 => {
+                vec![0x03, 0x01, button | flags, *auto_fire]
+            }
+            Action::WindowsShortcut(action) => vec![0x07, *action],
+            // next/previous effect, brighter, darker (selecting an effect is not captured)
+            Action::Backlight {
+                action: action @ 2..=5,
+                effect: None,
+            } => vec![0x09, *action],
+            _ => return None,
+        })
+    }
+}
+
 fn modifier_names(modifiers: u8) -> Vec<&'static str> {
     [
         "LCtrl", "LShift", "LAlt", "LWin", "RCtrl", "RShift", "RAlt", "RWin",
@@ -902,6 +929,36 @@ mod tests {
         assert_eq!(action(&[0x09, 1, 3]), "lighting: select effect breathing");
         assert_eq!(parse_action(&[0x06, 9, b'a']), None); // text longer than the data
         assert_eq!(parse_action(&[0x03, 7]), None); // unknown mouse action
+    }
+
+    #[test]
+    fn actions_encode_like_io_center() {
+        // captured SetBinding payloads after key ID and layer
+        let captured: [&[u8]; 8] = [
+            &[0x01, 0x00, 0x04],       // key A
+            &[0x01, 0x01, 0x06],       // Ctrl+C
+            &[0x01, 0x00, 0x68],       // F13
+            &[0x02, 0x08],             // media stop
+            &[0x03, 0x01, 0x02, 0x00], // middle mouse button
+            &[0x07, 0x02],             // Windows shortcut: calculator
+            &[0x09, 0x02],             // next effect
+            &[0x00],                   // disabled
+        ];
+        for bytes in captured {
+            let (action, used) = parse_action(bytes).unwrap();
+            assert_eq!(used, bytes.len());
+            assert_eq!(action.to_bytes().as_deref(), Some(bytes), "{action}");
+        }
+        assert_eq!(Action::OpenWebsite("x".into()).to_bytes(), None);
+        assert_eq!(Action::Macro { action: 2, id: 0 }.to_bytes(), None);
+        assert_eq!(
+            Action::Backlight {
+                action: 1,
+                effect: Some(3)
+            }
+            .to_bytes(),
+            None
+        );
     }
 
     #[test]

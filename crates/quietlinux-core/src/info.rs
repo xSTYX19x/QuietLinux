@@ -736,6 +736,8 @@ pub struct Binding {
     /// True for the Fn layer.
     pub fn_layer: bool,
     pub action: Action,
+    /// The action bytes as the keyboard reported them (type and data).
+    pub raw: Vec<u8>,
 }
 
 impl Binding {
@@ -768,6 +770,7 @@ pub fn parse_bindings(data: &[u8]) -> Option<(usize, Vec<Binding>)> {
             key_id,
             fn_layer: flags & 0x80 != 0,
             action,
+            raw: data[at + 2..at + 2 + used].to_vec(),
         });
         at += 2 + used;
     }

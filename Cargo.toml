@@ -14,6 +14,8 @@ authors = ["xSTYX19x"]
 quietlinux-core = { path = "crates/quietlinux-core", version = "0.1.0" }
 clap = { version = "4.5", features = ["derive"] }
 rustix = { version = "1.0", default-features = false, features = ["std", "event"] }
+serde = { version = "1.0", features = ["derive"] }
+toml = { version = "1.1", default-features = false, features = ["parse", "serde", "std"] }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

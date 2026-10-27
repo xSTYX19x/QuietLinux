@@ -238,6 +238,75 @@ quietlinux game-mode --block none
 
 Shortcuts: `shift-tab`, `alt-f4`, `win`, `alt-tab`, `caps-lock`.
 
+## `backup FILE [--force]`
+
+Saves the key bindings that differ from the factory ones and the game mode
+shortcuts to a TOML file. Read-only (it opens a session like IO Center, which
+changes no setting). `-` writes to standard output; an existing file is only
+overwritten with `--force`.
+
+```sh
+quietlinux backup ~/lightmount.toml
+```
+
+```toml
+version = 1
+
+# What the keyboard reported. `apply` does not change these.
+[keyboard]
+model = "Light Mount"
+firmware = "2.3.0"
+layout = "ISO, German"
+polling_rate = 1000
+lighting_mode = "effect"
+game_mode = "off"
+bindings_enabled = true
+
+[game_mode]
+blocks = ["shift-tab", "alt-f4", "win", "alt-tab", "caps-lock"]
+
+[bindings]
+M1 = "media mic-mute"
+M2 = "key F13"
+"Fn+F1" = "media play-pause"
+M5 = "raw 0a 02 00"  # macro 0 (action 2): QuietLinux cannot write this yet; `apply` keeps it
+
+# [effect]
+# effect = "static"
+# ...
+```
+
+- The Light Mount does not report its effect, so a backup cannot contain it.
+  The file ends with a commented-out `[effect]` section: remove the `#` signs
+  and fill it in to have `apply` set an effect.
+- Bindings use the syntax of `bind` (`key …`, `media …`, `mouse …`, `lighting …`,
+  `shortcut …`, `disable`, `default`); `"Fn+KEY"` is the Fn layer. Bindings
+  QuietLinux cannot write yet (macros, …) are stored as `raw` bytes.
+
+## `apply FILE [--dry-run]`
+
+Writes a backup file (or one you wrote yourself) to the keyboard. Only what
+differs is sent; `--dry-run` lists the changes without making them.
+
+```console
+$ quietlinux apply ~/lightmount.toml --dry-run
+  note: M5: kept (macro 0 (action 2)); QuietLinux cannot recreate it, `quietlinux bind M5 default` resets it
+  M3: media: next track
+  CapsLock: factory binding
+2 change(s); nothing written (--dry-run).
+```
+
+- Sections missing from the file are left alone (no `[bindings]` section: no
+  binding is touched).
+- With a `[bindings]` section, the file describes all changed keys: keys not
+  listed get their factory binding back, **except** bindings QuietLinux cannot
+  recreate (they are kept, with a note).
+- `[keyboard]` is information only.
+- `[effect]` (optional): `effect`, one of `color`, `dual` (two colors) or
+  `gradient` (list like `["ff0000@0", "0000ff@100"]`), `brightness`, `speed`,
+  `direction`, with the values and defaults of `light effect`.
+- The whole file is checked before anything is sent; errors name the line's key.
+
 ## `calibrate [--start HEX]`
 
 Lights the knob and the keys one at a time, everything else off, and shows the

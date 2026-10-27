@@ -1,10 +1,12 @@
 //! `quietlinux`: command line tool for the be quiet! Light Mount keyboard.
 
 mod calibrate;
+mod config;
 mod report;
 mod settings;
 
 use std::io::{self, BufRead, Write};
+use std::path::PathBuf;
 use std::process::ExitCode;
 use std::str::FromStr;
 
@@ -79,6 +81,27 @@ enum Command {
         key: settings::BindKey,
         #[command(subcommand)]
         action: BindAction,
+    },
+    /// Save the keyboard's key bindings and game mode shortcuts to a file (read-only)
+    ///
+    /// `-` writes to standard output. The effect cannot be read from the Light Mount;
+    /// the file contains a template to add one.
+    Backup {
+        file: PathBuf,
+        /// Overwrite an existing file
+        #[arg(long)]
+        force: bool,
+    },
+    /// Write the settings of a backup file to the keyboard
+    ///
+    /// Only what differs is sent. Sections missing from the file are left alone; in
+    /// [bindings], keys not listed get their factory binding back, except bindings
+    /// QuietLinux cannot recreate.
+    Apply {
+        file: PathBuf,
+        /// Show the changes without making them
+        #[arg(long)]
+        dry_run: bool,
     },
     /// Choose the shortcuts game mode blocks (stored in the keyboard; Fn+Pause toggles game mode)
     GameMode {
@@ -293,7 +316,7 @@ fn ask_terminal(key: &Key, layout: Layout) -> Answer {
 
 // One arm per command: splitting the dispatch would not make it clearer.
 #[allow(clippy::too_many_lines)]
-fn run(cli: Cli) -> Result<ExitCode, device::Error> {
+fn run(cli: Cli) -> Result<ExitCode, Box<dyn std::error::Error>> {
     let usb_path = cli.usb_path.as_deref();
     match cli.command {
         Command::Zones => {
@@ -393,10 +416,10 @@ fn run(cli: Cli) -> Result<ExitCode, device::Error> {
             action,
         } => {
             if key.name == "Enter" && !force {
-                return Err(device::Error::Unsupported(
+                return Err(Box::new(device::Error::Unsupported(
                     "changing Enter could leave you unable to confirm commands: add --force"
                         .to_owned(),
-                ));
+                )));
             }
             let mut session = open_session(usb_path, cli.allow_unknown_firmware)?;
             let prefix = if fn_layer { "Fn+" } else { "" };
@@ -406,6 +429,52 @@ fn run(cli: Cli) -> Result<ExitCode, device::Error> {
             } else {
                 session.clear_binding(key.key_id, fn_layer)?;
                 println!("{prefix}{}: factory binding", key.name);
+            }
+        }
+        Command::Backup { file, force } => {
+            let to_stdout = file.as_os_str() == "-";
+            if !to_stdout && file.exists() && !force {
+                return Err(
+                    format!("{} exists: add --force to overwrite it", file.display()).into(),
+                );
+            }
+            let mut session = open_session(usb_path, cli.allow_unknown_firmware)?;
+            let snapshot = config::read_snapshot(&mut session)?;
+            let text = config::backup_text(&snapshot);
+            if to_stdout {
+                print!("{text}");
+            } else {
+                std::fs::write(&file, text).map_err(|e| format!("{}: {e}", file.display()))?;
+                eprintln!(
+                    "Saved to {}: {} binding(s), game mode shortcuts. The effect is not included \
+                     (the keyboard does not report it).",
+                    file.display(),
+                    snapshot.bindings.len()
+                );
+            }
+        }
+        Command::Apply { file, dry_run } => {
+            let text =
+                std::fs::read_to_string(&file).map_err(|e| format!("{}: {e}", file.display()))?;
+            let settings = config::parse(&text).map_err(|e| format!("{}: {e}", file.display()))?;
+            let mut session = open_session(usb_path, cli.allow_unknown_firmware)?;
+            let current = config::read_snapshot(&mut session)?;
+            let plan = config::plan(&settings, &current);
+            for note in &plan.notes {
+                println!("  note: {note}");
+            }
+            if plan.ops.is_empty() {
+                println!("Nothing to change.");
+            } else {
+                for op in &plan.ops {
+                    println!("  {op}");
+                }
+                if dry_run {
+                    println!("{} change(s); nothing written (--dry-run).", plan.ops.len());
+                } else {
+                    config::execute(&mut session, &plan)?;
+                    println!("{} change(s) written.", plan.ops.len());
+                }
             }
         }
         Command::GameMode { block } => {

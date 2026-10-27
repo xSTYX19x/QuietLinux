@@ -131,13 +131,17 @@ macro_rules! named_value {
             }
         }
 
+        impl $name {
+            /// The command line name of the value, if it has one.
+            #[allow(dead_code)]
+            pub fn name(self) -> Option<&'static str> {
+                $table.iter().find(|(_, v)| *v == self.0).map(|(n, _)| *n)
+            }
+        }
+
         impl fmt::Display for $name {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                let name = $table
-                    .iter()
-                    .find(|(_, v)| *v == self.0)
-                    .map_or("?", |(n, _)| *n);
-                f.write_str(name)
+                f.write_str(self.name().unwrap_or("?"))
             }
         }
     };
@@ -222,9 +226,40 @@ impl FromStr for KeyCombo {
     }
 }
 
+impl KeyCombo {
+    /// The combination as `bind` and config files write it (`ctrl+KeyC`), or `None`
+    /// if the key has no name.
+    pub fn text(self) -> Option<String> {
+        const NAMES: [&str; 8] = [
+            "ctrl", "shift", "alt", "win", "rctrl", "rshift", "altgr", "rwin",
+        ];
+        let mut parts: Vec<&str> = NAMES
+            .iter()
+            .enumerate()
+            .filter(|(bit, _)| self.modifiers & (1 << bit) != 0)
+            .map(|(_, name)| *name)
+            .collect();
+        if self.usage != 0 {
+            parts.push(keymap::code_for_hid_usage(self.usage)?);
+        }
+        (!parts.is_empty()).then(|| parts.join("+"))
+    }
+}
+
 /// Shortcuts game mode blocks, as flags.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct GameModeBlocks(pub u8);
+
+impl GameModeBlocks {
+    /// Names of the blocked shortcuts.
+    pub fn names(self) -> Vec<&'static str> {
+        GAME_MODE
+            .iter()
+            .filter(|(_, bit)| self.0 & bit != 0)
+            .map(|(name, _)| *name)
+            .collect()
+    }
+}
 
 impl FromStr for GameModeBlocks {
     type Err = String;
@@ -361,6 +396,31 @@ mod tests {
         for bad in ["", "ctrl+KeyA+KeyB", "hyper+KeyA", "M1", "keya"] {
             assert!(bad.parse::<KeyCombo>().is_err(), "{bad:?}");
         }
+    }
+
+    #[test]
+    fn combos_round_trip() {
+        for text in [
+            "KeyA",
+            "ctrl+KeyC",
+            "F13",
+            "ctrl+shift+Escape",
+            "ctrl",
+            "altgr+KeyQ",
+            "rwin+F24",
+        ] {
+            let combo: KeyCombo = text.parse().unwrap();
+            assert_eq!(combo.text().as_deref(), Some(text));
+        }
+        assert_eq!(
+            KeyCombo {
+                modifiers: 0,
+                usage: 0x31
+            }
+            .text(),
+            None
+        );
+        assert_eq!(GameModeBlocks(0x0c).names(), ["win", "alt-tab"]);
     }
 
     #[test]

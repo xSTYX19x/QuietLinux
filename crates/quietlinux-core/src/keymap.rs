@@ -264,6 +264,17 @@ pub fn hid_usage(code: &str) -> Option<u8> {
     }
 }
 
+/// Name of the key that sends a HID usage (the inverse of [`hid_usage`]).
+pub fn code_for_hid_usage(usage: u8) -> Option<&'static str> {
+    const EXTRA: [&str; 12] = [
+        "F13", "F14", "F15", "F16", "F17", "F18", "F19", "F20", "F21", "F22", "F23", "F24",
+    ];
+    KEYS.iter()
+        .map(|k| k.code)
+        .chain(EXTRA)
+        .find(|code| hid_usage(code) == Some(usage))
+}
+
 /// Modifier bit of a modifier key (HID order): left Ctrl, Shift, Alt, Win, then right.
 pub fn modifier_bit(code: &str) -> Option<u8> {
     const MODIFIERS: [&str; 8] = [
@@ -528,6 +539,13 @@ mod tests {
             assert_eq!(hid_usage(none), None, "{none}");
         }
         assert_eq!(modifier_bit("ControlLeft"), Some(0x01));
+        for usage in 0x04..=0x73 {
+            if let Some(code) = code_for_hid_usage(usage) {
+                assert_eq!(hid_usage(code), Some(usage), "{code}");
+            }
+        }
+        assert_eq!(code_for_hid_usage(0x68), Some("F13"));
+        assert_eq!(code_for_hid_usage(0x31), None); // ANSI backslash: no such key
         assert_eq!(modifier_bit("MetaRight"), Some(0x80));
         // every key with a usage that the keyboard has, except modifiers and specials
         let without: Vec<&str> = KEYS

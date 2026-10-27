@@ -250,12 +250,13 @@ logic. Dependencies stay minimal (today: clap, rustix) and are checked in CI
 - [ ] Macros are stored and played by the keyboard (M5 → macro 0 plays its keys as events); capture the Windows app creating/editing a macro to learn `12:01`–`12:08`
 - [ ] Protocol layer for every command confirmed in phase 2, with fixtures
 - [ ] **Read** the device state first, write afterwards
-- [ ] Backup/restore: save the complete device state to a file before writing
+- [x] Backup/restore of what the keyboard reports (bindings, game mode); the effect is not readable from the Light Mount
+- [ ] Move the config file and the name tables (`crates/quietlinux-cli/src/{config,settings}.rs`) into quietlinux-core for the GUI
 - [ ] Fuzz the parsers (`cargo fuzz`)
 
 ### 6.3 Phase 4 – CLI
 - [x] `status`, `info`, `events`, `zones`, `keys`, `calibrate`, `light static`, `light stored`, `light set` (zones and single keys)
-- [ ] `backup`, `restore`
+- [x] `backup FILE` and `apply FILE [--dry-run]` (TOML; bindings, game mode, optional effect)
 - [ ] `light effect …` for every effect
 - [ ] `keymap get|set|reset`, `macro list|add|edit|delete|assign`
 - [ ] `profile list|switch|export|import`

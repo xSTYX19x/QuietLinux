@@ -301,7 +301,7 @@ fn keyboard_lines<T: Transport>(session: &mut Session<T>, out: &mut Vec<String>)
 }
 
 /// All bindings, read in as many `11:01` requests as needed.
-fn read_bindings<T: Transport>(
+pub(crate) fn read_bindings<T: Transport>(
     session: &mut Session<T>,
 ) -> Result<(usize, Vec<info::Binding>), Error> {
     let mut all = Vec::new();

@@ -24,6 +24,7 @@ Not affiliated with or endorsed by be quiet!. See [Safety](#safety).
 | Effects (static, color wave, tornado, breathing, reactive, matrix) with color or gradient, brightness, speed, direction (stored in the keyboard) | ✅ |
 | Key bindings on both layers (normal and Fn): keys and combinations, media, mouse buttons, lighting actions, disable, reset | ✅ |
 | Game mode: which shortcuts it blocks | ✅ |
+| Backup and restore of bindings and game mode as a TOML file (`backup`, `apply`) | ✅ |
 | Per-LED colors by zone (keys, top bar, knob, side strips) or by key (volatile) | ✅ |
 | Key map with layout-independent key names, legends for UK, German and French ISO | ✅ |
 | Macros, open file/folder/website, profiles, polling rate, per-key stored lighting | planned |

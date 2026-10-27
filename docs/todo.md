@@ -128,7 +128,7 @@ Windows app and the web app in phase 2. ✔ = already known thanks to bbossa.
 - [x] First commit
 - [x] Key map with W3C key names and legends (uk, de, fr); same physical layout as bbossa's verified French ISO map
 - [x] `calibrate` command that lights the keys one by one
-- [ ] Run `calibrate --layout de` on the reference keyboard and fix any legend that differs from the keycaps
+- [x] Run `calibrate --layout de` on the reference keyboard: 111 of 111 keys and legends match (2026-10-27)
 
 ## 4. Phase 1 – Capture setup
 

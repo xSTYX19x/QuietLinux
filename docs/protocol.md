@@ -102,7 +102,8 @@ LED indexes:
 Which key each LED belongs to is in `crates/quietlinux-core/src/keymap.rs` [bbossa]:
 the key LEDs are numbered row by row like the LampArray lamps. French and
 German ISO keyboards share the same physical layout, so the mapping holds for
-both; `quietlinux calibrate` checks it on a keyboard.
+both; `quietlinux calibrate` checks it on a keyboard (German ISO: 111 of 111
+keys confirmed [QL]).
 
 ### `11:02` key events
 

@@ -1,0 +1,12 @@
+# QuietLinux: hidraw access to the be quiet! Light Mount (USB 373f:0002)
+# for the user logged in at the seat (uaccess), not for every account.
+#
+# Only interface 2 (vendor protocol) and interface 3 (LampArray) are opened up.
+# Interfaces 0 and 1 carry the normal key presses and stay root-only, so no
+# process can read what you type through them.
+#
+# The file name must sort before 73-seat-late.rules, which applies uaccess.
+
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="373f", ATTRS{idProduct}=="0002", ENV{QUIETLINUX_LIGHT_MOUNT}="1"
+SUBSYSTEM=="hidraw", ENV{QUIETLINUX_LIGHT_MOUNT}=="1", ATTRS{bInterfaceNumber}=="02", TAG+="uaccess"
+SUBSYSTEM=="hidraw", ENV{QUIETLINUX_LIGHT_MOUNT}=="1", ATTRS{bInterfaceNumber}=="03", TAG+="uaccess"

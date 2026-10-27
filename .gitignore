@@ -1,0 +1,47 @@
+# Build output
+/target/
+**/*.rs.bk
+
+# Raw captures: they contain the keyboard's serial number and everything typed
+# while capturing. Only anonymized fixtures (tests/fixtures) are committed.
+/captures/
+*.pcap
+*.pcapng
+*.pcapng.gz
+*.cap
+*.etl
+webhid-log*.json
+webhid-log*.txt
+
+# Device dumps and backups made with `quietlinux backup`
+*.qlbackup
+/backups/
+
+# Firmware images: never handled by this project
+*.bin.fw
+*.dfu
+*.hex.fw
+firmware/
+
+# Virtual machines and disk images
+*.qcow2
+*.vdi
+*.vmdk
+*.iso
+
+# Local configuration and secrets
+.env
+.env.*
+*.local.toml
+*.key
+*.pem
+
+# Editors and OS
+.idea/
+.vscode/
+*.swp
+*~
+.DS_Store
+
+# Claude Code local settings
+.claude/settings.local.json

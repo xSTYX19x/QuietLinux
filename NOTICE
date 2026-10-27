@@ -1,0 +1,39 @@
+QuietLinux
+Copyright (C) 2026 xSTYX19x and contributors
+Licensed under the GNU General Public License, version 3 or (at your option)
+any later version. See LICENSE.
+
+This project is not affiliated with, endorsed by or supported by be quiet!.
+"be quiet!", "Light Mount" and "IO Center" are names of their respective owner
+and are used only to describe compatibility.
+
+-------------------------------------------------------------------------------
+Third-party work
+-------------------------------------------------------------------------------
+
+keyboard_bequiet_lightmount_rgb
+  https://github.com/bbossa/keyboard_bequiet_lightmount_rgb
+  License: GPL-2.0-or-later (used here under GPL-3.0-or-later)
+
+  The protocol layer and the device access of quietlinux-core are a Rust port of
+  this project:
+    crates/quietlinux-core/src/protocol.rs        <- lightmount/protocol.py
+    crates/quietlinux-core/src/device.rs          <- lightmount/device.py
+    crates/quietlinux-core/src/hid_descriptor.rs  <- lightmount/hid.py
+    crates/quietlinux-core/src/layout.rs          <- lightmount/layout.py
+    crates/quietlinux-core/tests/protocol.rs      <- tests/test_protocol.py
+  The test fixtures in crates/quietlinux-core/tests/fixtures/ are copied
+  unchanged from its tests/fixtures/ directory.
+
+monsgeek-akko-linux
+  https://github.com/echtzeit-solutions/monsgeek-akko-linux
+  License: GPL-3.0
+  No code is used. Its structure (separate protocol, transport and front ends)
+  and its capture-based method inspired this project.
+
+-------------------------------------------------------------------------------
+AI assistance
+-------------------------------------------------------------------------------
+
+Large parts of this project were written with the help of Claude (Anthropic).
+See the "AI notice" section of README.md.

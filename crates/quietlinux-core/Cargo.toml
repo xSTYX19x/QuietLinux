@@ -1,0 +1,15 @@
+[package]
+name = "quietlinux-core"
+description = "Protocol and device access for the be quiet! Light Mount keyboard"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+rustix.workspace = true
+
+[lints]
+workspace = true

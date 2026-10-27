@@ -1,0 +1,32 @@
+[workspace]
+resolver = "3"
+members = ["crates/quietlinux-core", "crates/quietlinux-cli"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "GPL-3.0-or-later"
+repository = "https://github.com/xSTYX19x/QuietLinux"
+authors = ["xSTYX19x"]
+
+[workspace.dependencies]
+quietlinux-core = { path = "crates/quietlinux-core" }
+clap = { version = "4.5", features = ["derive"] }
+rustix = { version = "1.0", default-features = false, features = ["std", "event"] }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_debug_implementations = "warn"
+
+[workspace.lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true

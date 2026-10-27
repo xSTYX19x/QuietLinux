@@ -8,10 +8,11 @@
 
 A free Linux tool to configure the **be quiet! Light Mount** keyboard
 (USB `373f:0002`) without the vendor's IO Center: lighting, key bindings,
-macros and profiles, with a command line tool and a graphical one.
+macros and backups, with a command line tool, a graphical one and an optional
+background service.
 
-**Status: early development.** What works today is listed below; the rest is
-planned in [docs/todo.md](docs/todo.md).
+**Status: first version.** Everything below works on the reference keyboard;
+what is still open is in [docs/todo.md](docs/todo.md).
 
 Not affiliated with or endorsed by be quiet!. See [Safety](#safety).
 
@@ -22,20 +23,21 @@ Not affiliated with or endorsed by be quiet!. See [Safety](#safety).
 | Find the keyboard; read firmware, layout, lighting, game mode, quick tap and key bindings (`info`) | ✅ |
 | Show the key presses the keyboard reports (`events`) | ✅ |
 | Effects (static, color wave, tornado, breathing, reactive, matrix) with color or gradient, brightness, speed, direction (stored in the keyboard); lighting off | ✅ |
-| Key bindings on both layers (normal and Fn): keys and combinations, media, mouse buttons, lighting actions, macros stored in the keyboard, disable, reset | ✅ |
+| Key bindings on both layers (normal and Fn) and the knob: keys and combinations, media, mouse buttons, lighting actions, macros, websites, disable, reset | ✅ |
 | Game mode: which shortcuts it blocks | ✅ |
 | Backup and restore of bindings, game mode and macros as a TOML file (`backup`, `apply`) | ✅ |
 | Background service (`quietlinux-daemon`): per-key colors shown again after replugging or sleep; website keys | ✅ |
 | Per-LED colors by zone (keys, top bar, knob, side strips) or by key (volatile) | ✅ |
 | Key map with layout-independent key names, legends for UK, German and French ISO | ✅ |
-| Macros stored in the keyboard: list, show, create, edit, delete (`macro`) | ✅ |
-| Per-key lighting that stays (IO Center keeps it alive from the PC too), open file/folder/website, profile switching keys | planned (background service) |
+| Macros stored in the keyboard: record by typing, list, show, create, edit, delete (`macro`) | ✅ |
+| Keys that open files or folders, profile switching keys | planned |
 | Graphical interface (`quietlinux-gui`): lighting with a color wheel, per-key colors, key bindings, macros, backup, game mode; demo mode with a simulated keyboard | ✅ first version |
 | Firmware updates | **never**, see [Safety](#safety) |
 
-Tested with: Light Mount Silent Linear, German ISO layout, firmware
-`02 00 01 01 00 00 03 02`. Other firmware versions are read-only unless you
-pass `--allow-unknown-firmware`.
+Tested with: Light Mount Silent Linear, German ISO layout, firmware 2.3.0.
+Other firmware versions are read-only unless you pass
+`--allow-unknown-firmware`; a [device report](docs/contributing.md#device-reports)
+helps to support them.
 
 ## Quick start
 
@@ -55,7 +57,7 @@ Details: [installation](docs/installation.md), [command line usage](docs/usage-c
 
 ## Documentation
 
-- [docs/installation.md](docs/installation.md): build, udev rule, permissions
+- [docs/installation.md](docs/installation.md): install script, build, udev rule, permissions, background service
 - [docs/usage-cli.md](docs/usage-cli.md): every command with examples
 - [docs/usage-gui.md](docs/usage-gui.md): the graphical interface
 - [docs/protocol.md](docs/protocol.md): what is known about the keyboard's protocol
@@ -75,9 +77,10 @@ Details: [installation](docs/installation.md), [command line usage](docs/usage-c
   **Note:** the keyboard also reports every key press on its vendor interface,
   so programs running as that user can read what is typed on the Light Mount.
   See [installation](docs/installation.md#permissions-udev-rule).
-- No network access, no open ports. The optional background service shows the
-  last per-key colors again after replugging or sleep and opens the websites
-  bound to keys; it reads the key events for that and drops all others.
+- QuietLinux makes no network connections and opens no ports. The optional
+  background service shows the last per-key colors again after replugging or
+  sleep and opens the websites bound to keys in your browser; it reads the key
+  events for that and drops all others.
 - Per-LED colors are volatile and do not wear the keyboard's flash memory.
 
 ## Credits

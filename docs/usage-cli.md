@@ -154,6 +154,9 @@ quietlinux light set all=000000                 # everything off
 - LEDs not given are switched off.
 - Realtime mode has no brightness setting, so `--dim` (0.0 to 1.0) scales the colors.
 - The Fn+←/→ effect keys switch back to effect mode and clear the colors.
+- The colors are remembered in `~/.config/quietlinux/lighting.toml`: the
+  background service shows them again after replugging or sleep, and the
+  window shows them under Lighting › Per key.
 
 Tip: too much green looks yellow on this keyboard (`ff6a00` looks yellow,
 `ff2a00` orange), and pure white is harsh on the strips.

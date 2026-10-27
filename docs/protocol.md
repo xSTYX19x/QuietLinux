@@ -616,6 +616,7 @@ files (`quietlinux backup`/`apply`).
 ## Unknown so far
 
 - Payload layouts of `10:07`/`10:08` (layer masks), `10:0b`/`10:0c` (playback), `11:04`/`11:05`, `11:06`, the `31` CONTROLS feature.
-- The `02 00 00` bytes of a macro's config; the purpose of `12:09` StartRecording when IO Center starts.
+- The `02 00 00` bytes of a macro's config; the purpose of `12:09` StartRecording when IO Center starts; whether a recording ends with the session.
+- Whether the `11:02` event of a website key carries the address (QuietLinux's background service reads the binding if not).
 - Polling rate, quick tap and LED calibration: IO Center for Windows has no settings for them on the Light Mount (fixed 1000 Hz; quick tap and calibration are for the TKL and the fans).
 - Everything marked **[web]** only: to be captured before use. See [todo.md](todo.md).

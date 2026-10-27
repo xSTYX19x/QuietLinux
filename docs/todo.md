@@ -4,7 +4,9 @@ Goal: a free, public Linux replacement for be quiet! **IO Center** for the
 **be quiet! Light Mount** (USB `373f:0002`), with a **CLI** and a **GUI**,
 well documented and with a clear notice about AI assistance.
 
-Status: **Phase 0 mostly done** (as of 2026-10-27). All basic decisions are made (1.4).
+Status (2026-10-27): **phases 0–6 done for the reference keyboard** (CLI,
+GUI, background service, install script, docs). Next: releases and packages
+(6.6), then the open points below.
 
 ---
 
@@ -60,14 +62,14 @@ Details in [protocol.md](protocol.md).
 
 | Topic | Decision |
 |---|---|
-| Name | **QuietLinux** (repository and project). Binaries: `quietlinux` (CLI), `quietlinux-gui`. "LightMountLinux" was rejected: too close to bbossa's tool `lightmount` and to the product name. |
+| Name | **QuietLinux** (repository and project). Binaries: `quietlinux` (CLI), `quietlinux-gui`, `quietlinux-daemon`. "LightMountLinux" was rejected: too close to bbossa's tool `lightmount` and to the product name. |
 | Language | **English** for everything in the repository: code, comments, docs, this file, commit messages, issues. |
 | Stack | **Rust** for core, CLI and daemon; **Slint** for the GUI (reasons in 6.1) |
 | Authorship | Maintainer as Git author (GitHub noreply address), Claude as `Co-Authored-By` in commits |
 | Reference device | Light Mount **Silent Linear, German ISO** (L-shaped Enter, Ä/Ö/Ü), M1–M5, knob with push button. Other layouts are welcome through contributed key maps. |
 | Firmware | **No** firmware update: never sent, captured or replayed |
 | Windows captures | a real Windows PC (no VM), captured with USBPcap, files transferred to the development machine |
-| Daemon | after the basic version (core, CLI, GUI) |
+| Daemon | after the basic version (core, CLI, GUI): done, `quietlinux-daemon` |
 | Upstream | bbossa is credited in the repository; no separate notification |
 
 ---
@@ -166,7 +168,7 @@ no reset problems when handing the device over.
 ### 4.3 Analysis tools (`tools/`)
 - [x] `qlcap frames`: pcap/pcapng (usbmon, USBPcap) or WebHID log → vendor messages (direction, time, `cmd:sub`, fragments reassembled, serial redacted)
 - [ ] `framediff`: compare two captures in which exactly one setting was changed (for now: `diff` of two `qlcap frames` outputs, see `docs/capturing.md`)
-- [x] `qlcap fixtures`: anonymized fixture lines (no `03:02` replies, no key events)
+- [x] `qlcap fixtures`: anonymized fixture lines (no `03:02` replies, no key events, no macro contents except `--macro ID`)
 
 ## 5. Phase 2 – Data collection
 
@@ -181,11 +183,11 @@ Windows app's macros and profiles).
 Checklist (extended while collecting):
 - [x] Connection setup: everything the app sends when opened (`protocol.md`)
 - [x] Each effect, then each parameter on its own (color, brightness, speed, direction, color mode)
-- [ ] Zones separate vs. together
-- [ ] Custom mode: stored vs. preview; layers
+- [x] Zones separate vs. together: not needed, per-LED colors cover every zone
+- [x] Custom mode: IO Center's per-key lighting is realtime mode; the stored custom mode with layers is unused (2.1)
 - [x] Remap a key to: key, combination, media, mouse, disabled, profile switch, lighting control
 - [x] Fn layer, knob (3 actions), M1–M5
-- [x] Create, change, delete, assign a macro; repeat mode changed (values still to be matched to the app's options) → `windows.hex`
+- [x] Create, change, delete, assign a macro; repeat modes (once, while held, repeat) → `windows.hex`
 - [x] IO Center for Windows starting (reads macros) → `windows.hex`
 - [x] Polling rate, quick tap, LED calibration: not offered for the Light Mount (fixed 1000 Hz; TKL and fan features)
 - [x] Switch profiles: everything written again → `windows.hex`
@@ -211,7 +213,7 @@ Result: **[protocol.md](protocol.md)**, the complete protocol description
   native on Wayland, redraws only on changes, typically a few tens of MB of RAM
   instead of 100+ MB for Qt/Python or Electron. License: GPLv3 option,
   compatible with ours.
-- **Daemon** (optional): blocks waiting for events (`poll`), 0 % CPU when idle, a few MB of RAM.
+- **Daemon** (optional): waits in `poll` for key events, looks for the keyboard every 2 s when it is unplugged; almost no CPU, under 1 MB binary.
 - **Rejected alternatives:** Python + PySide6 (bbossa's code usable as is, but
   Python runtime + Qt ≈ 100–150 MB RAM and slow start), Electron/Tauri (heavy,
   or a webview attack surface), GTK4-rs (good, but heavier than Slint and a
@@ -230,18 +232,23 @@ crates/
     settings.rs        names of effects, directions, actions for command lines and files
     macros.rs          macros as text; changing the stored macros
     config.rs          backup/apply file (serde, TOML)
+    state.rs           what the lighting showed last (lighting.toml), for the daemon
   quietlinux-cli/      binary `quietlinux` (clap)
   quietlinux-gui/      binary `quietlinux-gui` (Slint, software renderer; `--demo` with the simulated keyboard)
   quietlinux-daemon/   binary `quietlinux-daemon`: per-key colors again after replug/resume, website keys
 tools/qlcap/           capture decoder (pcap, pcapng, WebHID logs)
 tools/webhid-logger.js DevTools snippet that logs WebHID reports
+tools/windows-capture.ps1  guided USBPcap captures on Windows
 packaging/udev/        udev rule
+packaging/systemd/     user service of the daemon
+packaging/desktop/     menu entry of the window
+install.sh, uninstall.sh
 docs/
 ```
 
 CLI, GUI and daemon share the core library. The GUI contains no protocol
-logic. Dependencies stay minimal (today: clap, rustix) and are checked in CI
-(`cargo deny`).
+logic. Dependencies stay few (core: rustix, serde, toml; CLI and daemon: clap;
+GUI: Slint) and are checked in CI (`cargo deny`).
 
 ### 6.2 Phase 3 – Core library
 - [x] Protocol layer + tests against bbossa's fixtures
@@ -263,8 +270,8 @@ logic. Dependencies stay minimal (today: clap, rustix) and are checked in CI
 - [x] `bind` for all keys and both layers: key/combination, media, mouse button, lighting action, shortcut, disable, default; `light effect --dual`; tested on the reference keyboard (2026-10-27)
 - [x] Windows app captures (2026-10-27): effects, per-key lighting (realtime mode, not custom mode), macros, website and profile bindings, profiles → `windows.hex`, every request rebuilt in the tests; `qlcap` hides macro contents
 - [x] Lighting on/off switch: lighting mode `00`/`01` (`light off`, `light stored`); there is no game mode switch in either app (Fn+Pause)
-- [ ] Protocol layer for every command confirmed in phase 2, with fixtures
-- [ ] **Read** the device state first, write afterwards
+- [x] Protocol layer for every command confirmed in phase 2, with fixtures (every captured request is rebuilt byte for byte in the tests)
+- [x] **Read** the device state first, write afterwards (macros, apply, lighting mode)
 - [x] Backup/restore of what the keyboard reports (bindings, game mode); the effect is not readable from the Light Mount
 - [x] Move the config file, the name tables and the macro text (`config`, `settings`, `macros`) into quietlinux-core for the GUI
 - [ ] Fuzz the parsers (`cargo fuzz`)
@@ -273,9 +280,9 @@ logic. Dependencies stay minimal (today: clap, rustix) and are checked in CI
 - [x] `status`, `info`, `events`, `zones`, `keys`, `calibrate`, `light static`, `light stored`, `light set` (zones and single keys)
 - [x] `backup FILE` and `apply FILE [--dry-run]` (TOML; bindings, game mode, optional effect)
 - [x] `light effect …` for every effect
-- [ ] `keymap get|set|reset`
+- [x] `keymap get|set|reset`: done as `info` (bindings), `bind KEY …` and `bind KEY default`
 - [x] `macro list|show|create|edit|delete`, `bind KEY macro ID`, `light off`; tested on the reference keyboard (2026-10-27)
-- [ ] `profile list|switch|export|import`
+- [ ] Named profiles (list, switch) on top of backup files, also for the profile keys (2.4); export/import is `backup`/`apply`
 - [x] `game-mode --block` (quick tap: not on the Light Mount)
 - [ ] Shell completions (bash/zsh/fish), `--json` output for scripts
 
@@ -287,7 +294,7 @@ logic. Dependencies stay minimal (today: clap, rustix) and are checked in CI
 - [x] Game mode shortcuts in the window; game mode on/off shown in the title line (read every 2 s)
 - [x] Knob: press, turn left and turn right in the key editor
 - [x] Per-key colors in the window: brush with color wheel, click to paint, right-click to clear, light bar zones; sent at once (realtime, volatile)
-- [x] Remember the last effect (CLI and GUI, `last-effect.toml`; the keyboard does not report it) and the painted per-key colors (`gui.toml`); the window starts with them and with the view of the keyboard's lighting mode
+- [x] Remember the last effect (CLI and GUI, `last-effect.toml`; the keyboard does not report it) and the painted per-key colors (`lighting.toml`); the window starts with them and with the view of the keyboard's lighting mode
 - [x] Keep per-key colors shown: remembered in `lighting.toml`, shown again by the background service
 - [ ] Save and load several per-key color layouts as named files
 - [ ] A file chooser for the backup (needs the XDG desktop portal; today a file name field)

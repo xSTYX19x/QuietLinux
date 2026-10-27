@@ -99,6 +99,7 @@ impl Backend {
             (0x02, vec![0x02, 0x04]),       // M1 mic mute
             (0x03, vec![0x01, 0x00, 0x68]), // M2 F13
             (0x06, vec![0x0a, 0x01, 0x00]), // M5 macro 1
+            (0x09, vec![0x01, 0x00, 0x69]), // Caps Lock F14
         ] {
             kb.bindings.insert((key, p::LAYER_NORMAL), action);
         }
@@ -431,7 +432,7 @@ mod tests {
         let state = backend.handle(Request::Refresh).unwrap().state;
         assert_eq!(state.title, "Light Mount · firmware 2.3.0");
         assert_eq!(state.legends, Some(Layout::De));
-        assert_eq!(state.bindings.len(), 3);
+        assert_eq!(state.bindings.len(), 4);
         assert_eq!(state.macros.as_ref().map(Vec::len), Some(2));
         let reply = backend
             .handle(Request::Bind {
@@ -441,7 +442,7 @@ mod tests {
             })
             .unwrap();
         assert_eq!(reply.message, "M3: media: stop.");
-        assert_eq!(reply.state.bindings.len(), 4);
+        assert_eq!(reply.state.bindings.len(), 5);
         let err = backend
             .handle(Request::Bind {
                 key_id: 0x04,
@@ -497,7 +498,7 @@ mod tests {
                 overwrite: false,
             })
             .unwrap();
-        assert!(reply.message.contains("3 binding(s)"), "{}", reply.message);
+        assert!(reply.message.contains("4 binding(s)"), "{}", reply.message);
         // no second write without overwrite
         assert!(
             backend

@@ -86,7 +86,10 @@ Colors for single keys, like `quietlinux light set`:
 ![The keys tab](images/gui-keys.png)
 
 Click a key to see what it does, normally and with Fn held. Keys with a
-highlighted border are bound to something other than their factory binding.
+highlighted border are bound to something other than their factory binding;
+such a key shows its binding ("F14", "Ctrl+C", "Mute", a macro's name, "off")
+with its own legend small in the corner. Bindings of the Fn layer show when
+you click the key.
 The legends follow the layout the keyboard reports (German, UK or French ISO).
 
 To change a key, choose the layer (**Normal** or **With Fn**; for the knob

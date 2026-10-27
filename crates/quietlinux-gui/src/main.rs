@@ -22,7 +22,7 @@ use clap::Parser;
 use quietlinux_core::Rgb;
 use quietlinux_core::config::{self, EffectSetting};
 use quietlinux_core::device::LightingMode;
-use quietlinux_core::info::Colors;
+use quietlinux_core::info::{Action, Colors, Macro};
 use quietlinux_core::keymap::{self, KEYS, Layout};
 use quietlinux_core::layout::Zone;
 use quietlinux_core::macros::{self, RepeatMode};
@@ -339,7 +339,13 @@ impl Controller {
                     .map_or((slint::Color::default(), slint::Color::default()), |&rgb| {
                         (to_color(rgb), ink(rgb))
                     });
+                let bound = keymap::by_code(c.code)
+                    .filter(|_| !c.round)
+                    .and_then(|k| self.binding(k.key_id, false))
+                    .map(|b| binding_label(&b.action, legends, self.state.macros.as_deref()))
+                    .unwrap_or_default();
                 KeyCap {
+                    bound: bound.into(),
                     painted: painted.is_some(),
                     color,
                     ink,
@@ -927,6 +933,85 @@ impl Controller {
     }
 }
 
+/// A short label of what a key is bound to, for its keycap.
+fn binding_label(action: &Action, legends: Layout, macros: Option<&[Macro]>) -> String {
+    const MODIFIERS: [&str; 8] = [
+        "Ctrl", "Shift", "Alt", "Win", "RCtrl", "RShift", "AltGr", "RWin",
+    ];
+    let label = match action {
+        Action::Disabled => "off",
+        Action::StandardKey { modifiers, usage } => {
+            let mut parts: Vec<String> = MODIFIERS
+                .iter()
+                .enumerate()
+                .filter(|(bit, _)| modifiers & (1 << bit) != 0)
+                .map(|(_, name)| (*name).to_owned())
+                .collect();
+            if *usage != 0 {
+                // the key's legend in this layout, its first character only ("Q @" → "Q")
+                parts.push(keymap::code_for_hid_usage(*usage).map_or_else(
+                    || format!("#{usage:02x}"),
+                    |code| {
+                        legends
+                            .legend(code)
+                            .split(' ')
+                            .next()
+                            .unwrap_or(code)
+                            .to_owned()
+                    },
+                ));
+            }
+            return parts.join("+");
+        }
+        Action::Media(action) => match action {
+            1 => "Vol +",
+            2 => "Vol −",
+            3 => "Mute",
+            4 => "Mic mute",
+            5 => "Next",
+            6 => "Prev",
+            7 => "Play",
+            8 => "Stop",
+            _ => "Media",
+        },
+        Action::MediaSound(_) => "Sound",
+        Action::MouseButton { button, .. } => match button {
+            0 => "Mouse L",
+            1 => "Mouse R",
+            2 => "Mouse M",
+            3 => "Mouse fwd",
+            4 => "Mouse back",
+            _ => "Mouse",
+        },
+        Action::MouseScroll(_) => "Scroll",
+        Action::Backlight { action, .. } => match action {
+            2 => "Effect ›",
+            3 => "‹ Effect",
+            4 => "Light +",
+            5 => "Light −",
+            _ => "Effect",
+        },
+        Action::Macro(id) => {
+            return macros
+                .and_then(|list| list.iter().find(|m| m.id == *id))
+                .map_or_else(|| format!("Macro {id}"), |m| m.name.clone());
+        }
+        Action::WindowsShortcut(action) => {
+            return settings::Shortcut(*action)
+                .name()
+                .unwrap_or("Shortcut")
+                .to_owned();
+        }
+        Action::OpenWebsite(_) => "Website",
+        Action::OpenFile(_) => "File",
+        Action::OpenFolder(_) => "Folder",
+        Action::Profile(_) | Action::ProfileSelect(_) => "Profile",
+        Action::SpecialKey(_) => "Special",
+        Action::Unknown { .. } => "?",
+    };
+    label.to_owned()
+}
+
 /// Put an effect into the lighting fields.
 fn show_effect(ui: &AppWindow, e: &EffectSetting) {
     let index = |i: Option<usize>| i.and_then(|i| i32::try_from(i).ok()).unwrap_or(0);
@@ -1199,6 +1284,24 @@ mod tests {
     fn cli_definition() {
         use clap::CommandFactory;
         Cli::command().debug_assert();
+    }
+
+    #[test]
+    fn binding_labels() {
+        let label = |a: Action| binding_label(&a, Layout::De, None);
+        let key = |modifiers, usage| Action::StandardKey { modifiers, usage };
+        assert_eq!(label(key(0, 0x69)), "F14");
+        assert_eq!(label(key(0x01, 0x06)), "Ctrl+C");
+        assert_eq!(label(key(0x40, 0x14)), "AltGr+Q"); // German legend "Q @"
+        assert_eq!(label(key(0x02, 0)), "Shift");
+        assert_eq!(label(Action::Media(3)), "Mute");
+        assert_eq!(label(Action::Disabled), "off");
+        assert_eq!(label(Action::Macro(4)), "Macro 4");
+        let hello = [Macro::new(4, "hello", Vec::new())];
+        assert_eq!(
+            binding_label(&Action::Macro(4), Layout::De, Some(&hello)),
+            "hello"
+        );
     }
 
     #[test]

@@ -17,6 +17,8 @@ export struct KeyCap {
     round: bool,
     // the binding differs from the factory one (on any layer)
     changed: bool,
+    // a short label of the normal layer's binding, if it is not the factory one
+    bound: string,
     // per-key color, and a legend color that stays readable on it
     painted: bool,
     color: color,
@@ -63,11 +65,23 @@ component KeyboardView inherits Rectangle {
             ? Palette.selection-background
             : (touch.has-hover ? Palette.alternate-background : Palette.control-background);
 
+        // the bound key's own legend, small in the corner
+        // (not on the narrow macro keys: no room)
+        if !root.paint && cap.bound != "" && cap.w >= 1: Text {
+            x: 4px;
+            y: 2px;
+            text: cap.legend;
+            font-size: max(7px, root.u * 0.17);
+            color: Palette.alternate-foreground;
+        }
+
         Text {
             width: parent.width - 4px;
             height: parent.height - 4px;
-            text: cap.legend;
-            font-size: max(8px, root.u * 0.26);
+            text: !root.paint && cap.bound != "" ? cap.bound : cap.legend;
+            font-weight: !root.paint && cap.bound != "" ? 600 : 400;
+            // a binding on a narrow macro key gets a smaller font
+            font-size: max(7px, root.u * (!root.paint && cap.bound != "" && cap.w < 1 ? 0.18 : 0.26));
             color: root.paint && cap.painted
                 ? cap.ink
                 : !root.paint && cap.code == root.selected ? Palette.selection-foreground : Palette.control-foreground;

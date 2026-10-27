@@ -37,8 +37,8 @@ command line tool does everything it does.
 ## Lighting
 
 The switch at the top of the tab chooses what to edit: **Effect** (stored in the
-keyboard) or **Per key** (colors for single keys). Switching changes only the
-view, not the keyboard.
+keyboard) or **Per key** (colors for single keys). Choosing one shows it on
+the keyboard at once: the stored effect, or the painted keys.
 
 ### Effect
 

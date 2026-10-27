@@ -1024,8 +1024,9 @@ export component AppWindow inherits Window {
     in property <bool> busy;
     in property <bool> connected;
     in-out property <int> page;
-    // lighting tab: 0 effect, 1 per key
+    // lighting tab: 0 effect, 1 per key; choosing one shows it on the keyboard
     in-out property <int> lighting-view;
+    callback lighting-view-chosen();
     // the settings are shown instead of the tabs
     in-out property <bool> settings-open;
     // game mode: 0 unknown, 1 off, 2 on
@@ -1201,6 +1202,9 @@ export component AppWindow inherits Window {
                         Segmented {
                             items: ["Effect", "Per key"];
                             current <=> root.lighting-view;
+                            chosen => {
+                                root.lighting-view-chosen();
+                            }
                         }
                     }
 

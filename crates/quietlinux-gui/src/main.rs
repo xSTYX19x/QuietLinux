@@ -675,6 +675,8 @@ impl Controller {
                 if self.remember {
                     self.save_paint(ui);
                 }
+                // per-key colors are shown: the lighting is on
+                ui.set_lighting_on(1);
                 ui.set_status_error(false);
                 ui.set_status(
                     "Per-key colors shown (until the keyboard is unplugged or an effect is applied)."
@@ -743,6 +745,16 @@ impl Controller {
         if ui.get_lighting_on() == 0 {
             self.send(ui, Request::LightOff);
         } else if ui.get_lighting_view() == 1 && !self.painted.is_empty() {
+            self.send_paint(ui);
+        } else {
+            self.send(ui, Request::LightOn);
+        }
+    }
+
+    /// "Effect" or "Per key" chosen in the Lighting tab: show it on the keyboard.
+    /// The stored effect only needs the lighting mode; nothing is written to flash.
+    fn lighting_view_chosen(&mut self, ui: &AppWindow) {
+        if ui.get_lighting_view() == 1 {
             self.send_paint(ui);
         } else {
             self.send(ui, Request::LightOn);
@@ -975,6 +987,7 @@ fn set_up(ui: &AppWindow) {
     ui.on_refresh(|| with_controller(|c, ui| c.send(ui, Request::Refresh)));
     ui.on_effect_changed(|| with_controller(Controller::effect_changed));
     ui.on_lighting_chosen(|| with_controller(Controller::lighting_chosen));
+    ui.on_lighting_view_chosen(|| with_controller(Controller::lighting_view_chosen));
     ui.on_paint_key(|code| with_controller(|c, ui| c.paint_key(ui, &code, false)));
     ui.on_erase_key(|code| with_controller(|c, ui| c.paint_key(ui, &code, true)));
     ui.on_paint_all(|| with_controller(Controller::paint_all));

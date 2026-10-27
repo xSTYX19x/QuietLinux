@@ -163,15 +163,18 @@ and prints one message per line:
 
 ```console
 $ cargo run --release -p qlcap -- frames captures/lighting/03-breathing-speed-50-to-100.pcapng
-     0.000  →  03:01 version      seq 04 s00
-     0.912  ←  03:01 version      seq 04 s00  02 00 01 01 00 00 03 02
-     1.020  →  03:02 serial       seq 05 s00
-     1.874  ←  03:02 serial       seq 05 s00  <serial number redacted>
-  1530.441  →  10:06 effect       seq 2f s01  00 00 00 0a 32 00 e6 30 00
+     0.000  →  03:01 GetDeviceInfo          req 04 s00
+     0.912  ←  03:01 GetDeviceInfo          req 04 s00  02 00 01 01 00 00 03 02
+     1.020  →  03:02 GetSerialNumber        req 05 s00
+     1.874  ←  03:02 GetSerialNumber        req 05 s00  <serial number redacted>
+  1530.441  →  10:06 SetLayerConfig         req 2f s01  00 00 00 0a 32 00 e6 30 00
+  2210.007  ←  11:02 ActionFired            notify s01  5c 80 01 09 03
 ```
 
 Columns: time in ms, direction (`→` to the keyboard, `←` from it), command and
-its name if known, sequence number, session byte, data.
+its name (as IO Center names it, see [protocol.md](protocol.md)), request ID
+(`notify` for notifications the keyboard sends on its own), session byte, a
+status name if the keyboard reported an error, data.
 
 - `--no-key-events` hides key presses (`11:02`).
 - `--device BUS.ADDRESS` picks a device if several are found (`qlcap` says so).

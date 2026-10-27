@@ -30,13 +30,15 @@ Reads the keyboard's identity and lighting mode. Sends only read requests.
 $ quietlinux status
 Light Mount at USB 1-2 (/dev/hidraw6)
 Firmware version: 02 00 01 01 00 00 03 02 (tested)
-Lighting mode:    effects
+Lighting mode:    effect
 ```
 
 Lighting modes:
 
-- `effects`: a firmware effect runs (set with `light static`, IO Center or Fn+←/→).
-- `custom`: per-LED colors are shown (set with `light set`).
+- `effect`: the effect stored in the keyboard runs (set with `light static`, IO Center or Fn+←/→).
+- `realtime`: per-LED colors are shown (set with `light set`), until the keyboard is unplugged.
+- `custom`: stored per-key colors (set with IO Center; not supported by QuietLinux yet).
+- `off`: lighting off.
 
 ## `zones`
 
@@ -69,7 +71,7 @@ LED  NAME            LEGEND (de)
 
 ## `light static COLOR [--brightness PERCENT]`
 
-Switches to effects mode and sets a static color. **Stored in the keyboard**:
+Switches to effect mode and sets a static color. **Stored in the keyboard**:
 it survives a replug.
 
 ```sh
@@ -82,7 +84,7 @@ Colors are 6 hex digits (`rrggbb`, a leading `#` is allowed). Brightness is
 
 ## `light set TARGET=COLOR... [--dim FACTOR]`
 
-Switches to custom mode and sets colors per zone or per key. **Volatile**: lost
+Switches to realtime mode and sets colors per zone or per key. **Volatile**: lost
 when the keyboard is unplugged, then it shows its stored effect again.
 
 ```sh
@@ -96,15 +98,15 @@ quietlinux light set all=000000                 # everything off
 - Targets: the zones `all`, `top`, `knob`, `keys`, `left`, `right`, or a
   [key name](#key-names).
 - LEDs not given are switched off.
-- Custom mode has no brightness setting, so `--dim` (0.0 to 1.0) scales the colors.
-- The Fn+←/→ effect keys switch back to effects mode and clear the custom colors.
+- Realtime mode has no brightness setting, so `--dim` (0.0 to 1.0) scales the colors.
+- The Fn+←/→ effect keys switch back to effect mode and clear the colors.
 
 Tip: too much green looks yellow on this keyboard (`ff6a00` looks yellow,
 `ff2a00` orange), and pure white is harsh on the strips.
 
 ## `light stored`
 
-Leaves custom mode: the effect stored in the keyboard shows again. Use it to
+Leaves realtime mode: the effect stored in the keyboard shows again. Use it to
 undo `light set` without unplugging the keyboard.
 
 ## `calibrate [--start HEX]`
@@ -128,8 +130,8 @@ $ quietlinux calibrate --layout de
 - **q** (or Ctrl+D): stop.
 - `--start 6a` resumes at an LED index.
 
-At the end the stored effect shows again. If the keyboard was in custom mode
-before, its colors cannot be read back: set them again with `light set`.
+At the end the previous lighting mode is restored. If the keyboard was in
+realtime mode before, its colors cannot be read back: set them again with `light set`.
 Exit status `1` if there was any mismatch.
 
 ## Exit status
@@ -143,3 +145,4 @@ Exit status `1` if there was any mismatch.
 | `untested firmware version …, nothing written` | Please open an issue with the `quietlinux status` output. `--allow-unknown-firmware` forces writing. |
 | `several Light Mount keyboards` | Choose one with `--usb-path`. |
 | `no reply to 03:01` | Another program (e.g. an IO Center Web tab) is talking to the keyboard: close it and retry. |
+| `… failed: BUSY` (or another status name) | The keyboard refused the request; the name says why (see [protocol.md](protocol.md#status-codes)). |

@@ -33,6 +33,13 @@ monsgeek-akko-linux
   No code is used. Its structure (separate protocol, transport and front ends)
   and its capture-based method inspired this project.
 
+IO Center Web (be quiet!)
+  https://iocenter.bequiet.com/
+  Protocol facts (command numbers and names, enumerations, message layouts)
+  were read from the JavaScript the web app serves to every browser, to make
+  QuietLinux interoperable with the keyboard. No code from it is included;
+  docs/protocol.md marks every such fact with [web].
+
 -------------------------------------------------------------------------------
 AI assistance
 -------------------------------------------------------------------------------

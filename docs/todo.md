@@ -81,8 +81,8 @@ Windows app and the web app in phase 2. ✔ = already known thanks to bbossa.
 - [ ] Effects: static ✔, color wave, tornado, breathing, matrix, reactive, ripple, off
 - [ ] Parameters per effect: color(s) / color mode (single, rainbow, …), brightness, speed, direction
 - [ ] Zones: keys, top bar, knob, left/right side strip, separately or as one group
-- [ ] Custom mode: color per key/LED ✔ (volatile). Find out whether a **stored** variant exists
-- [ ] Custom mode with up to 10 layers (find out: in the device or computed by the app)
+- [ ] Custom mode: color per key/LED ✔ (volatile, "realtime" mode `03`). A **stored** variant exists: lighting mode `02` "custom" with layers and layer masks [web]; layer mask format still unknown
+- [ ] Custom mode with up to 10 layers: `10:03`–`10:0a` (layers layout, config, mask, name) exist in the protocol [web]; to be captured from the Windows app
 - [ ] LED color calibration
 - [ ] Interaction with LampArray / Dynamic Lighting (interface 3)
 
@@ -97,10 +97,10 @@ Windows app and the web app in phase 2. ✔ = already known thanks to bbossa.
 ### 2.3 Macros
 - [ ] Macro library, up to 999 events (key down/up, delays)
 - [ ] Recording, editing, repeat modes (find out: once, n times, while held, toggle?)
-- [ ] Find out: are macros stored in the device or played back by the host?
+- [ ] Find out: are macros stored in the device or played back by the host? IO Center Web does not support macros on the full-size Light Mount at all and only records them on the TKL: probably host-side (binding type `0a` + `11:02` ActionFired). Check with the Windows app
 
 ### 2.4 Profiles
-- [ ] Find out how many profiles the device holds; switch, read, write
+- [ ] Find out how many profiles the device holds; switch, read, write. No profile commands in the protocol [web]: profiles are probably kept by the host app and written to the keyboard when switched (binding type `08` profile actions)
 - [ ] Export/import profiles as files (own documented format, e.g. TOML)
 
 ### 2.5 Product settings
@@ -139,7 +139,7 @@ Goal: reproducible, well-labeled captures to read the protocol from.
 - [x] Install the rule on the development machine and remove conflicting older rules
 - [x] Guide for usbmon + Wireshark/tshark in `docs/capturing.md`
 - [x] **WebHID hook in DevTools** (`tools/webhid-logger.js`): small JS snippet that logs `HIDDevice.sendReport`, `sendFeatureReport`, `receiveFeatureReport` and `inputreport` (with timestamps and a plain-text note). Gives clean logs without USB overhead that can be matched with what was just clicked in the UI
-- [ ] Check whether the web app ships its command tables (command codes, effect IDs, key codes) in its JavaScript. That would be the fastest and most complete source. We only read it for interoperability and copy no code
+- [x] Check whether the web app ships its command tables in its JavaScript: **yes**. Features, commands, status codes, enumerations, payload layouts and key IDs are documented in `protocol.md`, marked [web] until captured. Read only for interoperability, no code copied
 
 ### 4.2 Windows PC (IO Center.exe)
 A real Windows PC is simpler and more reliable than a VM: no USB passthrough and
@@ -163,8 +163,12 @@ Method: **one change per capture**, each with a short note
 (`captures/<area>/<nr>-<description>.pcapng` + `.md`). Captures stay local and
 never enter the repository; only small anonymized fixtures do.
 
+Since the IO Center Web analysis, captures mainly **confirm** what `protocol.md`
+marks [web] before QuietLinux sends it, and fill the gaps (layer masks, the
+Windows app's macros and profiles).
+
 Checklist (extended while collecting):
-- [ ] Connection setup: everything the app sends when opened (identification, session `01:01`, reading the state)
+- [ ] Connection setup: everything the app sends when opened (expected sequence in `protocol.md`)
 - [ ] Each effect, then each parameter on its own (color, brightness, speed, direction, color mode)
 - [ ] Zones separate vs. together
 - [ ] Custom mode: stored vs. preview; layers
@@ -227,7 +231,11 @@ logic. Dependencies stay minimal (today: clap, rustix) and are checked in CI
 ### 6.2 Phase 3 – Core library
 - [x] Protocol layer + tests against bbossa's fixtures
 - [x] Transport + device checks (VID/PID, interfaces, report descriptors, known firmware)
-- [ ] Protocol layer for every command found in phase 2, with fixtures
+- [x] Protocol names from IO Center Web (features, commands, status codes); reply status checked; request ID never 0
+- [ ] Vendor key IDs (`KEY_ID2`) in the key map, and the knob's turn left/right as binding targets
+- [ ] `quietlinux events`: show key IDs of pressed keys (read-only, from `11:02` notifications), to confirm K42/K45 and the key ID table
+- [ ] Read-only commands first: `01:04` features, `01:05` QLink version, `07:01` layout (auto-select legends), `07:02`/`07:04` game mode, `06:01` polling rate, `10:05` layer config, `11:01` bindings, `11:04` bindings enabled
+- [ ] Protocol layer for every command confirmed in phase 2, with fixtures
 - [ ] **Read** the device state first, write afterwards
 - [ ] Backup/restore: save the complete device state to a file before writing
 - [ ] Fuzz the parsers (`cargo fuzz`)

@@ -33,6 +33,11 @@ while [ $# -gt 0 ]; do
     shift
 done
 
+if [ "$(id -u)" = 0 ]; then
+    echo "run this as your normal user, not with sudo: it removes what was installed for your user and asks sudo only for the udev rule" >&2
+    exit 1
+fi
+
 say() { printf '\033[1m==> %s\033[0m\n' "$*"; }
 
 unit="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/quietlinux-daemon.service"

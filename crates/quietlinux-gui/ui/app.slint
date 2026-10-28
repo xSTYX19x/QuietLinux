@@ -432,7 +432,6 @@ component PerKeyPage inherits VerticalBox {
     callback all-keys();
     callback clear();
     callback zones-changed();
-    callback back-to-effect();
 
     HorizontalLayout {
         spacing: 12px;
@@ -468,14 +467,6 @@ component PerKeyPage inherits VerticalBox {
 
         Rectangle {
             horizontal-stretch: 1;
-        }
-
-        Button {
-            text: "Back to effect";
-            enabled: root.enabled;
-            clicked => {
-                root.back-to-effect();
-            }
         }
     }
 
@@ -556,7 +547,7 @@ component PerKeyPage inherits VerticalBox {
     }
 
     Text {
-        text: "Click a key to paint it with the brush, right-click to switch it off. The colors show at once. They are not stored in the keyboard: unplugging it or applying an effect ends them.";
+        text: "Click a key to paint it with the brush, right-click to switch it off. The colors show at once. They are not stored in the keyboard: unplugging it, sleep or choosing \"Effect\" ends them; the background service (quietlinux-daemon) shows them again after replugging and sleep.";
         color: Palette.alternate-foreground;
         wrap: word-wrap;
     }
@@ -881,6 +872,7 @@ component SettingsPage inherits VerticalBox {
     in property <string> checked-file;
     in property <string> file-details;
     in property <string> device-title;
+    in property <string> version;
     in property <bool> enabled;
     callback apply-game-mode();
     callback save-backup();
@@ -1006,6 +998,15 @@ component SettingsPage inherits VerticalBox {
         Text {
             text: root.device-title != "" ? root.device-title : "Not connected";
             color: Palette.alternate-foreground;
+        }
+    }
+
+    GroupBox {
+        title: "About";
+        Text {
+            text: "QuietLinux " + root.version + " · GPL-3.0-or-later · github.com/xSTYX19x/QuietLinux\nNot affiliated with be quiet!. Developed with the help of AI; use at your own risk.";
+            color: Palette.alternate-foreground;
+            wrap: word-wrap;
         }
     }
 }
@@ -1137,6 +1138,7 @@ export component AppWindow inherits Window {
 
     // model and firmware (settings), and a note for the title line
     in property <string> device-title;
+    in property <string> version;
     in property <string> device-note: "Looking for the keyboard …";
     in property <string> status;
     in property <bool> status-error;
@@ -1192,7 +1194,6 @@ export component AppWindow inherits Window {
     callback paint-all();
     callback paint-clear();
     callback zones-changed();
-    callback back-to-effect();
 
     // keys
     in property <[KeyCap]> keys;
@@ -1398,9 +1399,6 @@ export component AppWindow inherits Window {
                             zones-changed => {
                                 root.zones-changed();
                             }
-                            back-to-effect => {
-                                root.back-to-effect();
-                            }
                         }
                 }
             }
@@ -1505,6 +1503,7 @@ export component AppWindow inherits Window {
                     checked-file: root.checked-file;
                     file-details: root.file-details;
                     device-title: root.device-title;
+                    version: root.version;
                     enabled: root.can-write;
                     apply-game-mode => {
                         root.apply-game-mode();

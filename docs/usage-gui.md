@@ -77,7 +77,7 @@ Colors for single keys, like `quietlinux light set`:
   empty means off.
 - Changes show on the keyboard at once (realtime mode).
 - These colors are **not stored** in the keyboard: unplugging it ends them,
-  and so do **Back to effect** or applying an effect. The window remembers
+  and so does choosing **Effect** or applying an effect. The window remembers
   them (in `~/.config/quietlinux/lighting.toml`) and shows them again when it
   opens; painting a key sends them all to the keyboard again. The background
   service shows them again after replugging or sleep
@@ -150,8 +150,9 @@ arrow at the top left (or the gear again) returns to the tabs.
   **Save backup** writes it; an existing file only with **Overwrite**.
   **Check file** lists what applying it would change, without writing; only
   then **Apply file** writes it. `~/` is your home folder. The file contains
-  what your macros type: keep it private.
+  what your macros type: it is readable only by you; keep it private.
 - **Device**: model and firmware version of the keyboard.
+- **About**: QuietLinux's version and license.
 
 ## Not in the window yet
 

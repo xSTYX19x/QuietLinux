@@ -230,7 +230,7 @@ quietlinux bind M5 macro 2                # a macro stored in the keyboard
 | `lighting ACTION` | `next-effect`, `previous-effect`, `brighter`, `darker` |
 | `shortcut NAME` | Windows shortcuts (`calculator`, `task-manager`, `lock-pc`, …): IO Center performs them on Windows; on Linux nothing happens yet |
 | `macro ID` | a macro stored in the keyboard; `quietlinux info` lists their IDs. The keyboard plays it itself |
-| `website URL` | open a website (`http://` or `https://`, at most 51 characters). The keyboard only reports the press: the [background service](installation.md#background-service-optional) opens it |
+| `website URL` | open a website (`http://` or `https://` and a host, at most 51 characters, no spaces or quotes). The keyboard only reports the press: the [background service](installation.md#background-service-optional) opens it |
 | `disable` | the key does nothing |
 | `default` | back to the factory binding |
 
@@ -365,8 +365,8 @@ events = "+ctrl KeyA -ctrl 50ms +ctrl KeyC -ctrl"
   (`+ctrl KeyA -ctrl` is the same as `ctrl+KeyA`). Events without a name are
   stored as `raw_events` (4 hex bytes each), a config `apply` has no name for
   as `config`.
-- **The file contains what your macros type.** Keep it private; do not attach
-  it to an issue.
+- **The file contains what your macros type.** QuietLinux creates it readable
+  only by you (mode 600); keep it private and do not attach it to an issue.
 
 ## `apply FILE [--dry-run]`
 

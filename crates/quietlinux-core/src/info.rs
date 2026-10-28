@@ -612,13 +612,23 @@ impl Action {
 /// key ID, layer, action type and length, like the captured binding.
 pub const MAX_WEBSITE: usize = 51;
 
-/// A website binding QuietLinux writes: `http://` or `https://`, printable ASCII,
-/// at most [`MAX_WEBSITE`] characters.
+/// A website binding QuietLinux writes and opens: `http://` or `https://` and a
+/// host, at most [`MAX_WEBSITE`] characters, only characters web addresses may
+/// contain (RFC 3986; no spaces, quotes, backslashes or backticks).
 pub fn website_ok(url: &str) -> bool {
-    (url.starts_with("https://") || url.starts_with("http://"))
+    let rest = url
+        .strip_prefix("https://")
+        .or_else(|| url.strip_prefix("http://"));
+    rest.is_some_and(|r| !r.is_empty() && !r.starts_with('/'))
         && url.len() <= MAX_WEBSITE
-        && url.chars().all(|c| c.is_ascii_graphic())
+        && url
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || "-._~:/?#[]@!$&'()*+,;=%".contains(c))
 }
+
+/// What [`website_ok`] accepts, for error messages.
+pub const WEBSITE_RULES: &str =
+    "http:// or https:// and a host, at most 51 characters, no spaces or quotes";
 
 fn modifier_names(modifiers: u8) -> Vec<&'static str> {
     [
@@ -1042,6 +1052,27 @@ mod tests {
             Action::OpenWebsite("file:///etc/passwd".into()).to_bytes(),
             None
         );
+        for bad in [
+            "https://",
+            "http:///x",
+            "https://a b",
+            "https://a\"b",
+            "https://a`id`",
+            "https://a\\b",
+            "https://a<b>",
+            "https://ä.de",
+            "HTTPS://example.org",
+        ] {
+            assert!(!website_ok(bad), "{bad}");
+        }
+        for good in [
+            "http://localhost:8080/",
+            "https://example.org/a?b=c&d=%20#top",
+            "https://[::1]/x",
+        ] {
+            assert!(website_ok(good), "{good}");
+        }
+        assert!(WEBSITE_RULES.contains(&MAX_WEBSITE.to_string()));
         assert_eq!(
             Action::Backlight {
                 action: 1,

@@ -172,10 +172,7 @@ pub fn parse_desired(text: &str) -> Result<Desired, String> {
         "shortcut" => Action::WindowsShortcut(arg.parse::<Shortcut>()?.0),
         "website" if info::website_ok(arg) => Action::OpenWebsite(arg.to_owned()),
         "website" => {
-            return Err(format!(
-                "invalid website {arg:?}: http:// or https://, at most {} characters, no spaces",
-                info::MAX_WEBSITE
-            ));
+            return Err(format!("invalid website {arg:?}: {}", info::WEBSITE_RULES));
         }
         "macro" => Action::Macro(
             arg.parse()
@@ -219,6 +216,28 @@ const EFFECT_TEMPLATE: &str = r#"
 # speed = 50
 # direction = "up"     # color-wave, matrix: up, down, left, right; tornado: clockwise, counterclockwise
 "#;
+
+/// Write a backup file that only its owner can read: it holds what the macros
+/// type. Without `overwrite`, an existing file is an error
+/// ([`std::io::ErrorKind::AlreadyExists`]), checked as the file is created.
+pub fn write_backup(path: &Path, text: &str, overwrite: bool) -> std::io::Result<()> {
+    use std::io::Write as _;
+    use std::os::unix::fs::{OpenOptionsExt as _, PermissionsExt as _};
+
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).mode(0o600);
+    if overwrite {
+        options.create(true).truncate(true);
+    } else {
+        options.create_new(true);
+    }
+    let mut file = options.open(path)?;
+    // an overwritten file keeps its mode otherwise
+    if file.metadata()?.is_file() {
+        file.set_permissions(std::fs::Permissions::from_mode(0o600))?;
+    }
+    file.write_all(text.as_bytes())
+}
 
 /// Text of a backup file.
 pub fn backup_text(s: &Snapshot) -> String {
@@ -1201,6 +1220,27 @@ mod tests {
             save_effect(&path, &e).unwrap();
             assert_eq!(load_effect(&path), Some(e));
         }
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn backups_are_private_and_not_overwritten_by_mistake() {
+        use std::os::unix::fs::PermissionsExt as _;
+        let dir = std::env::temp_dir().join(format!("quietlinux-backup-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("backup.toml");
+        let mode = |p: &Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+
+        write_backup(&path, "a", false).unwrap();
+        assert_eq!(mode(&path), 0o600);
+        let err = write_backup(&path, "b", false).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::AlreadyExists);
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "a");
+
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+        write_backup(&path, "c", true).unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "c");
+        assert_eq!(mode(&path), 0o600);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

@@ -1,6 +1,6 @@
 [package]
 name = "quietlinux-daemon"
-description = "Background service for the be quiet! Light Mount keyboard: shows per-key colors again after replugging or sleep"
+description = "Background service for the be quiet! Light Mount keyboard: shows per-key colors again after replugging or sleep, opens website keys"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

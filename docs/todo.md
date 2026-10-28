@@ -4,7 +4,7 @@ Goal: a free, public Linux replacement for be quiet! **IO Center** for the
 **be quiet! Light Mount** (USB `373f:0002`), with a **CLI** and a **GUI**,
 well documented and with a clear notice about AI assistance.
 
-Status (2026-10-27): **phases 0–6 done for the reference keyboard** (CLI,
+Status (2026-10-28): **phases 0–6 done for the reference keyboard** (CLI,
 GUI, background service, install script, docs). Next: releases and packages
 (6.6), then the open points below.
 
@@ -319,6 +319,7 @@ GUI: Slint) and are checked in CI (`cargo deny`).
 ### 6.6 Phase 7 – Release
 - [x] Docs: `README.md`, `docs/installation.md`, `docs/usage-cli.md`, `docs/usage-gui.md`, `docs/protocol.md`, `docs/troubleshooting.md`, `docs/contributing.md`
 - [x] Install script (`install.sh`, `uninstall.sh`): programs, menu entry and icon, udev rule, user service
+- [x] Polish and security pass (2026-10-28): help for every argument, backups written with mode 600, website addresses limited to URL characters and one opened a second, install script refuses root and odd prefixes
 - [ ] Packages: AUR (PKGBUILD), `cargo install`, prebuilt binaries in releases, maybe .deb/Flatpak
 - [ ] GitHub release, issue template "device report"
 

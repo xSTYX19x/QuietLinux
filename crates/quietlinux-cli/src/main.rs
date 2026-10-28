@@ -77,11 +77,12 @@ enum Command {
         /// Allow changing Enter
         #[arg(long)]
         force: bool,
+        /// Key name, e.g. CapsLock, M1, KnobLeft (see `quietlinux keys`)
         key: settings::BindKey,
         #[command(subcommand)]
         action: BindAction,
     },
-    /// Macros stored in the keyboard: list, show, create, edit, delete
+    /// Macros stored in the keyboard: list, show, create, edit, delete, record
     ///
     /// Events: KeyA taps a key, ctrl+KeyC a combination, +shift / -shift press /
     /// release a key, 250ms sets the pause after the previous event (default
@@ -94,6 +95,7 @@ enum Command {
     /// `-` writes to standard output. The effect cannot be read from the Light Mount;
     /// the file contains a template to add one.
     Backup {
+        /// File to write (TOML), or `-`
         file: PathBuf,
         /// Overwrite an existing file
         #[arg(long)]
@@ -105,6 +107,7 @@ enum Command {
     /// [bindings], keys not listed get their factory binding back, except bindings
     /// QuietLinux cannot recreate.
     Apply {
+        /// Backup file to apply (TOML)
         file: PathBuf,
         /// Show the changes without making them
         #[arg(long)]
@@ -130,7 +133,11 @@ enum Command {
 #[derive(Debug, Subcommand)]
 enum BindAction {
     /// A key or key combination, e.g. KeyA, ctrl+KeyC, ctrl+shift+F13
-    Key { combo: settings::KeyCombo },
+    Key {
+        /// Modifiers (ctrl, shift, alt, win, rctrl, rshift, altgr, rwin) and one
+        /// key, joined with `+`
+        combo: settings::KeyCombo,
+    },
     /// volume-up, volume-down, mute, mic-mute, next-track, previous-track, play-pause, stop
     Media { action: settings::MediaAction },
     /// A mouse button: left, right, middle, forward, back
@@ -140,12 +147,15 @@ enum BindAction {
     /// A Windows shortcut (calculator, task-manager, …): performed by IO Center on
     /// Windows; on Linux nothing happens yet
     Shortcut { name: settings::Shortcut },
-    /// A macro stored in the keyboard, by its ID (`quietlinux info` lists them);
-    /// the keyboard plays it itself
-    Macro { id: u16 },
+    /// A macro stored in the keyboard, by its ID; the keyboard plays it itself
+    Macro {
+        /// Macro ID (see `quietlinux macro list`)
+        id: u16,
+    },
     /// Open a website (http or https, at most 51 characters); the background
     /// service (quietlinux-daemon) opens it when the key is pressed
     Website {
+        /// Address starting with http:// or https://
         #[arg(value_parser = parse_website)]
         url: String,
     },
@@ -187,9 +197,13 @@ enum MacroCommand {
     /// List the macros: ID, name, repeat mode, number of events (read-only)
     List,
     /// Show a macro's events, in the syntax of `macro create` (read-only)
-    Show { id: u16 },
+    Show {
+        /// Macro ID (see `quietlinux macro list`)
+        id: u16,
+    },
     /// Store a new macro in the keyboard; bind it with `quietlinux bind KEY macro ID`
     Create {
+        /// Name of the macro
         name: String,
         /// Events (see `quietlinux macro --help`); options go before them
         #[arg(required = true, allow_hyphen_values = true)]
@@ -203,7 +217,9 @@ enum MacroCommand {
     },
     /// Change a macro's name, repeat mode or events
     Edit {
+        /// Macro ID (see `quietlinux macro list`)
         id: u16,
+        /// New name
         #[arg(long)]
         name: Option<String>,
         /// once, while-held or repeat
@@ -217,7 +233,10 @@ enum MacroCommand {
         delay: u16,
     },
     /// Delete a macro (refused while a key is bound to it)
-    Delete { id: u16 },
+    Delete {
+        /// Macro ID (see `quietlinux macro list`)
+        id: u16,
+    },
     /// Record a macro by typing it on the Light Mount; Enter in this terminal stops
     ///
     /// Uses the keyboard's own recording (as IO Center for Windows). Prints the
@@ -342,6 +361,7 @@ enum Light {
     ///
     /// Examples: quietlinux light effect breathing; quietlinux light effect static --color ff1493
     Effect {
+        /// static, color-wave, tornado, breathing, reactive or matrix
         effect: settings::Effect,
         /// One color (default for static: e63000; for the others IO Center's rainbow gradient)
         #[arg(long, conflicts_with_all = ["gradient", "dual"])]
@@ -386,10 +406,7 @@ fn parse_website(s: &str) -> Result<String, String> {
     if quietlinux_core::info::website_ok(s) {
         Ok(s.to_owned())
     } else {
-        Err(format!(
-            "http:// or https://, at most {} characters, no spaces",
-            quietlinux_core::info::MAX_WEBSITE
-        ))
+        Err(quietlinux_core::info::WEBSITE_RULES.to_owned())
     }
 }
 
@@ -644,7 +661,13 @@ fn run(cli: Cli) -> Result<ExitCode, Box<dyn std::error::Error>> {
             if to_stdout {
                 print!("{text}");
             } else {
-                std::fs::write(&file, text).map_err(|e| format!("{}: {e}", file.display()))?;
+                config::write_backup(&file, &text, force).map_err(|e| {
+                    if e.kind() == std::io::ErrorKind::AlreadyExists {
+                        format!("{} exists: add --force to overwrite it", file.display())
+                    } else {
+                        format!("{}: {e}", file.display())
+                    }
+                })?;
                 let macros = snapshot.macros.as_ref().map_or_else(
                     || "macros not reported".to_owned(),
                     |m| format!("{} macro(s)", m.len()),

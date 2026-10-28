@@ -838,9 +838,15 @@ impl Controller {
             .or(shown)
             .and_then(|d| list.iter().position(|x| *x == d))
             .unwrap_or(0);
-        ui.set_directions(strings(
-            list.iter().filter_map(|d| d.name()).map(str::to_owned),
-        ));
+        let names: Vec<String> = if list.is_empty() {
+            vec!["none".to_owned()]
+        } else {
+            list.iter()
+                .filter_map(|d| d.name())
+                .map(str::to_owned)
+                .collect()
+        };
+        ui.set_directions(strings(names));
         ui.set_direction_index(i32::try_from(index).unwrap_or(0));
         ui.set_has_direction(!list.is_empty());
         self.directions = list;
@@ -1152,6 +1158,7 @@ fn swatch(hex: &str) -> slint::Color {
 
 /// Static content and callbacks of a new window.
 fn set_up(ui: &AppWindow) {
+    ui.set_version(env!("CARGO_PKG_VERSION").into());
     ui.set_effects(strings(
         Effect::all()
             .into_iter()
@@ -1190,7 +1197,6 @@ fn set_up(ui: &AppWindow) {
     ui.on_paint_all(|| with_controller(Controller::paint_all));
     ui.on_paint_clear(|| with_controller(Controller::paint_clear));
     ui.on_zones_changed(|| with_controller(|c, _| c.schedule_paint()));
-    ui.on_back_to_effect(|| with_controller(|c, ui| c.send(ui, Request::LightOn)));
     ui.on_key_clicked(|code| with_controller(|c, ui| c.select_key(ui, &code)));
     ui.on_editor_changed(|| with_controller(Controller::editor_changed));
     ui.on_apply_binding(|| with_controller(Controller::apply_binding));

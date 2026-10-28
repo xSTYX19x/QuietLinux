@@ -22,8 +22,10 @@ cd QuietLinux
 It builds the programs, installs them to `~/.local/bin`, adds QuietLinux to the
 application menu and installs the [udev rule](#permissions-udev-rule).
 `--no-gui` leaves out the window, `--no-udev` the rule, `--prefix DIR` installs
-elsewhere. `./uninstall.sh` removes everything again (your settings in
-`~/.config/quietlinux` stay). The sections below do the same by hand.
+elsewhere. Run it as your normal user, not with `sudo`: it asks sudo itself,
+only for the udev rule. `./uninstall.sh` removes everything again (your
+settings in `~/.config/quietlinux` stay). The sections below do the same by
+hand.
 
 ## Build
 
@@ -55,7 +57,9 @@ install -Dm755 target/release/quietlinux-daemon ~/.local/bin/quietlinux-daemon
   `quietlinux light set/off/effect`). With an effect it sends nothing: the
   keyboard shows it by itself.
 - **Website keys.** Keys bound to "open website" (`quietlinux bind KEY website
-  URL`) only report the press; the service opens the address with `xdg-open`.
+  URL`) only report the press; the service opens the address with `xdg-open`
+  (without a shell, only `http://` and `https://` addresses, at most one a
+  second).
 
 To see those presses, it reads the key events of the keyboard's vendor
 interface, which reports **every** key press (see

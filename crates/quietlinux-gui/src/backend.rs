@@ -227,16 +227,23 @@ fn backup<T: Transport>(
     path: &std::path::Path,
     overwrite: bool,
 ) -> Result<Lines, Box<dyn std::error::Error>> {
-    if path.exists() && !overwrite {
-        return Err(format!(
+    let exists = || {
+        format!(
             "{} exists: tick \"Overwrite\" to replace it",
             path.display()
         )
-        .into());
+    };
+    if path.exists() && !overwrite {
+        return Err(exists().into());
     }
     let snapshot = config::read_snapshot(session)?;
-    std::fs::write(path, config::backup_text(&snapshot))
-        .map_err(|e| format!("{}: {e}", path.display()))?;
+    config::write_backup(path, &config::backup_text(&snapshot), overwrite).map_err(|e| {
+        if e.kind() == std::io::ErrorKind::AlreadyExists {
+            exists()
+        } else {
+            format!("{}: {e}", path.display())
+        }
+    })?;
     let macros = snapshot.macros.as_ref().map_or_else(
         || "macros not reported".to_owned(),
         |m| format!("{} macro(s)", m.len()),

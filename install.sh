@@ -41,6 +41,23 @@ while [ $# -gt 0 ]; do
     shift
 done
 
+if [ "$(id -u)" = 0 ]; then
+    echo "run this as your normal user, not with sudo: it installs for your user and asks sudo only for the udev rule" >&2
+    exit 1
+fi
+
+# the path goes into the service's ExecStart line: keep it plain
+case "$prefix" in
+    /*) ;;
+    *) echo "--prefix needs an absolute path" >&2; exit 2 ;;
+esac
+case "$prefix" in
+    *[!A-Za-z0-9._/+@-]*)
+        echo "--prefix: use a path without spaces or special characters ($prefix)" >&2
+        exit 2
+        ;;
+esac
+
 say() { printf '\033[1m==> %s\033[0m\n' "$*"; }
 warn() { printf '\033[33mnote: %s\033[0m\n' "$*" >&2; }
 

@@ -1,4 +1,4 @@
-//! `quietlinux-daemon`: shows the Light Mount's per-key colors again.
+//! `quietlinux-daemon`: shows the Light Mount's per-key colors again and opens website keys.
 //!
 //! Per-key colors (realtime mode) are not stored in the keyboard: they are gone
 //! after it is unplugged or the computer sleeps. This service looks for the
@@ -28,7 +28,7 @@ use quietlinux_core::state::{self, Mode};
 #[command(
     name = "quietlinux-daemon",
     version,
-    about = "Show the Light Mount's per-key colors again after replugging or sleep"
+    about = "Background service for the be quiet! Light Mount: shows per-key colors again after replugging or sleep, opens the websites of website keys"
 )]
 struct Cli {
     /// USB path of the keyboard to watch when several are plugged in (see `quietlinux status`)
@@ -150,10 +150,21 @@ fn open_website(url: &str) {
     }
 }
 
+/// Shortest time between two websites opened: a flood of key events (a stuck
+/// key, a misbehaving keyboard) opens one browser tab a second at most.
+const WEBSITE_PAUSE: Duration = Duration::from_secs(1);
+
 /// Handle a notification: only key events of website keys do something; all
 /// other key presses are dropped at once (nothing is stored or logged).
-fn on_notification<T: Transport>(session: &mut Session<T>, note: &Message) {
+fn on_notification<T: Transport>(
+    session: &mut Session<T>,
+    note: &Message,
+    last_opened: &mut Option<Instant>,
+) {
     if note.cmd != p::ACTION_FIRED {
+        return;
+    }
+    if last_opened.is_some_and(|t| t.elapsed() < WEBSITE_PAUSE) {
         return;
     }
     let read_bindings = || {
@@ -165,6 +176,7 @@ fn on_notification<T: Transport>(session: &mut Session<T>, note: &Message) {
         let key = keymap::code_for_key_id(note.data[0]).unwrap_or("a key");
         eprintln!("quietlinux-daemon: opening the website bound to {key}");
         open_website(&url);
+        *last_opened = Some(Instant::now());
     }
 }
 
@@ -186,6 +198,7 @@ fn run(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
     eprintln!("quietlinux-daemon: watching for the Light Mount");
     let mut watch = Watch::new(SystemTime::now(), Instant::now());
     let mut last_error = String::new();
+    let mut last_opened = None;
     loop {
         match device::open(usb_path, false) {
             Ok((_, mut session)) => {
@@ -196,7 +209,7 @@ fn run(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
                 // listen for website keys until the keyboard is gone
                 loop {
                     match session.next_notification(interval) {
-                        Ok(Some(note)) => on_notification(&mut session, &note),
+                        Ok(Some(note)) => on_notification(&mut session, &note, &mut last_opened),
                         Ok(None) => {}
                         Err(_) => break,
                     }

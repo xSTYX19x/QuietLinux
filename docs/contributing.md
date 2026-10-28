@@ -30,7 +30,7 @@ New features need captures of what IO Center sends: see
   `qlcap fixtures`, which leave out the serial number, key presses and macro
   contents, after reading it.
 - IO Center rewrites all macros when one changes: use a test macro
-  (`qlcap --macro ID` keeps only that one).
+  (`qlcap frames --macro ID` and `qlcap fixtures --macro ID` keep only that one).
 
 ## Code
 
@@ -61,7 +61,7 @@ New features need captures of what IO Center sends: see
 - **No firmware updates**, and no request of the firmware update (DFU)
   feature, not even read-only.
 - Write only formats backed by captures of IO Center. Read-only requests
-  documented by IO Center Web may be sent ([web], see `protocol.md`).
+  documented by IO Center Web may be sent ([web], see [protocol.md](protocol.md#sources)).
 - No factory reset until the way back is known.
 - Host actions (websites) are started with an argument list, never through a
   shell, and only for what the user bound.

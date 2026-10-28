@@ -431,8 +431,8 @@ Exit status `1` if there was any mismatch.
 | Message | Fix |
 |---|---|
 | `Light Mount not found` | Keyboard unplugged or another model: `lsusb -d 373f:0002`. |
-| `/dev/hidrawN: permission denied` | Install the udev rule, see [installation](installation.md). |
+| `/dev/hidrawN: permission denied` | Install the udev rule, see [installation](installation.md#permissions-udev-rule). |
 | `untested firmware version …, nothing written` | Please open an issue with the `quietlinux status` output. `--allow-unknown-firmware` forces writing. |
 | `several Light Mount keyboards` | Choose one with `--usb-path`. |
 | `no reply to 03:01` | Another program (e.g. an IO Center Web tab) is talking to the keyboard: close it and retry. |
-| `… failed: BUSY` (or another status name) | The keyboard refused the request; the name says why (see [protocol.md](protocol.md#status-codes)). |
+| `… failed: BUSY` (or another status name) | The keyboard refused the request; the name says why (see [protocol.md](protocol.md#status-codes-web)). |

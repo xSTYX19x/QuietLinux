@@ -45,7 +45,7 @@ byte   0        1         2         3        4           5         6         7 .
 | length | index of the last meaningful byte: 6 + data length in a first fragment | [cap] [web] |
 | sequence | fragment number (bits 0–6); bit 7 set when more fragments follow; 0 for single-packet messages | [cap] [web] |
 | session | `00` before a session is opened, then the session ID from `01:01`; `01` is accepted without opening one | [cap] |
-| status | `00` in requests; in replies `00` = success, otherwise an [error code](#status-codes) | [web] |
+| status | `00` in requests; in replies `00` = success, otherwise an [error code](#status-codes-web) | [web] |
 | request ID | 1–255, chosen by the host, echoed by the reply; IO Center increments it and skips 0. **0 marks a notification** sent by the keyboard on its own | [cap] [web] |
 | feature, command | what the message is about, written `feature:command` in hex in this document (`10:0d`) | [cap] [web] |
 | CRC | CRC-16/MODBUS (poly `0x8005` reflected, init `0xffff`) of bytes 0–61, little endian | [cap] [web] |
@@ -342,7 +342,7 @@ blue 0.43, which explains why unscaled colors look greenish. [web]
 | `11:04` / `11:05` | Get/SetConfig | `[enabled]` | `[enabled]`: 1 = custom bindings active; IO Center for Windows reads it and writes `01` [cap] |
 | `11:06` | GetBinding | | |
 
-- Key IDs: see [Key IDs](#key-ids). Layer byte: `00` normal, `80` Fn held
+- Key IDs: see [Key IDs](#key-ids-web). Layer byte: `00` normal, `80` Fn held
   (captured; IO Center Web's code suggests `01`). [cap]
 - To bind a key, IO Center Web sends `11:02`; before binding a combination it
   first resets the key with `11:03`. [cap]

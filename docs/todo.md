@@ -5,8 +5,8 @@ Goal: a free, public Linux replacement for be quiet! **IO Center** for the
 well documented and with a clear notice about AI assistance.
 
 Status (2026-10-28): **phases 0–6 done for the reference keyboard** (CLI,
-GUI, background service, install script, docs). Next: the first release
-(6.6), then the open points below.
+GUI, background service, install script, docs); **0.1.0 released** on GitHub.
+Next: the AUR package and trying the packages (6.6), then the open points below.
 
 ---
 
@@ -325,8 +325,10 @@ GUI: Slint) and are checked in CI (`cargo deny`).
 - [x] Release workflow (`release.yml`, `packaging/dist.sh`): .deb and .rpm (nfpm), archive with prebuilt programs for `install.sh`, checksums, third-party licenses (cargo-about); a tag creates a draft release ([releasing.md](releasing.md))
 - [x] AUR package (`packaging/aur/PKGBUILD`, built from source)
 - [x] Issue templates (bug, device report, feature), `SECURITY.md`, `CHANGELOG.md`
-- [ ] Test run of the release workflow; try the .deb and .rpm
-- [ ] First release (0.1.0), publish the AUR package
+- [x] Release workflow run: builds the packages, the archive and the draft release
+- [x] First release (0.1.0, 2026-10-28), listed on GitHub
+- [ ] Try the .deb and .rpm (e.g. in an Ubuntu and a Fedora VM or container)
+- [ ] Publish the AUR package
 - [ ] Not planned: AppImage, Flatpak (the udev rule and the background service need the host system)
 
 ## 7. Safety rules (apply to the whole project)

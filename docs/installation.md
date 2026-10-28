@@ -19,7 +19,7 @@ packages for x86-64 (built on Ubuntu 22.04: they need glibc 2.35 or newer):
 |---|---|
 | Debian, Ubuntu, Mint, … | `sudo apt install ./quietlinux_VERSION-1_amd64.deb` |
 | Fedora, openSUSE, … | `sudo dnf install ./quietlinux-VERSION-1.x86_64.rpm` (openSUSE: `sudo zypper install …`) |
-| Arch, CachyOS, Manjaro, … | from the AUR: `yay -S quietlinux` (or `paru`, or `makepkg -si`); built from source |
+| Arch, CachyOS, Manjaro, … | not in the AUR yet: in a checkout, `cd packaging/aur && makepkg -si` builds the release from source |
 | any other | `quietlinux-VERSION-x86_64-linux.tar.gz`: unpack it and run `./install.sh` inside; it installs the prebuilt programs for your user, like the quick install below |
 
 `SHA256SUMS` lists the files' checksums (`sha256sum -c SHA256SUMS --ignore-missing`).
@@ -124,8 +124,8 @@ keyboard, but programs running as **you** can read what you type on the Light
 Mount through interface 2, because the keyboard reports every key press there.
 On X11 such programs can read your keyboard anyway; on Wayland this is a
 real, if small, loss of isolation. The same holds for IO Center Web and any
-other tool that uses the vendor interface. A future QuietLinux background
-service may keep this access to itself (see [todo.md](todo.md)).
+other tool that uses the vendor interface. Whether the background service can
+keep this access to itself is still open (see [todo.md](todo.md#65-phase-6--daemon-optional)).
 
 Install it:
 
@@ -161,10 +161,15 @@ whichever writes last wins.
 
 ## Uninstall
 
+A package is removed with the package manager (`sudo apt remove quietlinux`,
+`sudo dnf remove quietlinux`, `sudo pacman -R quietlinux`). After
+`install.sh`, run `./uninstall.sh`. By hand:
+
 ```sh
 systemctl --user disable --now quietlinux-daemon
 rm ~/.config/systemd/user/quietlinux-daemon.service
 rm ~/.local/bin/quietlinux ~/.local/bin/quietlinux-gui ~/.local/bin/quietlinux-daemon
+rm ~/.local/share/applications/quietlinux.desktop ~/.local/share/icons/hicolor/scalable/apps/quietlinux.svg
 sudo rm /etc/udev/rules.d/70-quietlinux.rules
 sudo udevadm control --reload
 ```

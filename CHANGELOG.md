@@ -37,7 +37,7 @@ layout, firmware 2.3.0; other firmware versions are read-only unless
 - The last effect and the per-key colors are remembered
   (`~/.config/quietlinux`), as the keyboard does not report them
 - `install.sh` and `uninstall.sh`; udev rule giving the logged-in user access
-  to the keyboard's vendor interface only
+  to the keyboard's vendor and LampArray interfaces only
 - Documentation: installation, command line, window, troubleshooting,
   contributing, and the keyboard's protocol (`docs/protocol.md`)
 - Capture tools for contributors: `qlcap`, a WebHID logger, a Windows capture

@@ -32,7 +32,7 @@ rule is installed:
 QuietLinux writes only to firmware versions it was tested with (2.3.0 so far):
 an untested version may answer differently. Reading works. If you want to help,
 open an issue with the output of `quietlinux status` and `quietlinux info`
-(see [contributing.md](contributing.md)). `--allow-unknown-firmware` writes
+(see [contributing.md](contributing.md#device-reports)). `--allow-unknown-firmware` writes
 anyway, at your own risk.
 
 ## Changes do not stick, or are undone

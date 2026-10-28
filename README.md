@@ -43,7 +43,7 @@ helps to support them.
 
 Packages for Debian/Ubuntu (.deb), Fedora/openSUSE (.rpm) and an archive with
 prebuilt programs are on the [releases page](https://github.com/xSTYX19x/QuietLinux/releases);
-Arch users find `quietlinux` in the AUR ([installation](docs/installation.md#packages)).
+an AUR package for Arch follows ([installation](docs/installation.md#packages)).
 From the source:
 
 ```sh

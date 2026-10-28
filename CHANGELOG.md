@@ -4,7 +4,7 @@ All notable changes to QuietLinux. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/).
 
-## [0.1.0] - unreleased
+## [0.1.0] - 2026-10-28
 
 The first version. Tested with the Light Mount Silent Linear, German ISO
 layout, firmware 2.3.0; other firmware versions are read-only unless

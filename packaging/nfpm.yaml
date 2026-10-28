@@ -59,6 +59,10 @@ contents:
   - src: crates/quietlinux-gui/ui/icon.svg
     dst: /usr/share/icons/hicolor/scalable/apps/quietlinux.svg
     file_info: { mode: 0644 }
+  # owned by the package, so that the .rpm removes it again
+  - dst: /usr/share/doc/quietlinux
+    type: dir
+    file_info: { mode: 0755 }
   - src: README.md
     dst: /usr/share/doc/quietlinux/README.md
     file_info: { mode: 0644 }

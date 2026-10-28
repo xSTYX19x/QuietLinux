@@ -1,0 +1,43 @@
+name: Device report
+description: Your keyboard's firmware or layout, so that QuietLinux can support it
+title: "Device report: firmware X.Y.Z, <layout>"
+labels: [device report]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        QuietLinux writes only to firmware versions it was tested with. A report helps to support more versions and layouts
+        (see [contributing](https://github.com/xSTYX19x/QuietLinux/blob/main/docs/contributing.md#device-reports)).
+        Both commands below only read; their output contains no serial number. Check it before posting anyway.
+  - type: textarea
+    id: status
+    attributes:
+      label: Output of `quietlinux status`
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: info
+    attributes:
+      label: Output of `quietlinux info`
+      render: text
+    validations:
+      required: true
+  - type: input
+    id: model
+    attributes:
+      label: Keyboard
+      description: Model, switches and layout; where you bought it if it is a regional variant
+      placeholder: e.g. Light Mount, Silent Linear, French ISO
+    validations:
+      required: true
+  - type: textarea
+    id: legends
+    attributes:
+      label: Keys with other legends (new layouts only)
+      description: "`quietlinux calibrate --layout uk` (or the closest layout) lights one key at a time; list every key whose legend differs."
+  - type: textarea
+    id: tried
+    attributes:
+      label: What you tried
+      description: Did writing work with `--allow-unknown-firmware` (at your own risk)? What did not?

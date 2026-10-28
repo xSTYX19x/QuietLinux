@@ -1,0 +1,56 @@
+# Maintainer: xSTYX19x <239771716+xSTYX19x@users.noreply.github.com>
+#
+# AUR package of QuietLinux, built from the release's source. Publishing it:
+# docs/releasing.md.
+
+pkgname=quietlinux
+pkgver=0.1.0
+pkgrel=1
+pkgdesc='Configure the be quiet! Light Mount keyboard: lighting, key bindings, macros (unofficial)'
+arch=('x86_64')
+url='https://github.com/xSTYX19x/QuietLinux'
+license=('GPL-3.0-or-later')
+depends=('gcc-libs' 'glibc' 'fontconfig' 'libxkbcommon')
+makedepends=('cargo')
+optdepends=('xdg-utils: website keys (background service)')
+source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+_programs=(quietlinux quietlinux-gui quietlinux-daemon)
+
+prepare() {
+  cd "QuietLinux-$pkgver"
+  export RUSTUP_TOOLCHAIN=stable
+  cargo fetch --locked --target "$(rustc -vV | sed -n 's/host: //p')"
+}
+
+build() {
+  cd "QuietLinux-$pkgver"
+  export RUSTUP_TOOLCHAIN=stable
+  export CARGO_TARGET_DIR=target
+  # no build directory paths in the programs
+  export RUSTFLAGS="${RUSTFLAGS:-} --remap-path-prefix=$srcdir=/build"
+  cargo build --frozen --release -p quietlinux-cli -p quietlinux-gui -p quietlinux-daemon
+}
+
+check() {
+  cd "QuietLinux-$pkgver"
+  export RUSTUP_TOOLCHAIN=stable
+  export CARGO_TARGET_DIR=target
+  # the window's tests run in CI: here they would compile Slint a second time
+  cargo test --frozen -p quietlinux-core -p quietlinux-cli -p quietlinux-daemon
+}
+
+package() {
+  cd "QuietLinux-$pkgver"
+  for program in "${_programs[@]}"; do
+    install -Dm755 "target/release/$program" "$pkgdir/usr/bin/$program"
+  done
+  install -Dm644 packaging/udev/70-quietlinux.rules "$pkgdir/usr/lib/udev/rules.d/70-quietlinux.rules"
+  install -Dm644 packaging/systemd/quietlinux-daemon.service "$pkgdir/usr/lib/systemd/user/quietlinux-daemon.service"
+  sed -i 's|^ExecStart=.*|ExecStart=/usr/bin/quietlinux-daemon|' "$pkgdir/usr/lib/systemd/user/quietlinux-daemon.service"
+  install -Dm644 packaging/desktop/quietlinux.desktop "$pkgdir/usr/share/applications/quietlinux.desktop"
+  install -Dm644 crates/quietlinux-gui/ui/icon.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/quietlinux.svg"
+  install -Dm644 README.md CHANGELOG.md NOTICE -t "$pkgdir/usr/share/doc/$pkgname/"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

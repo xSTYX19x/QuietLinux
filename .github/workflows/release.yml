@@ -1,0 +1,93 @@
+name: Release
+
+# A tag v1.2.3 builds the release files and creates a draft release with them;
+# the maintainer reviews and publishes it (docs/releasing.md). Started by hand
+# ("Run workflow"), it only builds the files and keeps them as a workflow
+# artifact: a test run, no release.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  NFPM_VERSION: 2.48.0
+  NFPM_SHA256: 6d7f9a28b2f397934403950fcbba83f598b08d02edbe79a0815b3b4897341750
+  CARGO_ABOUT_VERSION: 0.9.2
+
+jobs:
+  package:
+    # the oldest supported runner: the programs need its glibc (2.35) or newer
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@1.99
+      - run: sudo apt-get update && sudo apt-get install -y libfontconfig-dev
+
+      - name: Check the tag against the version
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)
+          if [ "$GITHUB_REF_TYPE" = tag ] && [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "tag $GITHUB_REF_NAME does not match the version in Cargo.toml ($version)" >&2
+            exit 1
+          fi
+          grep -q "^## \[$version\]" CHANGELOG.md || {
+            echo "CHANGELOG.md has no section for $version" >&2
+            exit 1
+          }
+          if [ "$GITHUB_REF_TYPE" = tag ] && grep -q "^## \[$version\] - unreleased" CHANGELOG.md; then
+            echo "CHANGELOG.md: put the release date in place of \"unreleased\"" >&2
+            exit 1
+          fi
+          echo "VERSION=$version" >>"$GITHUB_ENV"
+
+      - name: Install nfpm and cargo-about
+        run: |
+          curl -fsSLo nfpm.tar.gz "https://github.com/goreleaser/nfpm/releases/download/v$NFPM_VERSION/nfpm_${NFPM_VERSION}_Linux_x86_64.tar.gz"
+          echo "$NFPM_SHA256  nfpm.tar.gz" | sha256sum -c -
+          mkdir -p "$HOME/.local/bin"
+          tar -xzf nfpm.tar.gz -C "$HOME/.local/bin" nfpm
+          rm nfpm.tar.gz
+          echo "$HOME/.local/bin" >>"$GITHUB_PATH"
+          cargo install --locked cargo-about --version "$CARGO_ABOUT_VERSION"
+
+      - run: cargo test --locked --workspace
+      - run: cargo build --release --locked -p quietlinux-cli -p quietlinux-gui -p quietlinux-daemon
+      - run: packaging/dist.sh
+
+      - name: Release notes from CHANGELOG.md
+        run: |
+          awk -v v="$VERSION" '
+            index($0, "## [" v "]") == 1 { on = 1; next }
+            on && /^## \[/ { exit }
+            on { print }
+          ' CHANGELOG.md >target/dist/release-notes.md
+          cat target/dist/release-notes.md
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: quietlinux-${{ env.VERSION }}
+          path: target/dist/*
+
+  release:
+    if: github.ref_type == 'tag'
+    needs: package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: files
+          merge-multiple: true
+      - name: Draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft \
+            --title "QuietLinux ${GITHUB_REF_NAME#v}" --notes-file files/release-notes.md \
+            files/*.tar.gz files/*.deb files/*.rpm files/SHA256SUMS

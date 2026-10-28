@@ -1,0 +1,49 @@
+name: Bug report
+description: Something does not work as described
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! Please check [troubleshooting](https://github.com/xSTYX19x/QuietLinux/blob/main/docs/troubleshooting.md) first.
+        **Do not attach backup files or raw captures:** they contain what your macros type, or what you typed.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected and what happened instead. Error messages as text, please.
+    validations:
+      required: true
+  - type: textarea
+    id: status
+    attributes:
+      label: Output of `quietlinux status`
+      description: Read-only; contains no serial number.
+      render: text
+    validations:
+      required: true
+  - type: dropdown
+    id: part
+    attributes:
+      label: Which part
+      multiple: true
+      options:
+        - command line (quietlinux)
+        - window (quietlinux-gui)
+        - background service (quietlinux-daemon)
+        - install script or packages
+        - documentation
+  - type: input
+    id: system
+    attributes:
+      label: Distribution and desktop
+      placeholder: e.g. Fedora 43, KDE Plasma (Wayland)
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: QuietLinux version
+      description: "`quietlinux --version`, and how you installed it (install.sh, .deb, .rpm, AUR, …)"
+    validations:
+      required: true

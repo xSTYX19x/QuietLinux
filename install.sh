@@ -8,7 +8,8 @@
 #   ./install.sh --prefix DIR    install to DIR/bin etc. (default: ~/.local)
 #
 # Only the udev rule needs root: the script asks sudo for that one step.
-# ./uninstall.sh removes everything again.
+# ./uninstall.sh removes everything again. In a release archive the programs
+# are already built (bin/): nothing is compiled then.
 
 set -euo pipefail
 
@@ -30,7 +31,7 @@ while [ $# -gt 0 ]; do
             shift
             ;;
         -h | --help)
-            sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'
+            sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'
             exit 0
             ;;
         *)
@@ -61,14 +62,24 @@ esac
 say() { printf '\033[1m==> %s\033[0m\n' "$*"; }
 warn() { printf '\033[33mnote: %s\033[0m\n' "$*" >&2; }
 
+# a release archive has the programs in bin/, the source tree builds them
+if [ -f Cargo.toml ]; then
+    from=target/release
+    icon=crates/quietlinux-gui/ui/icon.svg
+else
+    from=bin
+    icon=packaging/desktop/quietlinux.svg
+    [ -x "$from/quietlinux-gui" ] || gui=0
+fi
+
 # --- requirements -----------------------------------------------------------------
 
-command -v cargo >/dev/null || {
+if [ "$from" = bin ]; then
+    :
+elif ! command -v cargo >/dev/null; then
     echo "cargo not found: install Rust (https://rustup.rs or your distribution's rust package)" >&2
     exit 1
-}
-
-if [ "$gui" = 1 ]; then
+elif [ "$gui" = 1 ]; then
     rust_minor=$(rustc --version | sed -E 's/^rustc 1\.([0-9]+).*/\1/')
     if [ "${rust_minor:-0}" -lt 92 ]; then
         warn "the window needs Rust 1.92 or newer ($(rustc --version)): installing without it"
@@ -81,22 +92,24 @@ fi
 
 # --- build ------------------------------------------------------------------------
 
-packages=(-p quietlinux-cli -p quietlinux-daemon)
-[ "$gui" = 1 ] && packages+=(-p quietlinux-gui)
-say "Building (cargo build --release; the first build takes a few minutes)"
-cargo build --release --locked "${packages[@]}"
+if [ "$from" = target/release ]; then
+    packages=(-p quietlinux-cli -p quietlinux-daemon)
+    [ "$gui" = 1 ] && packages+=(-p quietlinux-gui)
+    say "Building (cargo build --release; the first build takes a few minutes)"
+    cargo build --release --locked "${packages[@]}"
+fi
 
 # --- install ----------------------------------------------------------------------
 
 bin="$prefix/bin"
 say "Installing to $bin"
-install -Dm755 target/release/quietlinux "$bin/quietlinux"
-install -Dm755 target/release/quietlinux-daemon "$bin/quietlinux-daemon"
+install -Dm755 "$from/quietlinux" "$bin/quietlinux"
+install -Dm755 "$from/quietlinux-daemon" "$bin/quietlinux-daemon"
 if [ "$gui" = 1 ]; then
-    install -Dm755 target/release/quietlinux-gui "$bin/quietlinux-gui"
+    install -Dm755 "$from/quietlinux-gui" "$bin/quietlinux-gui"
     say "Adding QuietLinux to the application menu"
     install -Dm644 packaging/desktop/quietlinux.desktop "$prefix/share/applications/quietlinux.desktop"
-    install -Dm644 crates/quietlinux-gui/ui/icon.svg "$prefix/share/icons/hicolor/scalable/apps/quietlinux.svg"
+    install -Dm644 "$icon" "$prefix/share/icons/hicolor/scalable/apps/quietlinux.svg"
     # refresh the caches, or the menu and the task bar show no icon until the next login
     command -v update-desktop-database >/dev/null && update-desktop-database -q "$prefix/share/applications" || true
     if [ -f "$prefix/share/icons/hicolor/icon-theme.cache" ] && command -v gtk-update-icon-cache >/dev/null; then

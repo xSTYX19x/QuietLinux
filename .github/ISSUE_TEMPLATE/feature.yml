@@ -1,0 +1,16 @@
+name: Feature request
+description: Something IO Center does that QuietLinux cannot yet, or an idea
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please look at the [plan](https://github.com/xSTYX19x/QuietLinux/blob/main/docs/todo.md) first: it may be listed already.
+        QuietLinux will never update firmware.
+  - type: textarea
+    id: what
+    attributes:
+      label: What you would like
+      description: What it should do, and how you use it today (IO Center, IO Center Web, …)
+    validations:
+      required: true

@@ -16,8 +16,8 @@ support more versions:
 3. For a new layout: `quietlinux calibrate --layout uk` (or the closest one)
    lights one key at a time; note every key whose legend differs.
 
-Open an issue with these, titled for example "Device report: firmware 2.4.0,
-French ISO".
+Open an issue with the **Device report** template, titled for example
+"Device report: firmware 2.4.0, French ISO".
 
 ## Captures
 

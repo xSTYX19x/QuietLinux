@@ -1,0 +1,80 @@
+# nfpm configuration of the .deb and .rpm packages, used by packaging/dist.sh
+# (which writes target/package/ first). Paths are relative to the repository.
+# The programs are built on Ubuntu 22.04: they need glibc 2.35 or newer.
+
+name: quietlinux
+version: ${VERSION}
+release: 1
+arch: amd64
+platform: linux
+section: utils
+priority: optional
+maintainer: xSTYX19x <239771716+xSTYX19x@users.noreply.github.com>
+homepage: https://github.com/xSTYX19x/QuietLinux
+license: GPL-3.0-or-later
+description: |-
+  Configure the be quiet! Light Mount keyboard on Linux
+  Lighting effects and per-key colors, key bindings (both layers, the knob,
+  M1-M5), macros, game mode and backups, with a command line tool
+  (quietlinux), a window (quietlinux-gui) and an optional background service
+  (quietlinux-daemon). Unofficial: not affiliated with be quiet!.
+
+overrides:
+  deb:
+    depends:
+      - libc6 (>= 2.35)
+      - libgcc-s1
+      - libfontconfig1
+      - libxkbcommon0
+    recommends:
+      - xdg-utils
+  rpm:
+    depends:
+      - glibc >= 2.35
+      - libgcc
+      - fontconfig
+      - libxkbcommon
+    recommends:
+      - xdg-utils
+
+contents:
+  - src: target/release/quietlinux
+    dst: /usr/bin/quietlinux
+    file_info: { mode: 0755 }
+  - src: target/release/quietlinux-gui
+    dst: /usr/bin/quietlinux-gui
+    file_info: { mode: 0755 }
+  - src: target/release/quietlinux-daemon
+    dst: /usr/bin/quietlinux-daemon
+    file_info: { mode: 0755 }
+  - src: packaging/udev/70-quietlinux.rules
+    dst: /usr/lib/udev/rules.d/70-quietlinux.rules
+    file_info: { mode: 0644 }
+  - src: target/package/quietlinux-daemon.service
+    dst: /usr/lib/systemd/user/quietlinux-daemon.service
+    file_info: { mode: 0644 }
+  - src: packaging/desktop/quietlinux.desktop
+    dst: /usr/share/applications/quietlinux.desktop
+    file_info: { mode: 0644 }
+  - src: crates/quietlinux-gui/ui/icon.svg
+    dst: /usr/share/icons/hicolor/scalable/apps/quietlinux.svg
+    file_info: { mode: 0644 }
+  - src: README.md
+    dst: /usr/share/doc/quietlinux/README.md
+    file_info: { mode: 0644 }
+  - src: CHANGELOG.md
+    dst: /usr/share/doc/quietlinux/CHANGELOG.md
+    file_info: { mode: 0644 }
+  - src: NOTICE
+    dst: /usr/share/doc/quietlinux/NOTICE
+    file_info: { mode: 0644 }
+  - src: LICENSE
+    dst: /usr/share/doc/quietlinux/LICENSE
+    file_info: { mode: 0644 }
+  - src: target/package/THIRD-PARTY-LICENSES.html
+    dst: /usr/share/doc/quietlinux/THIRD-PARTY-LICENSES.html
+    file_info: { mode: 0644 }
+
+scripts:
+  postinstall: packaging/scripts/udev-reload.sh
+  postremove: packaging/scripts/udev-reload.sh

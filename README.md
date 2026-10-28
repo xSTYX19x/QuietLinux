@@ -41,6 +41,11 @@ helps to support them.
 
 ## Quick start
 
+Packages for Debian/Ubuntu (.deb), Fedora/openSUSE (.rpm) and an archive with
+prebuilt programs are on the [releases page](https://github.com/xSTYX19x/QuietLinux/releases);
+Arch users find `quietlinux` in the AUR ([installation](docs/installation.md#packages)).
+From the source:
+
 ```sh
 git clone https://github.com/xSTYX19x/QuietLinux.git
 cd QuietLinux
@@ -57,14 +62,15 @@ Details: [installation](docs/installation.md), [command line usage](docs/usage-c
 
 ## Documentation
 
-- [docs/installation.md](docs/installation.md): install script, build, udev rule, permissions, background service
+- [docs/installation.md](docs/installation.md): packages, install script, build, udev rule, permissions, background service
 - [docs/usage-cli.md](docs/usage-cli.md): every command with examples
 - [docs/usage-gui.md](docs/usage-gui.md): the graphical interface
 - [docs/protocol.md](docs/protocol.md): what is known about the keyboard's protocol
 - [docs/troubleshooting.md](docs/troubleshooting.md): when something does not work
 - [docs/capturing.md](docs/capturing.md): how to record and decode the vendor software's traffic
-- [docs/contributing.md](docs/contributing.md): device reports, captures, code
+- [docs/contributing.md](docs/contributing.md): device reports, captures, code; [docs/releasing.md](docs/releasing.md): making a release
 - [docs/todo.md](docs/todo.md): roadmap
+- [CHANGELOG.md](CHANGELOG.md): what changed in each version; [SECURITY.md](SECURITY.md): reporting security problems
 
 ## Safety
 

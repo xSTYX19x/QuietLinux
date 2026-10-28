@@ -5,7 +5,7 @@ Goal: a free, public Linux replacement for be quiet! **IO Center** for the
 well documented and with a clear notice about AI assistance.
 
 Status (2026-10-28): **phases 0–6 done for the reference keyboard** (CLI,
-GUI, background service, install script, docs). Next: releases and packages
+GUI, background service, install script, docs). Next: the first release
 (6.6), then the open points below.
 
 ---
@@ -242,6 +242,8 @@ tools/windows-capture.ps1  guided USBPcap captures on Windows
 packaging/udev/        udev rule
 packaging/systemd/     user service of the daemon
 packaging/desktop/     menu entry of the window
+packaging/aur/         AUR package
+packaging/dist.sh      release files (with nfpm.yaml, about.toml/.hbs)
 install.sh, uninstall.sh
 docs/
 ```
@@ -320,8 +322,12 @@ GUI: Slint) and are checked in CI (`cargo deny`).
 - [x] Docs: `README.md`, `docs/installation.md`, `docs/usage-cli.md`, `docs/usage-gui.md`, `docs/protocol.md`, `docs/troubleshooting.md`, `docs/contributing.md`
 - [x] Install script (`install.sh`, `uninstall.sh`): programs, menu entry and icon, udev rule, user service
 - [x] Polish and security pass (2026-10-28): help for every argument, backups written with mode 600, website addresses limited to URL characters and one opened a second, install script refuses root and odd prefixes
-- [ ] Packages: AUR (PKGBUILD), `cargo install`, prebuilt binaries in releases, maybe .deb/Flatpak
-- [ ] GitHub release, issue template "device report"
+- [x] Release workflow (`release.yml`, `packaging/dist.sh`): .deb and .rpm (nfpm), archive with prebuilt programs for `install.sh`, checksums, third-party licenses (cargo-about); a tag creates a draft release ([releasing.md](releasing.md))
+- [x] AUR package (`packaging/aur/PKGBUILD`, built from source)
+- [x] Issue templates (bug, device report, feature), `SECURITY.md`, `CHANGELOG.md`
+- [ ] Test run of the release workflow; try the .deb and .rpm
+- [ ] First release (0.1.0), publish the AUR package
+- [ ] Not planned: AppImage, Flatpak (the udev rule and the background service need the host system)
 
 ## 7. Safety rules (apply to the whole project)
 

@@ -53,7 +53,10 @@ jobs:
           tar -xzf nfpm.tar.gz -C "$HOME/.local/bin" nfpm
           rm nfpm.tar.gz
           echo "$HOME/.local/bin" >>"$GITHUB_PATH"
-          cargo install --locked cargo-about --version "$CARGO_ABOUT_VERSION"
+          # the program is behind the "cli" feature since cargo-about 0.9
+          cargo install --locked cargo-about --version "$CARGO_ABOUT_VERSION" --features cli
+          nfpm --version
+          cargo about --version
 
       - run: cargo test --locked --workspace
       - run: cargo build --release --locked -p quietlinux-cli -p quietlinux-gui -p quietlinux-daemon

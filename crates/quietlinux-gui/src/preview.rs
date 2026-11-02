@@ -10,6 +10,8 @@ use crate::keyboard;
 
 /// Length of one color wave, in key units.
 const WAVE_LENGTH: f32 = 16.0;
+/// Breathing with a gradient: animation cycles for one pass through its colors.
+const GRADIENT_BREATHS: f32 = 3.0;
 /// Reactive: how often a key is "pressed", in seconds.
 const PRESS_INTERVAL: f32 = 0.3;
 /// Matrix: length of a drop's tail, and how far a drop runs in one animation
@@ -108,11 +110,8 @@ pub fn color(
         "breathing" => breathing(colors, cycles),
         "reactive" => reactive(colors, period(setting.speed) / 2.0, index, count, time),
         "matrix" => matrix(colors, direction, pos, cycles),
-        // static: a gradient lies across the keyboard
-        _ => match colors {
-            Colors::Single(single) => *single,
-            colors => palette(colors, pos.0 / keyboard::WIDTH),
-        },
+        // static: one color
+        _ => two_colors(colors).0,
     };
     scaled(raw, f32::from(setting.brightness.min(100)) / 100.0)
 }
@@ -143,22 +142,24 @@ fn tornado(colors: &Colors, direction: Option<&str>, (x, y): (f32, f32), cycles:
     }
 }
 
-/// One breath per color: two colors take turns, a gradient moves on.
+/// One color, or two taking turns, glow up and go dark (color 1, black, color
+/// 2, black, …); a gradient runs through its colors without going dark, as on
+/// the keyboard.
 fn breathing(colors: &Colors, cycles: f32) -> Rgb {
     let level = (1.0 - (cycles * std::f32::consts::TAU).cos()) / 2.0;
     let breath = cycles.floor();
-    let color = match colors {
-        Colors::Single(single) => *single,
+    match colors {
+        Colors::Single(single) => scaled(*single, level),
         Colors::Dual(first, second) => {
-            if breath.rem_euclid(2.0) < 1.0 {
+            let color = if breath.rem_euclid(2.0) < 1.0 {
                 *first
             } else {
                 *second
-            }
+            };
+            scaled(color, level)
         }
-        gradient => palette(gradient, breath / 6.0),
-    };
-    scaled(color, level)
+        gradient => palette(gradient, cycles / GRADIENT_BREATHS),
+    }
 }
 
 /// Keys "pressed" one after another, glowing for `fade` seconds.
@@ -287,6 +288,21 @@ mod tests {
                 "{name} stands still"
             );
         }
+    }
+
+    #[test]
+    fn breathing_a_gradient_stays_bright() {
+        let rainbow = Colors::Gradient(quietlinux_core::settings::rainbow());
+        let e = setting("breathing", rainbow);
+        let frames: Vec<Rgb> = (0..60u8)
+            .map(|f| color(&e, 0, 1, (0.0, 0.0), f32::from(f) * 0.2))
+            .collect();
+        // never dark, and the colors change
+        assert!(
+            frames.iter().all(|c| c.r.max(c.g).max(c.b) > 200),
+            "{frames:?}"
+        );
+        assert!(frames.windows(2).any(|w| w[0] != w[1]));
     }
 
     #[test]

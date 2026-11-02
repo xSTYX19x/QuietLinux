@@ -32,6 +32,9 @@ All notable changes to QuietLinux. The format follows
 
 ### Changed
 
+- Static has one color and no speed, as on the keyboard: two colors, a
+  gradient and a speed are refused (command line, settings files) or greyed
+  out (window); an older file's speed for static is left out
 - `apply` remembers the lighting it sets, for the window and the background
   service
 

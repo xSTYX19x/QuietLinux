@@ -179,14 +179,18 @@ quietlinux light effect tornado --gradient ff0000@0,ffff00@30,0000ff@100
 |---|---|---|
 | `EFFECT` | `static`, `color-wave`, `tornado`, `breathing`, `reactive`, `matrix` | |
 | `--color` | one color, `rrggbb` | static: `e63000` (factory color); others: rainbow |
-| `--dual` | two colors, `rrggbb,rrggbb`; for `reactive` the first lights a pressed key, the second is the background | |
-| `--gradient` | 2–12 colors, evenly spread or with positions `@0`–`@100` | |
+| `--dual` | two colors, `rrggbb,rrggbb`; for `reactive` the first lights a pressed key, the second is the background; not for `static` | |
+| `--gradient` | 2–12 colors, evenly spread or with positions `@0`–`@100`; not for `static` | |
 | `--brightness` | 0–100 | 100 |
-| `--speed` | 0–100 | 50 |
+| `--speed` | 0–100; not for `static` | 50 |
 | `--direction` | `color-wave`, `matrix`: `up`, `down`, `left`, `right`; `tornado`: `clockwise`, `counterclockwise` | the first one |
 
+`static` shows one color and has no speed: two colors, a gradient and
+`--speed` are refused (an older settings file's speed for static is left out).
 With one color, `tornado` turns that color together with black (as with
-`--dual COLOR,000000`).
+`--dual COLOR,000000`). `breathing` with one or two colors goes dark between
+them (color 1, black, color 2, black); with a gradient it runs through the
+colors without going dark.
 
 `static`, `breathing` and `reactive` do not move and take no `--direction`;
 a direction an effect does not move in is refused before anything is sent.

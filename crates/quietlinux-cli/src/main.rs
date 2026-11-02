@@ -460,7 +460,8 @@ enum Light {
     },
     /// Effect stored in the keyboard: static, color-wave, tornado, breathing, reactive, matrix
     ///
-    /// Examples: quietlinux light effect breathing; quietlinux light effect static --color ff1493
+    /// Examples: quietlinux light effect breathing; quietlinux light effect static --color ff1493.
+    /// Static has one color and no speed.
     Effect {
         /// static, color-wave, tornado, breathing, reactive or matrix
         #[arg(value_parser = one_of(settings::Effect::all(), settings::Effect::name))]
@@ -477,9 +478,9 @@ enum Light {
         /// Brightness in percent
         #[arg(long, default_value_t = 100, value_parser = clap::value_parser!(u8).range(0..=100))]
         brightness: u8,
-        /// Speed in percent
-        #[arg(long, default_value_t = 50, value_parser = clap::value_parser!(u8).range(0..=100))]
-        speed: u8,
+        /// Speed in percent (default 50; static has none)
+        #[arg(long, value_parser = clap::value_parser!(u8).range(0..=100))]
+        speed: Option<u8>,
         /// color-wave, matrix: up (default), down, left, right; tornado: clockwise
         /// (default), counterclockwise; the other effects do not move
         #[arg(long, value_parser = one_of((0..=5).map(settings::Direction).collect(), settings::Direction::name))]
@@ -725,6 +726,11 @@ fn run(cli: Cli) -> Result<ExitCode, Box<dyn std::error::Error>> {
             };
             // checked before the keyboard is opened
             let direction = effect.direction(direction)?;
+            effect.check_colors(&colors)?;
+            if speed.is_some() && !effect.has_speed() {
+                return Err(format!("{effect} has no speed: leave out --speed").into());
+            }
+            let speed = speed.unwrap_or(quietlinux_core::protocol::SPEED_DEFAULT);
             let mut session = open_session(usb_path, cli.allow_unknown_firmware)?;
             session.set_effect(effect.0, direction.0, brightness, speed, &colors)?;
             remember_effect(&config::EffectSetting {

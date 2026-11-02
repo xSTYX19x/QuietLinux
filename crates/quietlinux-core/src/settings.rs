@@ -5,6 +5,7 @@ use std::fmt;
 use std::str::FromStr;
 
 use crate::Rgb;
+use crate::info::Colors;
 use crate::keymap;
 use crate::protocol::MAX_GRADIENT_STOPS;
 
@@ -173,6 +174,21 @@ impl Effect {
             2 => &TURNS,
             _ => &[],
         }
+    }
+
+    /// Whether the effect has a speed: static stands still (tested on the
+    /// reference keyboard).
+    pub fn has_speed(self) -> bool {
+        self != Effect::STATIC
+    }
+
+    /// Whether the effect shows these colors: static has one color only (two
+    /// colors and gradients do not work on the reference keyboard).
+    pub fn check_colors(self, colors: &Colors) -> Result<(), String> {
+        if self == Effect::STATIC && !matches!(colors, Colors::Single(_)) {
+            return Err("static has one color only (no two colors, no gradient)".to_owned());
+        }
+        Ok(())
     }
 
     /// `wanted` if the effect moves that way, its first direction if `None`;

@@ -255,6 +255,9 @@ component LightingPage inherits VerticalBox {
     in property <[string]> directions;
     // the chosen effect moves (static, breathing and reactive do not)
     in property <bool> has-direction;
+    // static: one color only, no speed
+    in property <bool> has-speed: true;
+    in property <bool> one-color;
     in property <image> wheel;
     in-out property <int> effect-index;
     in-out property <int> color-mode;
@@ -334,6 +337,7 @@ component LightingPage inherits VerticalBox {
                 ComboBox {
                     model: ["One color", "Two colors", "Rainbow"];
                     current-index <=> root.color-mode;
+                    enabled: !root.one-color;
                     selected => {
                         root.effect-changed();
                     }
@@ -408,6 +412,7 @@ component LightingPage inherits VerticalBox {
                     minimum: 0;
                     maximum: 100;
                     value <=> root.speed;
+                    enabled: root.has-speed;
                     changed => {
                         root.effect-changed();
                     }
@@ -1296,6 +1301,8 @@ export component AppWindow inherits Window {
     in property <[string]> directions;
     // the chosen effect moves (static, breathing and reactive do not)
     in property <bool> has-direction;
+    in property <bool> has-speed: true;
+    in property <bool> one-color;
     in property <image> wheel;
     in-out property <int> effect-index;
     in-out property <int> color-mode;
@@ -1511,6 +1518,8 @@ export component AppWindow inherits Window {
                             effects: root.effects;
                             directions: root.directions;
                             has-direction: root.has-direction;
+                            has-speed: root.has-speed;
+                            one-color: root.one-color;
                             wheel: root.wheel;
                             reactive-index: root.reactive-index;
                             effect-index <=> root.effect-index;

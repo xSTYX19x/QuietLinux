@@ -46,7 +46,9 @@ The AUR package comes later.
 - [x] Runs only while the effect page is shown; can be paused
 - [x] Compared with the keyboard (2026-11-02): the animations match; tornado
   with one color turns that color and black; matrix runs drops with a tail in
-  the direction (both now in the preview too)
+  the direction; breathing with a gradient runs through the colors without
+  going dark (all now in the preview too). Static has one color and no speed
+  (now refused or greyed out)
 
 **IO Center import** (2.4) and **file chooser** (6.4): see there.
 

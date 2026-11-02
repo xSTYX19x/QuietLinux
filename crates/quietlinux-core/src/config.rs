@@ -732,11 +732,18 @@ fn effect_setting(e: EffectSection) -> Result<EffectSetting, String> {
         (None, None, None) => Colors::Gradient(rainbow()),
         _ => return Err("give only one of color, dual, gradient".to_owned()),
     };
+    effect.check_colors(&colors)?;
+    // static has no speed: one given is left out (older files)
+    let speed = if effect.has_speed() {
+        percent("speed", e.speed, p::SPEED_DEFAULT)?
+    } else {
+        p::SPEED_DEFAULT
+    };
     Ok(EffectSetting {
         effect,
         direction,
         brightness: percent("brightness", e.brightness, 100)?,
-        speed: percent("speed", e.speed, 50)?,
+        speed,
         colors,
     })
 }
@@ -780,9 +787,14 @@ pub fn effect_section(e: &EffectSetting) -> Option<String> {
     } else {
         format!("direction = \"{}\"\n", e.direction)
     };
+    let speed = if e.effect.has_speed() {
+        format!("speed = {}\n", e.speed)
+    } else {
+        String::new()
+    };
     Some(format!(
-        "[effect]\neffect = \"{}\"\n{colors}\nbrightness = {}\nspeed = {}\n{direction}",
-        e.effect, e.brightness, e.speed
+        "[effect]\neffect = \"{}\"\n{colors}\nbrightness = {}\n{speed}{direction}",
+        e.effect, e.brightness
     ))
 }
 
@@ -872,11 +884,15 @@ impl fmt::Display for Op {
             },
             Op::Effect(e) => write!(
                 f,
-                "effect: {}, colors {}, brightness {}, speed {}{}",
+                "effect: {}, colors {}, brightness {}{}{}",
                 e.effect,
                 e.colors,
                 e.brightness,
-                e.speed,
+                if e.effect.has_speed() {
+                    format!(", speed {}", e.speed)
+                } else {
+                    String::new()
+                },
                 if e.effect.directions().is_empty() {
                     String::new()
                 } else {
@@ -1494,6 +1510,14 @@ mod tests {
                 "only one",
             ),
             ("version = 1\n[colors]\nmode = 1", "unknown field"),
+            (
+                "version = 1\n[effect]\neffect = \"static\"\ngradient = [\"ff0000\", \"0000ff\"]",
+                "one color only",
+            ),
+            (
+                "version = 1\n[effect]\neffect = \"static\"\ndual = [\"ff0000\", \"0000ff\"]",
+                "one color only",
+            ),
             ("version = 1\n[lighting]\nmode = \"sparkle\"", "sparkle"),
             (
                 "version = 1\n[lighting]\nmode = \"off\"\n[lighting.leds]\nff = \"ff0000\"",
@@ -1511,6 +1535,26 @@ mod tests {
             let err = parse(text).unwrap_err();
             assert!(err.contains(expected), "{text:?}: {err}");
         }
+    }
+
+    #[test]
+    fn static_has_no_speed() {
+        // older files wrote one: it is left out
+        let e =
+            parse("version = 1\n[effect]\neffect = \"static\"\ncolor = \"ff0000\"\nspeed = 80\n")
+                .unwrap()
+                .effect
+                .unwrap();
+        assert_eq!(e.speed, p::SPEED_DEFAULT);
+        let section = effect_section(&e).unwrap();
+        assert!(!section.contains("speed"), "{section}");
+        assert!(!Op::Effect(e).to_string().contains("speed"));
+        let breathing = parse("version = 1\n[effect]\neffect = \"breathing\"\nspeed = 80\n")
+            .unwrap()
+            .effect
+            .unwrap();
+        assert_eq!(breathing.speed, 80);
+        assert!(effect_section(&breathing).unwrap().contains("speed = 80"));
     }
 
     #[test]

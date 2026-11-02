@@ -1022,6 +1022,13 @@ impl Controller {
         ui.set_direction_index(i32::try_from(index).unwrap_or(0));
         ui.set_has_direction(!list.is_empty());
         self.directions = list;
+        // static: one color, no speed
+        let one_color = effect.check_colors(&Colors::Gradient(Vec::new())).is_err();
+        ui.set_one_color(one_color);
+        ui.set_has_speed(effect.has_speed());
+        if one_color {
+            ui.set_color_mode(0);
+        }
     }
 
     fn effect_changed(&mut self, ui: &AppWindow) {
@@ -1118,12 +1125,17 @@ impl Controller {
             percent(ui.get_brightness()) as u8,
             percent(ui.get_speed()) as u8,
         );
+        let speed = if effect.has_speed() {
+            speed
+        } else {
+            p::SPEED_DEFAULT
+        };
         Ok(EffectSetting {
             effect,
             direction,
             brightness,
             speed,
-            colors: colors?,
+            colors: colors.and_then(|c| effect.check_colors(&c).map(|()| c))?,
         })
     }
 

@@ -6,6 +6,7 @@
 
 mod backend;
 mod keyboard;
+mod portal;
 mod prefs;
 mod preview;
 mod screenshot;
@@ -119,6 +120,23 @@ enum Job {
 /// The default backup file.
 const DEFAULT_FILE: &str = "~/lightmount.toml";
 
+/// What a file chosen in the desktop's file chooser is for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Choice {
+    /// The backup file field.
+    BackupFile,
+    /// Save a backup there.
+    BackupSaveAs,
+    /// Import IO Center's profiles.
+    IoCenter,
+}
+
+const SETTINGS_FILES: portal::Filter = ("QuietLinux settings (*.toml)", &["*.toml"]);
+const IOCENTER_FILES: portal::Filter = (
+    "IO Center backup or profile (*.zip, *.ioprofile)",
+    &["*.zip", "*.ioprofile"],
+);
+
 /// What the request on its way is, for its answer.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 enum Pending {
@@ -176,6 +194,8 @@ struct Controller {
     profiles: Option<Profiles>,
     profile_names: Vec<String>,
     active_profile: Option<String>,
+    /// The desktop's file chooser is open.
+    choosing: bool,
     /// The effect preview: its keys, the legends they show, its timer, whether
     /// the timer runs fast, and its time in seconds (it stops while paused).
     preview: Rc<VecModel<KeyCap>>,
@@ -208,6 +228,7 @@ impl Controller {
             profiles: None,
             profile_names: Vec::new(),
             active_profile: None,
+            choosing: false,
             preview: Rc::new(VecModel::default()),
             preview_legends: None,
             preview_timer: slint::Timer::default(),
@@ -1197,10 +1218,18 @@ impl Controller {
 
     /// The backup file typed in the window, `~/` expanded.
     fn file(ui: &AppWindow) -> Option<PathBuf> {
+        let file = Self::typed_file(ui);
+        if file.is_none() {
+            show_error(ui, "type the name of a file first");
+        }
+        file
+    }
+
+    /// The backup file typed in the window, if any.
+    fn typed_file(ui: &AppWindow) -> Option<PathBuf> {
         let text = ui.get_file();
         let text = text.trim();
         if text.is_empty() {
-            show_error(ui, "type the name of a file first");
             return None;
         }
         match (text.strip_prefix("~/"), std::env::var_os("HOME")) {
@@ -1222,10 +1251,131 @@ impl Controller {
         }
     }
 
+    /// Open the desktop's file chooser (on a thread: it waits for the user).
+    fn choose(&mut self, ui: &AppWindow, choice: Choice) {
+        if self.choosing {
+            return;
+        }
+        self.choosing = true;
+        let current = Self::typed_file(ui);
+        let home = std::env::var_os("HOME").map(PathBuf::from);
+        std::thread::spawn(move || {
+            let result = match choice {
+                Choice::BackupFile => {
+                    portal::open_file("Choose a settings file", &[SETTINGS_FILES])
+                }
+                Choice::BackupSaveAs => {
+                    let name = current
+                        .as_ref()
+                        .and_then(|p| p.file_name())
+                        .map_or("lightmount.toml".into(), |n| n.to_string_lossy());
+                    let folder = current
+                        .as_ref()
+                        .and_then(|p| p.parent())
+                        .filter(|d| d.is_dir())
+                        .map(PathBuf::from)
+                        .or(home);
+                    portal::save_file("Save backup", &name, folder.as_deref(), &[SETTINGS_FILES])
+                }
+                Choice::IoCenter => portal::open_file("Import from IO Center", &[IOCENTER_FILES]),
+            };
+            let _ = slint::invoke_from_event_loop(move || {
+                with_controller(|c, ui| c.chosen(ui, choice, result));
+            });
+        });
+    }
+
+    fn chosen(&mut self, ui: &AppWindow, choice: Choice, result: Result<Option<PathBuf>, String>) {
+        self.choosing = false;
+        let path = match result {
+            Ok(Some(path)) => path,
+            Ok(None) => return,
+            Err(e) => {
+                let instead = match choice {
+                    Choice::IoCenter => "use `quietlinux profile import FILE`",
+                    _ => "type the file's name instead",
+                };
+                show_error(ui, &format!("{e}; {instead}"));
+                return;
+            }
+        };
+        match choice {
+            Choice::BackupFile => {
+                ui.set_file(display_path(&path).into());
+                // list the changes at once
+                if ui.get_connected() && !ui.get_busy() {
+                    self.send(ui, Request::CheckFile(path));
+                }
+            }
+            Choice::BackupSaveAs => {
+                ui.set_file(display_path(&path).into());
+                // the file chooser asked before replacing a file
+                self.send(
+                    ui,
+                    Request::Backup {
+                        path,
+                        overwrite: true,
+                    },
+                );
+            }
+            Choice::IoCenter => self.import_iocenter(ui, &path),
+        }
+    }
+
+    /// Import IO Center's profiles under names not in use (nothing is replaced).
+    fn import_iocenter(&mut self, ui: &AppWindow, path: &std::path::Path) {
+        let Some(profiles) = &self.profiles else {
+            return;
+        };
+        let list = match quietlinux_core::iocenter::read(path) {
+            Ok(list) => list,
+            Err(e) => {
+                show_error(ui, &e);
+                return;
+            }
+        };
+        let (mut names, mut notes) = (Vec::new(), Vec::new());
+        for imported in list {
+            let name = profile::numbered(&imported.name, |n| profiles.exists(n));
+            if let Err(e) = profiles.write(&name, &imported.text) {
+                show_error(ui, &format!("profile {name:?}: {e}"));
+                break;
+            }
+            notes.extend(
+                imported
+                    .notes
+                    .iter()
+                    .map(|n| format!("{name}: not imported: {n}")),
+            );
+            names.push(name);
+        }
+        if !names.is_empty() {
+            ui.set_status_error(false);
+            ui.set_status(
+                format!(
+                    "Imported from IO Center: {}. Switch to one in the title line.",
+                    names.join(", ")
+                )
+                .into(),
+            );
+        }
+        ui.set_profile_details(notes.join("\n").into());
+        self.show_profiles(ui);
+    }
+
     fn apply_file(&mut self, ui: &AppWindow) {
         if let Some(path) = Self::file(ui) {
             self.send(ui, Request::ApplyFile(path));
         }
+    }
+}
+
+/// A path for the file field: `~/` for the home folder.
+fn display_path(path: &std::path::Path) -> String {
+    let home = std::env::var_os("HOME").map(PathBuf::from);
+    match home.as_deref().and_then(|h| path.strip_prefix(h).ok()) {
+        Some(rest) => format!("~/{}", rest.display()),
+        None => path.display().to_string(),
     }
 }
 
@@ -1435,6 +1585,9 @@ fn set_up(ui: &AppWindow) {
     ui.on_profile_chosen(|| with_controller(Controller::profile_chosen));
     ui.on_profile_save(|| with_controller(Controller::profile_save));
     ui.on_profile_delete(|| with_controller(Controller::profile_delete));
+    ui.on_choose_file(|| with_controller(|c, ui| c.choose(ui, Choice::BackupFile)));
+    ui.on_save_backup_as(|| with_controller(|c, ui| c.choose(ui, Choice::BackupSaveAs)));
+    ui.on_import_iocenter(|| with_controller(|c, ui| c.choose(ui, Choice::IoCenter)));
     ui.on_refresh(|| with_controller(|c, ui| c.send(ui, Request::Refresh)));
     ui.on_effect_changed(|| with_controller(Controller::effect_changed));
     ui.on_lighting_chosen(|| with_controller(Controller::lighting_chosen));

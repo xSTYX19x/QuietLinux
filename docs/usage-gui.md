@@ -159,8 +159,10 @@ arrow at the top left (or the gear again) returns to the tabs.
 - **Backup**: the file of `quietlinux backup` and `apply` (key bindings, game
   mode shortcuts, macros; see [usage-cli.md](usage-cli.md#backup-file---force)).
   **Save backup** writes it; an existing file only with **Overwrite**.
-  **Check file** lists what applying it would change, without writing; only
-  then **Apply file** writes it. `~/` is your home folder. The file contains
+  **Choose …** picks a file in the desktop's file chooser and checks it at
+  once; **Save as …** saves the backup where you choose (the file chooser asks
+  before replacing a file). **Check file** lists what applying it would
+  change, without writing; only then **Apply file** writes it. `~/` is your home folder. The file contains
   what your macros type: it is readable only by you; keep it private.
 - **Device**: model and firmware version of the keyboard.
 - **About**: QuietLinux's version and license.
@@ -168,7 +170,7 @@ arrow at the top left (or the gear again) returns to the tabs.
 ## Profiles
 
 A profile holds the key bindings, macros, game mode shortcuts, the effect and
-the lighting (see [usage-cli.md](usage-cli.md#profile-list--save--switch--delete)).
+the lighting (see [usage-cli.md](usage-cli.md#profile-list--save--switch--delete--import)).
 In the settings:
 
 - **Save current settings** saves what the keyboard has now as a profile with
@@ -176,6 +178,10 @@ In the settings:
   profile. To replace another profile, delete it first.
 - **Delete** deletes the profile chosen next to it (the keyboard keeps its
   settings).
+- **Import from IO Center …** opens the desktop's file chooser for IO Center
+  for Windows' backup (`.zip`) or a profile (`.ioprofile`) and adds its
+  profiles (under a new name if one is taken; nothing is replaced). What is
+  not known yet is listed below the button ([iocenter.md](iocenter.md)).
 
 Switch profiles in the title line. Switching saves the current settings to the
 active profile first, then writes only what differs; choosing the active
@@ -185,4 +191,5 @@ every profile.
 
 ## Not in the window yet
 
-File chooser and screen reader support: see [todo.md](todo.md).
+Screen reader support: see [todo.md](todo.md). The file chooser is the
+desktop's (XDG desktop portal); without it, type the file's name.

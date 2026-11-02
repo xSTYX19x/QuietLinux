@@ -908,12 +908,18 @@ component SettingsPage inherits VerticalBox {
     in property <[string]> profile-names;
     in-out property <string> profile-name;
     in-out property <int> profile-delete-index;
+    // what an import from IO Center left out
+    in property <string> profile-details;
     callback apply-game-mode();
     callback save-backup();
     callback check-file();
     callback apply-file();
     callback profile-save();
     callback profile-delete();
+    // the desktop's file chooser: a file for the field, saving a backup, an import
+    callback choose-file();
+    callback save-backup-as();
+    callback import-iocenter();
     alignment: start;
 
     GroupBox {
@@ -962,6 +968,22 @@ component SettingsPage inherits VerticalBox {
                         root.profile-delete();
                     }
                 }
+            }
+
+            HorizontalLayout {
+                alignment: start;
+                Button {
+                    text: "Import from IO Center …";
+                    clicked => {
+                        root.import-iocenter();
+                    }
+                }
+            }
+
+            if root.profile-details != "": TextEdit {
+                text: root.profile-details;
+                read-only: true;
+                min-height: 80px;
             }
 
             Text {
@@ -1030,6 +1052,13 @@ component SettingsPage inherits VerticalBox {
                     text <=> root.file;
                     placeholder-text: "~/lightmount.toml";
                 }
+
+                Button {
+                    text: "Choose …";
+                    clicked => {
+                        root.choose-file();
+                    }
+                }
             }
 
             HorizontalLayout {
@@ -1046,6 +1075,14 @@ component SettingsPage inherits VerticalBox {
                 CheckBox {
                     text: "Overwrite";
                     checked <=> root.overwrite;
+                }
+
+                Button {
+                    text: "Save as …";
+                    enabled: root.enabled;
+                    clicked => {
+                        root.save-backup-as();
+                    }
                 }
 
                 Rectangle {
@@ -1353,6 +1390,10 @@ export component AppWindow inherits Window {
     in-out property <int> profile-delete-index;
     callback profile-save();
     callback profile-delete();
+    in property <string> profile-details;
+    callback choose-file();
+    callback save-backup-as();
+    callback import-iocenter();
 
     property <bool> can-write: root.connected && !root.busy;
 
@@ -1648,6 +1689,16 @@ export component AppWindow inherits Window {
                     }
                     profile-delete => {
                         root.profile-delete();
+                    }
+                    profile-details: root.profile-details;
+                    choose-file => {
+                        root.choose-file();
+                    }
+                    save-backup-as => {
+                        root.save-backup-as();
+                    }
+                    import-iocenter => {
+                        root.import-iocenter();
                     }
                     apply-game-mode => {
                         root.apply-game-mode();

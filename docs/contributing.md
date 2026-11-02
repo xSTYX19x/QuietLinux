@@ -32,6 +32,15 @@ New features need captures of what IO Center sends: see
 - IO Center rewrites all macros when one changes: use a test macro
   (`qlcap frames --macro ID` and `qlcap fixtures --macro ID` keep only that one).
 
+## IO Center profiles
+
+The import of IO Center for Windows profiles knows only some effects and
+binding types ([iocenter.md](iocenter.md)). To help: in IO Center for Windows,
+make a new profile without macros, set an effect or a few bindings of the
+kinds still missing (note which), export a backup and attach only that
+profile's `profiles/{UUID}.ioprofile` file. Read it first: it is plain JSON.
+Do not attach profiles with your own macros, they contain what the macros type.
+
 ## Code
 
 - The workspace builds with Rust 1.85 (core, command line, background service)

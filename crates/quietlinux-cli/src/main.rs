@@ -186,6 +186,24 @@ enum ProfileCommand {
         /// Profile name
         name: String,
     },
+    /// Import profiles of IO Center for Windows (does not touch the keyboard)
+    ///
+    /// FILE is IO Center's backup (.zip) or one profile (.ioprofile). What QuietLinux
+    /// does not know yet is listed and left out. Switch to an imported profile with
+    /// `quietlinux profile switch NAME`.
+    Import {
+        /// IO Center backup (.zip) or profile (.ioprofile)
+        file: PathBuf,
+        /// Name of the new profile (only for a single profile; default: IO Center's name)
+        #[arg(long)]
+        name: Option<String>,
+        /// Replace existing profiles of the same name
+        #[arg(long)]
+        force: bool,
+        /// Show what would be imported without writing anything
+        #[arg(long)]
+        dry_run: bool,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -984,6 +1002,12 @@ fn run_profile(
                 println!("Switched to profile {name:?}: {count} change(s) written.");
             }
         }
+        ProfileCommand::Import {
+            file,
+            name,
+            force,
+            dry_run,
+        } => import_profiles(&profiles, &file, name, force, dry_run)?,
         ProfileCommand::Delete { name } => {
             profile::check_name(&name)?;
             if !profiles.exists(&name) {
@@ -992,6 +1016,67 @@ fn run_profile(
             profiles.delete(&name)?;
             println!("Profile {name:?} deleted.");
         }
+    }
+    Ok(())
+}
+
+fn import_profiles(
+    profiles: &Profiles,
+    file: &std::path::Path,
+    name: Option<String>,
+    force: bool,
+    dry_run: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mut list = quietlinux_core::iocenter::read(file)?;
+    if let Some(name) = name {
+        profile::check_name(&name)?;
+        let [single] = list.as_mut_slice() else {
+            return Err(format!(
+                "the file has {} profiles: --name only works for one",
+                list.len()
+            )
+            .into());
+        };
+        single.name = name;
+    }
+    let mut written = 0;
+    for imported in &list {
+        let settings = config::parse(&imported.text)?;
+        let count = |n: usize, what: &str| format!("{n} {what}");
+        println!(
+            "{:?} from IO Center's {:?}: {}, {}{}",
+            imported.name,
+            imported.source,
+            count(settings.bindings.as_ref().map_or(0, Vec::len), "binding(s)"),
+            count(settings.macros.as_ref().map_or(0, Vec::len), "macro(s)"),
+            if settings.effect.is_some() {
+                ", effect"
+            } else {
+                ""
+            }
+        );
+        for note in &imported.notes {
+            println!("  not imported: {note}");
+        }
+        if profiles.exists(&imported.name) && !force {
+            println!(
+                "  skipped: profile {:?} exists (add --force to replace it)",
+                imported.name
+            );
+            continue;
+        }
+        if !dry_run {
+            profiles.write(&imported.name, &imported.text)?;
+            written += 1;
+        }
+    }
+    if dry_run {
+        println!("Nothing written (--dry-run).");
+    } else {
+        println!(
+            "{written} profile(s) written to {}. Switch with `quietlinux profile switch NAME`.",
+            profiles.dir().display()
+        );
     }
     Ok(())
 }

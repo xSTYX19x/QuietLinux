@@ -10,6 +10,7 @@
 //! - [`settings`]: names of effects, directions, actions, … for command lines and files.
 //! - [`macros`]: macros as text, and changing the macros stored in the keyboard.
 //! - [`config`]: the keyboard's settings as a TOML file (backup and apply).
+//! - [`iocenter`]: import of IO Center for Windows profiles.
 //! - [`profile`]: named settings files, switched by command, window or profile key.
 //! - [`state`]: what QuietLinux last showed (per-key colors), for the background service.
 //!
@@ -22,6 +23,7 @@ pub mod config;
 pub mod device;
 pub mod hid_descriptor;
 pub mod info;
+pub mod iocenter;
 pub mod keymap;
 pub mod layout;
 pub mod macros;

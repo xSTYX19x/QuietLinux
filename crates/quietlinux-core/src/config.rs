@@ -286,6 +286,36 @@ pub fn profile_text(
         "# Switching to it writes what differs; it is saved again when you switch away."
     );
     snapshot_sections(&mut t, s);
+    remembered_sections(&mut t, effect, lighting);
+    t
+}
+
+/// Text of a profile made from settings of elsewhere (an IO Center profile):
+/// `comment` lines first; no `[keyboard]` and no `[game_mode]` section.
+/// `macros`: `None` leaves the keyboard's macros alone.
+pub fn settings_text(
+    comment: &[String],
+    bindings: &[Binding],
+    macros: Option<&[Macro]>,
+    effect: Option<&EffectSetting>,
+    lighting: Option<&Lighting>,
+) -> String {
+    let mut t = String::new();
+    for line in comment {
+        let _ = writeln!(t, "# {line}");
+    }
+    version_line(&mut t, macros);
+    settings_sections(&mut t, bindings, macros);
+    remembered_sections(&mut t, effect, lighting);
+    t
+}
+
+/// The `[effect]` (or its template) and `[lighting]` sections of a profile.
+fn remembered_sections(
+    t: &mut String,
+    effect: Option<&EffectSetting>,
+    lighting: Option<&Lighting>,
+) {
     match effect.and_then(effect_section) {
         Some(section) => {
             let _ = writeln!(t);
@@ -295,9 +325,8 @@ pub fn profile_text(
         None => t.push_str(EFFECT_TEMPLATE),
     }
     if let Some(lighting) = lighting {
-        lighting_section(&mut t, lighting);
+        lighting_section(t, lighting);
     }
-    t
 }
 
 /// A `[lighting]` section: what the lighting shows, and the per-key colors.
@@ -324,14 +353,7 @@ fn lighting_section(t: &mut String, lighting: &Lighting) {
 
 /// The version and the sections of what the keyboard reports.
 fn snapshot_sections(t: &mut String, s: &Snapshot) {
-    let _ = writeln!(t, "version = {VERSION}");
-    if s.macros.as_ref().is_some_and(Vec::is_empty) {
-        let _ = writeln!(
-            t,
-            "# The keyboard has no macros: `apply` deletes any it finds."
-        );
-        let _ = writeln!(t, "macros = []");
-    }
+    version_line(t, s.macros.as_deref());
     let _ = writeln!(t);
     let _ = writeln!(
         t,
@@ -370,6 +392,21 @@ fn snapshot_sections(t: &mut String, s: &Snapshot) {
         .map(|n| quoted(n))
         .collect();
     let _ = writeln!(t, "blocks = [{}]", blocks.join(", "));
+    settings_sections(t, &s.bindings, s.macros.as_deref());
+}
+
+/// The file version, and `macros = []` for no macros (before any section).
+fn version_line(t: &mut String, macros: Option<&[Macro]>) {
+    let _ = writeln!(t, "version = {VERSION}");
+    if macros.is_some_and(<[Macro]>::is_empty) {
+        let _ = writeln!(t, "# No macros: `apply` deletes any it finds.");
+        let _ = writeln!(t, "macros = []");
+    }
+}
+
+/// The `[bindings]` section and the macros.
+fn settings_sections(t: &mut String, bindings: &[Binding], macros: Option<&[Macro]>) {
+    let quoted = |s: &str| format!("\"{s}\"");
     let _ = writeln!(t);
     let _ = writeln!(
         t,
@@ -384,7 +421,7 @@ fn snapshot_sections(t: &mut String, s: &Snapshot) {
         "# factory binding back, except bindings QuietLinux cannot write (raw)."
     );
     let _ = writeln!(t, "[bindings]");
-    for b in &s.bindings {
+    for b in bindings {
         let key = binding_key(b.key_id, b.fn_layer);
         let key = if key.contains('+') { quoted(&key) } else { key };
         if let Some(text) = action_text(&b.action) {
@@ -399,7 +436,7 @@ fn snapshot_sections(t: &mut String, s: &Snapshot) {
             );
         }
     }
-    match &s.macros {
+    match macros {
         Some(list) if !list.is_empty() => macro_sections(t, list),
         Some(_) => {}
         None => {

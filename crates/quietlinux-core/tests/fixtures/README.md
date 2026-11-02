@@ -13,12 +13,17 @@ Reference frames used by the protocol tests. They need no keyboard.
 | `connect-web.hex` | IO Center Web connecting (identification, `01:01` OpenSession, reading the state), requests and replies |
 | `bindings-web.hex` | IO Center Web binding keys (key, combination, mouse, lighting, shortcut, F13, disable, reset, Fn layer), a dual color effect, game mode notifications |
 | `writes-web.hex` | IO Center Web changing settings: `10:06` effects/colors/brightness/speed, `11:02` a media binding, `07:03` game mode flags, `01:03` keep-alive |
+| `iocenter-profile.json` | an IO Center for Windows profile (`.ioprofile`), self-made in the format of an export: macro, bindings, static effect, an unknown key and binding type |
 | `windows.hex` | IO Center for Windows: starting (reading all macros), effects and the on/off switch, per-key lighting (realtime mode), a test macro created, bound, edited and deleted, repeat modes, website and profile bindings, profile switches |
 
 Format of the `.hex` files: one message per line, its 64-byte packets as hex
 separated by spaces; `#` starts a comment.
 
 ## Origin
+
+`iocenter-profile.json` is written by hand after the structure of a real
+export of IO Center for Windows (2026); it contains none of that export's
+settings or macros.
 
 `connect-web.hex`, `writes-web.hex` and `bindings-web.hex` come from captures of IO Center Web made for QuietLinux
 with `tools/webhid-logger.js`, extracted with `qlcap fixtures` (no serial

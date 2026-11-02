@@ -91,7 +91,7 @@ install -Dm755 target/release/quietlinux-daemon ~/.local/bin/quietlinux-daemon
   second).
 - **Profile keys.** Keys bound to a profile (`quietlinux bind KEY profile
   next`) only report the press too; the service switches the
-  [profile](usage-cli.md#profile-list--save--switch--delete), at most once a
+  [profile](usage-cli.md#profile-list--save--switch--delete--import), at most once a
   second.
 
 To see those presses, it reads the key events of the keyboard's vendor

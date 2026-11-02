@@ -12,7 +12,8 @@ the AUR package and trying the packages (6.6) come later.
 ## 0.2.0 (in progress)
 
 Chosen for 0.2.0 (2026-11-02): profiles with profile keys, a live preview of
-the effect, shell completions. The AUR package comes later.
+the effect, shell completions; then the IO Center import and a file chooser.
+The AUR package comes later.
 
 **Profiles** (2.4, 6.3, 6.5)
 - [x] A profile is a settings file in `~/.config/quietlinux/profiles/NAME.toml`
@@ -46,6 +47,8 @@ the effect, shell completions. The AUR package comes later.
 - [x] Compared with the keyboard (2026-11-02): the animations match; tornado
   with one color turns that color and black; matrix runs drops with a tail in
   the direction (both now in the preview too)
+
+**IO Center import** (2.4) and **file chooser** (6.4): see there.
 
 **Shell completions** (6.3)
 - [x] `quietlinux completions bash|zsh|fish` (clap_complete)
@@ -155,7 +158,9 @@ Windows app and the web app in phase 2. ✔ = already known thanks to bbossa.
 - [x] Find out how many profiles the device holds: none. IO Center for Windows keeps profiles on the PC and writes all settings when switching [cap]
 - [x] Profile switching keys (binding type `08`): `bind KEY profile next|previous|NAME`, switched by the background service (0.2.0)
 - [x] Export/import profiles as files (own documented format, e.g. TOML): `backup`/`apply`
-- [ ] Import and export IO Center for Windows backups (`.zip`), so that settings move between IO Center and QuietLinux. A sample export of the reference keyboard is available locally (`captures/`, not committed: it contains the user's macros). Analyze the format first, document it in `protocol.md` or its own doc, and add only an anonymized or self-made sample as a fixture
+- [x] Import IO Center for Windows backups (`.zip`) and profiles (`.ioprofile`): `profile import`, the window's "Import from IO Center …"; format in [iocenter.md](iocenter.md), a self-made fixture (0.2.0). Known so far: key, media, lighting and macro bindings, macros (played once), static and reactive effects
+- [ ] IO Center import: the other effects, binding types, modifiers, playback modes and per-key lighting (needs an export with them, see contributing.md)
+- [ ] Export to IO Center for Windows (needs the remaining format first)
 
 ### 2.5 Product settings
 - [x] Show the firmware version (**read-only**, see 7)
@@ -343,7 +348,8 @@ GUI: Slint) and are checked in CI (`cargo deny`).
 - [x] Remember the last effect (CLI and GUI, `last-effect.toml`; the keyboard does not report it) and the painted per-key colors (`lighting.toml`); the window starts with them and with the view of the keyboard's lighting mode
 - [x] Keep per-key colors shown: remembered in `lighting.toml`, shown again by the background service
 - [ ] Save and load several per-key color layouts as named files
-- [ ] A file chooser for the backup (needs the XDG desktop portal; today a file name field)
+- [x] A file chooser for the backup and the IO Center import: the XDG desktop portal over D-Bus (zbus, already used by Slint's window system); the file name field stays (0.2.0)
+- [ ] Try the file chooser on GNOME and KDE
 - [ ] Screen reader support: Slint's "accessibility" feature is off because its D-Bus stack needs quick-xml 0.38 (RUSTSEC-2026-0194/-0195); turn it on once AccessKit moves to quick-xml 0.41+
 - [ ] Remove the `cargo deny` ignores for unmaintained crates (ttf-parser, zvariant, zbus_names) when Slint/winit move on
 - [x] Live preview of an effect (0.2.0)

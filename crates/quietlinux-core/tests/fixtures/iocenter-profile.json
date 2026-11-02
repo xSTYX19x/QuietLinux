@@ -1,0 +1,268 @@
+{
+    "data": {
+        "cereal_class_version": 1000,
+        "id": "{00000000-0000-4000-8000-000000000001}",
+        "name": "Profil 1",
+        "linkedAppPath": "",
+        "disabledDevices": [],
+        "properties": [
+            {
+                "polymorphic_id": 2147483649,
+                "polymorphic_name": "CoolingStudioProperty",
+                "ptr_wrapper": {
+                    "id": 2147483649,
+                    "data": {
+                        "cereal_class_version": 1000,
+                        "subsMap": [],
+                        "mode": "Balanced"
+                    }
+                }
+            },
+            {
+                "polymorphic_id": 2147483650,
+                "polymorphic_name": "MacrosProperty",
+                "ptr_wrapper": {
+                    "id": 2147483650,
+                    "data": {
+                        "cereal_class_version": 1000,
+                        "subs": [
+                            {
+                                "key": "Light Mount",
+                                "value": {
+                                    "polymorphic_id": 1073741824,
+                                    "ptr_wrapper": {
+                                        "id": 2147483651,
+                                        "data": {
+                                            "cereal_class_version": 1000,
+                                            "macros": [
+                                                {
+                                                    "cereal_class_version": 1000,
+                                                    "id": "{00000000-0000-4000-8000-0000000000aa}",
+                                                    "name": "Makro 1",
+                                                    "config": {
+                                                        "cereal_class_version": 0,
+                                                        "playbackMode": "Once"
+                                                    },
+                                                    "events": [
+                                                        {
+                                                            "cereal_class_version": 0,
+                                                            "impl": {
+                                                                "index": 0,
+                                                                "data": {
+                                                                    "cereal_class_version": 0,
+                                                                    "key": "Key_Y"
+                                                                }
+                                                            },
+                                                            "delay": 0
+                                                        },
+                                                        {
+                                                            "impl": {
+                                                                "index": 1,
+                                                                "data": {
+                                                                    "key": "Key_Y"
+                                                                }
+                                                            },
+                                                            "delay": 30
+                                                        }
+                                                    ]
+                                                }
+                                            ]
+                                        }
+                                    }
+                                }
+                            }
+                        ]
+                    }
+                }
+            },
+            {
+                "polymorphic_id": 2147483652,
+                "polymorphic_name": "LightingsProperty",
+                "ptr_wrapper": {
+                    "id": 2147483652,
+                    "data": {
+                        "cereal_class_version": 1000,
+                        "subs": [
+                            {
+                                "key": "Light Mount",
+                                "value": {
+                                    "polymorphic_id": 1073741824,
+                                    "ptr_wrapper": {
+                                        "id": 2147483653,
+                                        "data": {
+                                            "cereal_class_version": 1000,
+                                            "enabled": true,
+                                            "mode": "General",
+                                            "generalModeData": {
+                                                "cereal_class_version": 3000,
+                                                "data": [
+                                                    {
+                                                        "cereal_class_version": 3000,
+                                                        "impl": {
+                                                            "index": 10,
+                                                            "data": {
+                                                                "cereal_class_version": 3000,
+                                                                "color": "#ffe63000",
+                                                                "brightness": 100
+                                                            }
+                                                        }
+                                                    }
+                                                ],
+                                                "groupType": "All",
+                                                "zoneType": "AllZones"
+                                            },
+                                            "customModeData": {
+                                                "cereal_class_version": 1000,
+                                                "layers": []
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        ]
+                    }
+                }
+            },
+            {
+                "polymorphic_id": 2147483654,
+                "polymorphic_name": "KeyBindingsProperty",
+                "ptr_wrapper": {
+                    "id": 2147483654,
+                    "data": {
+                        "cereal_class_version": 1000,
+                        "subs": [
+                            {
+                                "key": "Light Mount",
+                                "value": {
+                                    "polymorphic_id": 1073741824,
+                                    "ptr_wrapper": {
+                                        "id": 2147483655,
+                                        "data": {
+                                            "cereal_class_version": 1001,
+                                            "enabled": true,
+                                            "layerBindingsData": [
+                                                {
+                                                    "key": "Common",
+                                                    "value": [
+                                                        {
+                                                            "key": "Key_M1",
+                                                            "value": {
+                                                                "cereal_class_version": 1000,
+                                                                "impl": {
+                                                                    "index": 4,
+                                                                    "data": {
+                                                                        "action": "PlayPause",
+                                                                        "audioDeviceId": ""
+                                                                    }
+                                                                }
+                                                            }
+                                                        },
+                                                        {
+                                                            "key": "Key_M2",
+                                                            "value": {
+                                                                "cereal_class_version": 1000,
+                                                                "impl": {
+                                                                    "index": 2,
+                                                                    "data": {
+                                                                        "cereal_class_version": 0,
+                                                                        "key": "Key_F13",
+                                                                        "modifiers": 0
+                                                                    }
+                                                                }
+                                                            }
+                                                        },
+                                                        {
+                                                            "key": "Key_M5",
+                                                            "value": {
+                                                                "cereal_class_version": 1000,
+                                                                "impl": {
+                                                                    "index": 13,
+                                                                    "data": {
+                                                                        "cereal_class_version": 0,
+                                                                        "macroId": "{00000000-0000-4000-8000-0000000000aa}"
+                                                                    }
+                                                                }
+                                                            }
+                                                        },
+                                                        {
+                                                            "key": "Key_DialRotateLeft",
+                                                            "value": {
+                                                                "cereal_class_version": 1000,
+                                                                "impl": {
+                                                                    "index": 4,
+                                                                    "data": {
+                                                                        "action": "DecreaseVolume",
+                                                                        "audioDeviceId": ""
+                                                                    }
+                                                                }
+                                                            }
+                                                        },
+                                                        {
+                                                            "key": "Key_Mystery",
+                                                            "value": {
+                                                                "cereal_class_version": 1000,
+                                                                "impl": {
+                                                                    "index": 4,
+                                                                    "data": {
+                                                                        "action": "Mute",
+                                                                        "audioDeviceId": ""
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    ]
+                                                },
+                                                {
+                                                    "key": "Fn1",
+                                                    "value": [
+                                                        {
+                                                            "key": "Key_RightArrow",
+                                                            "value": {
+                                                                "cereal_class_version": 1000,
+                                                                "impl": {
+                                                                    "index": 12,
+                                                                    "data": {
+                                                                        "action": "NextEffect",
+                                                                        "effect": "None"
+                                                                    }
+                                                                }
+                                                            }
+                                                        },
+                                                        {
+                                                            "key": "Key_UpArrow",
+                                                            "value": {
+                                                                "cereal_class_version": 1000,
+                                                                "impl": {
+                                                                    "index": 12,
+                                                                    "data": {
+                                                                        "action": "IncreaseBrightness",
+                                                                        "effect": "None"
+                                                                    }
+                                                                }
+                                                            }
+                                                        },
+                                                        {
+                                                            "key": "Key_LeftArrow",
+                                                            "value": {
+                                                                "cereal_class_version": 1000,
+                                                                "impl": {
+                                                                    "index": 99,
+                                                                    "data": {}
+                                                                }
+                                                            }
+                                                        }
+                                                    ]
+                                                }
+                                            ],
+                                            "fnLayerColors": []
+                                        }
+                                    }
+                                }
+                            }
+                        ]
+                    }
+                }
+            }
+        ]
+    }
+}

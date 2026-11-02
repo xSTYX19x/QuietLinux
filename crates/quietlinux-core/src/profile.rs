@@ -64,6 +64,20 @@ pub fn name_from_id(id: &[u8; MAX_NAME]) -> Option<String> {
     Some(name.to_owned())
 }
 
+/// `base`, or with a number (`base-2`, …) if `taken` says it is in use; at
+/// most 16 characters.
+pub fn numbered(base: &str, taken: impl Fn(&str) -> bool) -> String {
+    let mut name = base.to_owned();
+    let mut n = 2;
+    while taken(&name) {
+        let suffix = format!("-{n}");
+        let keep = base.len().min(MAX_NAME - suffix.len());
+        name = format!("{}{suffix}", base[..keep].trim_end_matches('-'));
+        n += 1;
+    }
+    name
+}
+
 /// A profile to switch to.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Target {
@@ -380,6 +394,11 @@ mod tests {
         let mut gap = id("ab");
         gap[5] = b'c';
         assert_eq!(name_from_id(&gap), None);
+        assert_eq!(numbered("work", |n| n == "work" || n == "work-2"), "work-3");
+        assert_eq!(
+            numbered("sixteen-chars-ok", |n| n == "sixteen-chars-ok"),
+            "sixteen-chars-2"
+        );
         assert_eq!("next".parse(), Ok(Target::Next));
         assert_eq!("work".parse(), Ok(Target::Name("work".to_owned())));
         assert!("no way".parse::<Target>().is_err());

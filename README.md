@@ -27,6 +27,7 @@ Not affiliated with or endorsed by be quiet!. See [Safety](#safety).
 | Game mode: which shortcuts it blocks | ✅ |
 | Backup and restore of bindings, game mode and macros as a TOML file (`backup`, `apply`) | ✅ |
 | Profiles: named sets of bindings, macros, game mode shortcuts and lighting, switched by command, window or profile key (`profile`) | ✅ |
+| Import of IO Center for Windows profiles (`profile import`; partly: [what is known](docs/iocenter.md)) | ✅ |
 | Background service (`quietlinux-daemon`): per-key colors shown again after replugging or sleep; website and profile keys | ✅ |
 | Per-LED colors by zone (keys, top bar, knob, side strips) or by key (volatile) | ✅ |
 | Key map with layout-independent key names, legends for UK, German and French ISO | ✅ |
@@ -68,6 +69,7 @@ Details: [installation](docs/installation.md), [command line usage](docs/usage-c
 - [docs/usage-cli.md](docs/usage-cli.md): every command with examples
 - [docs/usage-gui.md](docs/usage-gui.md): the graphical interface
 - [docs/protocol.md](docs/protocol.md): what is known about the keyboard's protocol
+- [docs/iocenter.md](docs/iocenter.md): IO Center for Windows' profile files (import)
 - [docs/troubleshooting.md](docs/troubleshooting.md): when something does not work
 - [docs/capturing.md](docs/capturing.md): how to record and decode the vendor software's traffic
 - [docs/contributing.md](docs/contributing.md): device reports, captures, code; [docs/releasing.md](docs/releasing.md): making a release

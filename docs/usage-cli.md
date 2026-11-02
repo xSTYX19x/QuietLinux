@@ -236,7 +236,7 @@ quietlinux bind --fn M2 profile gaming
 | `shortcut NAME` | Windows shortcuts (`calculator`, `task-manager`, `lock-pc`, …): IO Center performs them on Windows; on Linux nothing happens yet |
 | `macro ID` | a macro stored in the keyboard; `quietlinux info` lists their IDs. The keyboard plays it itself |
 | `website URL` | open a website (`http://` or `https://` and a host, at most 51 characters, no spaces or quotes). The keyboard only reports the press: the [background service](installation.md#background-service-optional) opens it |
-| `profile TARGET` | switch [profiles](#profile-list--save--switch--delete): `next`, `previous` or a profile's name. The keyboard only reports the press: the background service switches |
+| `profile TARGET` | switch [profiles](#profile-list--save--switch--delete--import): `next`, `previous` or a profile's name. The keyboard only reports the press: the background service switches |
 | `disable` | the key does nothing |
 | `default` | back to the factory binding |
 
@@ -410,7 +410,7 @@ $ quietlinux apply ~/lightmount.toml --dry-run
 - If keys switch profiles now and none would afterwards, a note says so.
 - The whole file is checked before anything is sent; errors name the line's key.
 
-## `profile list | save | switch | delete`
+## `profile list | save | switch | delete | import`
 
 A profile is a set of settings: key bindings, macros, game mode shortcuts, the
 effect and the lighting (per-key colors or off). The Light Mount holds no
@@ -445,6 +445,14 @@ Switched to profile "work": 2 change(s) written.
   since it was saved. `--dry-run` shows the changes and saves nothing.
 - `list` marks the active profile with `*`; `delete NAME` deletes one. Neither
   touches the keyboard.
+- `import FILE` reads the profiles of IO Center for Windows: its backup
+  (`.zip`, all profiles) or one `.ioprofile` file. Each becomes a profile named
+  after IO Center's (`Profil 1` → `Profil-1`; `--name NAME` for a single one);
+  existing profiles are only replaced with `--force`; `--dry-run` writes
+  nothing. Only part of IO Center's format is known yet
+  ([iocenter.md](iocenter.md)): what is left out is listed, also at the top of
+  the profile file. Import does not touch the keyboard; `switch` writes the
+  profile.
 - **Profile keys:** `quietlinux bind KEY profile next` (or `previous`, or a
   profile's name) makes a key switch profiles; the
   [background service](installation.md#background-service-optional) does the

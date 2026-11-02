@@ -17,6 +17,12 @@ All notable changes to QuietLinux. The format follows
 - The window: the active profile in the title line, profiles in the settings
 - The window: a live preview of the effect on the effect page (animated in the
   window only; nothing is sent to the keyboard)
+- Import of IO Center for Windows profiles: `quietlinux profile import FILE`
+  (its backup `.zip` or an `.ioprofile`) and "Import from IO Center …" in the
+  window. Key, media, lighting and macro bindings, macros, the static and
+  reactive effects; what is not known yet is listed (see docs/iocenter.md)
+- The window: the desktop's file chooser (XDG desktop portal) for backups
+  ("Choose …", "Save as …") and the import
 - `quietlinux completions bash|zsh|fish`; `install.sh` and the packages install
   the completions
 - Settings files may have a `[lighting]` section: the stored effect, per-key

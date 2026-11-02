@@ -13,6 +13,7 @@ quietlinux [--usb-path PATH] [--allow-unknown-firmware] [--layout LAYOUT] <comma
 | `--usb-path PATH` | Pick one keyboard when several are plugged in. `PATH` is the USB port path shown by `quietlinux status`, e.g. `1-2` or `3-1.4`. |
 | `--allow-unknown-firmware` | Allow writing to a firmware version that was never tested. Without it, such keyboards are read-only. |
 | `--layout LAYOUT` | Keycap legends to show: `uk`, `de` or `fr`. Default: the layout the keyboard reports (`events`, `calibrate`), otherwise `uk`. Only changes what is displayed. |
+| `--json` | Print JSON instead of text, for scripts: `status`, `info`, `keys`, `zones`, `macro list`, `macro show`, `profile list`, `light layout list`. Other commands refuse it. See [JSON output](#json-output). |
 
 ## Key names
 
@@ -199,6 +200,27 @@ The keyboard does not report its effect, so `light effect` and `light static`
 (and `apply` with an `[effect]`) remember the last one in
 `~/.config/quietlinux/last-effect.toml`. The graphical interface shows it
 when it opens; the file is a settings file `apply` takes as it is.
+
+## `light layout list | save | load | delete`
+
+Per-key color layouts saved under a name (`~/.config/quietlinux/layouts/NAME.toml`).
+
+```sh
+quietlinux light set keys=000000 KeyW=e63000 KeyA=e63000 KeyS=e63000 KeyD=e63000
+quietlinux light layout save wasd     # the colors QuietLinux showed last
+quietlinux light layout list
+quietlinux light layout load wasd     # shows them again (volatile, like light set)
+quietlinux light layout delete wasd
+```
+
+- `save NAME` saves the per-key colors QuietLinux showed last (`light set`, a
+  layout, the window); `--force` replaces an existing layout. Names: 1 to 32
+  characters `A-Z a-z 0-9 - _`.
+- `load NAME` shows a layout; LEDs it does not list are off. Like `light set`,
+  the colors are volatile; the background service shows them again after a
+  replug or sleep.
+- The file has a `[leds]` table by LED index, like `[lighting.leds]` in a
+  profile (`2e = "ff0000"`).
 
 ## `light stored`
 
@@ -507,6 +529,35 @@ quietlinux completions zsh > ~/.local/share/zsh/site-functions/_quietlinux
 
 For zsh, the folder must be in `fpath` (in `~/.zshrc`, before `compinit`):
 `fpath=(~/.local/share/zsh/site-functions $fpath)`.
+
+## JSON output
+
+With `--json`, the read-only commands print JSON (indented) instead of text.
+Fields are added in later versions, never renamed or removed.
+
+```console
+$ quietlinux status --json
+{
+  "firmware": "2.3.0",
+  "lighting_mode": "effect",
+  "node": "/dev/hidraw5",
+  "tested": true,
+  "usb_path": "1-2"
+}
+```
+
+| Command | JSON |
+|---|---|
+| `status` | `usb_path`, `node`, `firmware`, `tested`, `lighting_mode` |
+| `info` | `model`, `firmware`, `layout`, `polling_rate`, `lighting_mode`, `game_mode` (`on`, `blocks`), `bindings_enabled`, `bindings` (list of `key`, `key_id`, `fn`, `action` in the syntax of `bind` or `null`, `description`, `raw` bytes), `macros` (as `macro list`, or `null` if not reported) |
+| `keys` | list of `led` (hex), `name`, `legend` |
+| `zones` | list of `name`, `leds` (hex) |
+| `macro list` | list of `id`, `name`, `repeat`, `events` (count) |
+| `macro show ID` | `id`, `name`, `repeat`, `events` (text, as `macro create` takes it) |
+| `profile list` | `active` (or `null`), `profiles`, `folder` |
+| `light layout list` | `layouts`, `folder` |
+
+`info --json` reads what `backup` reads, not every line of `info`.
 
 ## Exit status
 

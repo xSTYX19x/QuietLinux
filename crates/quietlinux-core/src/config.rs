@@ -753,6 +753,18 @@ fn effect_setting(e: EffectSection) -> Result<EffectSetting, String> {
 // The Light Mount does not report its effect (`10:05` answers `00`), so QuietLinux
 // remembers the last one it set, in a settings file that `apply` takes as it is.
 
+/// Check the name of a profile, layout, …: 1 to `max` characters
+/// `A-Z a-z 0-9 - _`, so that it is a plain file name.
+pub fn check_name(what: &str, name: &str, max: usize) -> Result<(), String> {
+    let allowed = |b: u8| b.is_ascii_alphanumeric() || b == b'-' || b == b'_';
+    if name.is_empty() || name.len() > max || !name.bytes().all(allowed) {
+        return Err(format!(
+            "invalid {what} name {name:?}: 1 to {max} characters A-Z, a-z, 0-9, - and _"
+        ));
+    }
+    Ok(())
+}
+
 /// `$XDG_CONFIG_HOME/quietlinux` (or `~/.config/quietlinux`).
 pub fn config_dir() -> Option<PathBuf> {
     let base = std::env::var_os("XDG_CONFIG_HOME")

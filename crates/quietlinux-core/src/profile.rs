@@ -30,12 +30,7 @@ const ACTIVE_FILE: &str = "active";
 
 /// Check a profile name: 1 to 16 characters `A-Z a-z 0-9 - _`.
 pub fn check_name(name: &str) -> Result<(), String> {
-    let allowed = |b: u8| b.is_ascii_alphanumeric() || b == b'-' || b == b'_';
-    if name.is_empty() || name.len() > MAX_NAME || !name.bytes().all(allowed) {
-        return Err(format!(
-            "invalid profile name {name:?}: 1 to {MAX_NAME} characters A-Z, a-z, 0-9, - and _"
-        ));
-    }
+    config::check_name("profile", name, MAX_NAME)?;
     if RESERVED.contains(&name) {
         return Err(format!(
             "{name:?} is no profile name: it chooses the {name} profile"

@@ -58,6 +58,14 @@ Do not attach profiles with your own macros, they contain what the macros type.
   only Slint's generated code uses it).
 - The protocol layer has no I/O; tests use captured fixtures and the simulated
   keyboard (`--demo`, `device::fake`).
+- Everything from the keyboard or from files is untrusted: parsers return
+  errors, never panic. `cargo test` runs them with random and damaged input
+  (`crates/quietlinux-core/src/fuzzing.rs`; longer:
+  `QUIETLINUX_FUZZ_ROUNDS=100 cargo test --release -p quietlinux-core fuzzing`).
+  With a nightly toolchain and `cargo install cargo-fuzz`, `cd fuzz && cargo
+  +nightly fuzz run frames` (also `replies`, `descriptor`, `text`, `iocenter`)
+  searches with coverage guidance; CI does this once a week. A new parser gets
+  an entry point there.
 - `docs/protocol.md` marks every finding: **[cap]** (captured and replayed) or
   **[web]** (read from IO Center Web, not verified). Keep it that way.
 - Documentation and code comments are in English.

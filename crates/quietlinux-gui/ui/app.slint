@@ -465,6 +465,13 @@ component PerKeyPage inherits VerticalBox {
     callback all-keys();
     callback clear();
     callback zones-changed();
+    // saved layouts
+    in property <[string]> layout-names;
+    in-out property <int> layout-index;
+    in-out property <string> layout-name;
+    callback layout-load();
+    callback layout-save();
+    callback layout-delete();
 
     HorizontalLayout {
         spacing: 12px;
@@ -575,6 +582,48 @@ component PerKeyPage inherits VerticalBox {
             }
             committed => {
                 root.zones-changed();
+            }
+        }
+    }
+
+    HorizontalLayout {
+        spacing: 8px;
+        Text {
+            text: "Layout";
+            vertical-alignment: center;
+            min-width: 50px;
+        }
+
+        if root.layout-names.length > 0: ComboBox {
+            model: root.layout-names;
+            current-index <=> root.layout-index;
+        }
+
+        if root.layout-names.length > 0: Button {
+            text: "Show";
+            enabled: root.enabled;
+            clicked => {
+                root.layout-load();
+            }
+        }
+
+        if root.layout-names.length > 0: Button {
+            text: "Delete";
+            clicked => {
+                root.layout-delete();
+            }
+        }
+
+        LineEdit {
+            text <=> root.layout-name;
+            placeholder-text: "name of a new layout";
+        }
+
+        Button {
+            text: "Save colors";
+            enabled: root.layout-name != "";
+            clicked => {
+                root.layout-save();
             }
         }
     }
@@ -1333,6 +1382,12 @@ export component AppWindow inherits Window {
     callback paint-all();
     callback paint-clear();
     callback zones-changed();
+    in property <[string]> layout-names;
+    in-out property <int> layout-index;
+    in-out property <string> layout-name;
+    callback layout-load();
+    callback layout-save();
+    callback layout-delete();
 
     // keys
     in property <[KeyCap]> keys;
@@ -1581,6 +1636,18 @@ export component AppWindow inherits Window {
                             }
                             zones-changed => {
                                 root.zones-changed();
+                            }
+                            layout-names: root.layout-names;
+                            layout-index <=> root.layout-index;
+                            layout-name <=> root.layout-name;
+                            layout-load => {
+                                root.layout-load();
+                            }
+                            layout-save => {
+                                root.layout-save();
+                            }
+                            layout-delete => {
+                                root.layout-delete();
                             }
                         }
                 }

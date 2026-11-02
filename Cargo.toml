@@ -1,6 +1,8 @@
 [workspace]
 resolver = "3"
 members = ["crates/quietlinux-core", "crates/quietlinux-cli", "crates/quietlinux-daemon", "crates/quietlinux-gui", "tools/qlcap"]
+# cargo-fuzz targets: their own workspace (nightly)
+exclude = ["fuzz"]
 
 [workspace.package]
 version = "0.1.0"

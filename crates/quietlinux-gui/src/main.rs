@@ -37,7 +37,7 @@ use quietlinux_core::settings::{
 use quietlinux_core::state;
 use slint::{ComponentHandle, Model, ModelRc, SharedString, StandardListViewItem, VecModel};
 
-use crate::backend::{Backend, Outcome, Request, State, profile_folder};
+use crate::backend::{Backend, Outcome, Request, State, demo_dir, layout_folder, profile_folder};
 use crate::ui::WheelPick;
 
 /// The types generated from ui/app.slint.
@@ -196,6 +196,9 @@ struct Controller {
     active_profile: Option<String>,
     /// The desktop's file chooser is open.
     choosing: bool,
+    /// The folder of the per-key color layouts, and the layouts shown.
+    layouts: Option<state::Layouts>,
+    layout_names: Vec<String>,
     /// The effect preview: its keys, the legends they show, its timer, whether
     /// the timer runs fast, and its time in seconds (it stops while paused).
     preview: Rc<VecModel<KeyCap>>,
@@ -229,6 +232,8 @@ impl Controller {
             profile_names: Vec::new(),
             active_profile: None,
             choosing: false,
+            layouts: None,
+            layout_names: Vec::new(),
             preview: Rc::new(VecModel::default()),
             preview_legends: None,
             preview_timer: slint::Timer::default(),
@@ -968,17 +973,23 @@ impl Controller {
 
     /// Fill the window with what was set last time: effect and per-key colors.
     fn restore(&mut self, ui: &AppWindow) {
-        let lighting = state::load();
-        self.painted = lighting
-            .leds
+        self.show_lighting(ui, &state::load().leds);
+        if let Some(effect) = config::last_effect() {
+            show_effect(ui, &effect);
+            self.show_directions(ui, Some(effect.direction));
+        }
+    }
+
+    /// Per-key colors in the per-key page: the painted keys and the zones.
+    fn show_lighting(&mut self, ui: &AppWindow, leds: &BTreeMap<u8, Rgb>) {
+        self.painted = leds
             .iter()
             .filter(|(led, _)| keymap::by_led(**led).is_some())
             .map(|(&led, &rgb)| (led, rgb))
             .collect();
         // a zone shows a color only if all its LEDs have it
         let zone = |zone: Zone| {
-            let colors: Vec<Option<&Rgb>> =
-                zone.leds().map(|led| lighting.leds.get(&led)).collect();
+            let colors: Vec<Option<&Rgb>> = zone.leds().map(|led| leds.get(&led)).collect();
             match colors.first() {
                 Some(Some(first)) if colors.iter().all(|c| *c == Some(*first)) => first.to_string(),
                 _ => String::new(),
@@ -987,10 +998,90 @@ impl Controller {
         ui.set_zone_top(zone(Zone::Top).into());
         ui.set_zone_left(zone(Zone::Left).into());
         ui.set_zone_right(zone(Zone::Right).into());
-        if let Some(effect) = config::last_effect() {
-            show_effect(ui, &effect);
-            self.show_directions(ui, Some(effect.direction));
+    }
+
+    fn show_layouts(&mut self, ui: &AppWindow) {
+        let names = self
+            .layouts
+            .as_ref()
+            .map(state::Layouts::names)
+            .unwrap_or_default();
+        let index = usize::try_from(ui.get_layout_index()).unwrap_or(0);
+        ui.set_layout_names(strings(names.iter().cloned()));
+        ui.set_layout_index(i32::try_from(index.min(names.len().saturating_sub(1))).unwrap_or(0));
+        self.layout_names = names;
+    }
+
+    /// The layout chosen in the per-key page.
+    fn chosen_layout(&self, ui: &AppWindow) -> Option<String> {
+        usize::try_from(ui.get_layout_index())
+            .ok()
+            .and_then(|i| self.layout_names.get(i).cloned())
+    }
+
+    /// Show a saved layout: painted in the window, sent to the keyboard.
+    fn layout_load(&mut self, ui: &AppWindow) {
+        let (Some(layouts), Some(name)) = (&self.layouts, self.chosen_layout(ui)) else {
+            return;
+        };
+        match layouts.load(&name) {
+            Ok(leds) => {
+                self.show_lighting(ui, &leds);
+                self.show_keys(ui);
+                self.schedule_paint();
+            }
+            Err(e) => show_error(ui, &e),
         }
+    }
+
+    fn layout_save(&mut self, ui: &AppWindow) {
+        let Some(layouts) = &self.layouts else {
+            return;
+        };
+        let name = ui.get_layout_name().trim().to_owned();
+        if let Err(e) = config::check_name("layout", &name, state::MAX_LAYOUT_NAME) {
+            show_error(ui, &e);
+            return;
+        }
+        if layouts.exists(&name) {
+            show_error(
+                ui,
+                &format!("layout {name:?} exists: delete it first, or choose another name"),
+            );
+            return;
+        }
+        let leds: BTreeMap<u8, Rgb> = self
+            .current_leds(ui)
+            .iter()
+            .map(|l| (l.index, l.color))
+            .collect();
+        match layouts.save(&name, &leds) {
+            Ok(()) => {
+                ui.set_status_error(false);
+                ui.set_status(
+                    format!("Layout {name:?} saved ({} LED color(s)).", leds.len()).into(),
+                );
+                self.show_layouts(ui);
+                if let Some(i) = self.layout_names.iter().position(|n| *n == name) {
+                    ui.set_layout_index(i32::try_from(i).unwrap_or(0));
+                }
+            }
+            Err(e) => show_error(ui, &format!("layout {name:?}: {e}")),
+        }
+    }
+
+    fn layout_delete(&mut self, ui: &AppWindow) {
+        let (Some(layouts), Some(name)) = (&self.layouts, self.chosen_layout(ui)) else {
+            return;
+        };
+        match layouts.delete(&name) {
+            Ok(()) => {
+                ui.set_status_error(false);
+                ui.set_status(format!("Layout {name:?} deleted.").into());
+            }
+            Err(e) => show_error(ui, &format!("layout {name:?}: {e}")),
+        }
+        self.show_layouts(ui);
     }
 
     /// The effect changed: apply it soon, unless more changes follow.
@@ -1597,6 +1688,9 @@ fn set_up(ui: &AppWindow) {
     ui.on_profile_chosen(|| with_controller(Controller::profile_chosen));
     ui.on_profile_save(|| with_controller(Controller::profile_save));
     ui.on_profile_delete(|| with_controller(Controller::profile_delete));
+    ui.on_layout_load(|| with_controller(Controller::layout_load));
+    ui.on_layout_save(|| with_controller(Controller::layout_save));
+    ui.on_layout_delete(|| with_controller(Controller::layout_delete));
     ui.on_choose_file(|| with_controller(|c, ui| c.choose(ui, Choice::BackupFile)));
     ui.on_save_backup_as(|| with_controller(|c, ui| c.choose(ui, Choice::BackupSaveAs)));
     ui.on_import_iocenter(|| with_controller(|c, ui| c.choose(ui, Choice::IoCenter)));
@@ -1719,9 +1813,13 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
     CONTROLLER.with(|c| {
         let mut controller = Controller::new(&ui, Some(requests));
         controller.profiles.clone_from(&profiles);
+        controller.layouts = layout_folder(demo);
         *c.borrow_mut() = Some(controller);
     });
-    with_controller(|c, ui| c.show_directions(ui, None));
+    with_controller(|c, ui| {
+        c.show_directions(ui, None);
+        c.show_layouts(ui);
+    });
     with_controller(|c, _| c.start_preview_timer());
     // the demo keyboard starts fresh; the real one gets what was set last time
     if !demo {
@@ -1738,13 +1836,13 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         with_controller(Controller::poll_profiles);
     });
     ui.run()?;
-    if demo && let Some(profiles) = profiles {
-        let _ = std::fs::remove_dir_all(profiles.dir());
+    if demo {
+        let _ = std::fs::remove_dir_all(demo_dir());
     }
     Ok(())
 }
 
-/// Two profiles for the demo mode, in its own folder.
+/// Two profiles and a layout for the demo mode, in its own folder.
 fn demo_profiles(profiles: &Profiles) {
     let default = "version = 1\n[bindings]\nM1 = \"media mic-mute\"\nM2 = \"key F13\"\n\
                    M5 = \"macro 1\"\nCapsLock = \"key F14\"\n\
@@ -1755,6 +1853,16 @@ fn demo_profiles(profiles: &Profiles) {
     let _ = profiles.write("default", default);
     let _ = profiles.write("gaming", gaming);
     let _ = profiles.set_active(Some("default"));
+    // and a per-key color layout
+    if let Some(layouts) = layout_folder(true) {
+        let orange = Rgb::new(0xe6, 0x30, 0x00);
+        let wasd = ["KeyW", "KeyA", "KeyS", "KeyD"]
+            .iter()
+            .filter_map(|code| keymap::by_code(code))
+            .map(|k| (k.led, orange))
+            .collect();
+        let _ = layouts.save("wasd", &wasd);
+    }
 }
 
 fn main() -> ExitCode {

@@ -52,6 +52,13 @@ The AUR package comes later.
 
 **IO Center import** (2.4) and **file chooser** (6.4): see there.
 
+**Next for 0.2.0** (chosen 2026-11-02)
+- [x] Named per-key color layouts (6.4): `light layout list|save|load|delete`, in the window's per-key page
+- [x] `--json` output for scripts (6.3): status, info, keys, zones, macro list/show, profile list, light layout list
+- [ ] Try `--json` of status, info and macros on the reference keyboard
+- [x] Fuzz the parsers (6.2, safety rule 10): see 6.2
+- [x] Background service as the only reader of the keyboard (6.5): designed, moved to 0.3.0 (see 6.5)
+
 **Shell completions** (6.3)
 - [x] `quietlinux completions bash|zsh|fish` (clap_complete)
 - [x] Installed by `install.sh`, the .deb/.rpm and the AUR package; the command line offers effect, direction, media, … names (fish completes option values only: a limit of clap_complete)
@@ -326,7 +333,8 @@ GUI: Slint) and are checked in CI (`cargo deny`).
 - [x] **Read** the device state first, write afterwards (macros, apply, lighting mode)
 - [x] Backup/restore of what the keyboard reports (bindings, game mode); the effect is not readable from the Light Mount
 - [x] Move the config file, the name tables and the macro text (`config`, `settings`, `macros`) into quietlinux-core for the GUI
-- [ ] Fuzz the parsers (`cargo fuzz`)
+- [x] Fuzz the parsers: entry points in `fuzzing.rs`, random and damaged input in `cargo test` (a long local run: about 4 million inputs, no panic), cargo-fuzz targets in `fuzz/`, a weekly CI job (0.2.0)
+- [ ] Run the cargo-fuzz targets (nightly) and look at the first CI results
 
 ### 6.3 Phase 4 – CLI
 - [x] `status`, `info`, `events`, `zones`, `keys`, `calibrate`, `light static`, `light stored`, `light set` (zones and single keys)
@@ -337,7 +345,7 @@ GUI: Slint) and are checked in CI (`cargo deny`).
 - [x] Named profiles (list, save, switch, delete) on top of backup files, also for the profile keys (2.4); export/import is `backup`/`apply` (0.2.0)
 - [x] `game-mode --block` (quick tap: not on the Light Mount)
 - [x] Shell completions (bash/zsh/fish) (0.2.0)
-- [ ] `--json` output for scripts
+- [x] `--json` output for scripts (0.2.0)
 
 ### 6.4 Phase 5 – GUI
 - [x] Keyboard view (schematic ISO layout, legends of the reported layout), click a key → its bindings
@@ -349,7 +357,7 @@ GUI: Slint) and are checked in CI (`cargo deny`).
 - [x] Per-key colors in the window: brush with color wheel, click to paint, right-click to clear, light bar zones; sent at once (realtime, volatile)
 - [x] Remember the last effect (CLI and GUI, `last-effect.toml`; the keyboard does not report it) and the painted per-key colors (`lighting.toml`); the window starts with them and with the view of the keyboard's lighting mode
 - [x] Keep per-key colors shown: remembered in `lighting.toml`, shown again by the background service
-- [ ] Save and load several per-key color layouts as named files
+- [x] Save and load several per-key color layouts as named files (0.2.0)
 - [x] A file chooser for the backup and the IO Center import: the XDG desktop portal over D-Bus (zbus, already used by Slint's window system); the file name field stays (0.2.0)
 - [ ] Try the file chooser on GNOME and KDE
 - [ ] Screen reader support: Slint's "accessibility" feature is off because its D-Bus stack needs quick-xml 0.38 (RUSTSEC-2026-0194/-0195); turn it on once AccessKit moves to quick-xml 0.41+
@@ -361,7 +369,9 @@ GUI: Slint) and are checked in CI (`cargo deny`).
 - [x] Own look, no imitation of be quiet! branding or logos
 
 ### 6.5 Phase 6 – Daemon (optional)
-- [ ] Evaluate keeping hidraw access to the daemon only (system service with its own user, GUI/CLI talk to it over D-Bus), so that user processes cannot read key presses from interface 2
+- [x] Evaluate keeping hidraw access to the daemon only, so that user processes cannot read key presses from interface 2. Design (2026-11-02): a broker as a system service with its own user `quietlinux` (sysusers; udev `GROUP=quietlinux` instead of `uaccess`), a Unix socket that accepts only the user of the active session (logind, as uaccess); CLI and window use it through a new `Transport`, so the session logic stays; it passes only allowlisted requests (never firmware) and never plain key presses, only website/profile key events; the user service keeps `xdg-open` and profiles. Costs: a system service in the installation, `quietlinux events` goes, macro recording needs a time-limited release (only a partial protection against a process of the same user). Decision: later, optional, for 0.3.0
+- [ ] First find out whether the keyboard can stop reporting plain key presses (`11:04`/`11:05`, the `31` CONTROLS feature): captures needed; that would be much cheaper than the broker
+- [ ] 0.3.0: the broker as an optional mode (`install.sh --broker`)
 - [x] Website keys: `bind KEY website URL` (CLI, GUI, backup); the daemon listens to `11:02` and opens http(s) addresses with `xdg-open`
 - [ ] Find out whether the `11:02` event of a website or profile key carries the address or profile ID (the daemon reads the binding if not)
 - [ ] Other host-side actions: open file/folder (`04`/`05`, not captured); profile keys done (0.2.0)

@@ -3331,6 +3331,7 @@ dependencies = [
  "clap",
  "clap_complete",
  "quietlinux-core",
+ "serde_json",
 ]
 
 [[package]]

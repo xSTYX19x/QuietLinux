@@ -23,6 +23,12 @@ All notable changes to QuietLinux. The format follows
   reactive effects; what is not known yet is listed (see docs/iocenter.md)
 - The window: the desktop's file chooser (XDG desktop portal) for backups
   ("Choose …", "Save as …") and the import
+- Per-key color layouts saved under a name: `quietlinux light layout
+  list|save|load|delete`, and in the window's per-key page
+- `--json` for status, info, keys, zones, macro list/show, profile list and
+  light layout list
+- The parsers are fuzzed: random and damaged input in `cargo test`,
+  cargo-fuzz targets (`fuzz/`) and a weekly CI job
 - `quietlinux completions bash|zsh|fish`; `install.sh` and the packages install
   the completions
 - Settings files may have a `[lighting]` section: the stored effect, per-key

@@ -21,6 +21,8 @@
 pub mod color;
 pub mod config;
 pub mod device;
+#[cfg(any(test, feature = "fuzzing"))]
+pub mod fuzzing;
 pub mod hid_descriptor;
 pub mod info;
 pub mod iocenter;

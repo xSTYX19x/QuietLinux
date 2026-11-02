@@ -59,13 +59,26 @@ pub enum Request {
     SwitchProfile(Target),
 }
 
-/// The profile folder; the demo mode has its own, in the temporary folder.
+/// The demo mode's own folder for profiles and layouts, in the temporary folder.
+pub fn demo_dir() -> PathBuf {
+    std::env::temp_dir().join(format!("quietlinux-demo-{}", std::process::id()))
+}
+
+/// The profile folder; the demo mode has its own.
 pub fn profile_folder(demo: bool) -> Option<Profiles> {
     if demo {
-        let dir = std::env::temp_dir().join(format!("quietlinux-demo-{}", std::process::id()));
-        Some(Profiles::new(dir))
+        Some(Profiles::new(demo_dir().join("profiles")))
     } else {
         Profiles::standard()
+    }
+}
+
+/// The folder of the per-key color layouts; the demo mode has its own.
+pub fn layout_folder(demo: bool) -> Option<state::Layouts> {
+    if demo {
+        Some(state::Layouts::new(demo_dir().join("layouts")))
+    } else {
+        state::Layouts::standard()
     }
 }
 

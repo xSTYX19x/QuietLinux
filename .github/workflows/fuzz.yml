@@ -1,0 +1,36 @@
+name: Fuzz
+
+# The parsers with generated input (cargo-fuzz, needs nightly): once a week and
+# by hand. Every push already runs them with random input in `cargo test`.
+on:
+  schedule:
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  fuzz:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [frames, replies, descriptor, text, iocenter]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: fuzz
+      - run: cargo install cargo-fuzz --locked
+      # 5 minutes per target; a crash fails the job and keeps its input
+      - run: cargo fuzz run ${{ matrix.target }} -- -max_total_time=300
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: crash-${{ matrix.target }}
+          path: fuzz/artifacts/

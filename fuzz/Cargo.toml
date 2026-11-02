@@ -1,0 +1,56 @@
+# Fuzz targets for the parsers (safety rule 10), run with cargo-fuzz on a
+# nightly toolchain: `cargo +nightly fuzz run frames` (see docs/contributing.md).
+# Not part of the main workspace; the same entry points run with random input
+# in `cargo test` (quietlinux-core, src/fuzzing.rs).
+
+[package]
+name = "quietlinux-fuzz"
+version = "0.0.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+quietlinux-core = { path = "../crates/quietlinux-core", features = ["fuzzing"] }
+
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "frames"
+path = "fuzz_targets/frames.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "replies"
+path = "fuzz_targets/replies.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "descriptor"
+path = "fuzz_targets/descriptor.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "text"
+path = "fuzz_targets/text.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "iocenter"
+path = "fuzz_targets/iocenter.rs"
+test = false
+doc = false
+bench = false

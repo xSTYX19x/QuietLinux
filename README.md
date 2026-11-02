@@ -32,7 +32,7 @@ Not affiliated with or endorsed by be quiet!. See [Safety](#safety).
 | Per-LED colors by zone (keys, top bar, knob, side strips) or by key (volatile) | ✅ |
 | Key map with layout-independent key names, legends for UK, German and French ISO | ✅ |
 | Macros stored in the keyboard: record by typing, list, show, create, edit, delete (`macro`) | ✅ |
-| Shell completions for bash, zsh and fish (`completions`) | ✅ |
+| Shell completions for bash, zsh and fish (`completions`); JSON output for scripts (`--json`) | ✅ |
 | Keys that open files or folders | planned |
 | Graphical interface (`quietlinux-gui`): lighting with a color wheel and a live preview of the effect, per-key colors, key bindings, macros, profiles, backup, game mode; demo mode with a simulated keyboard | ✅ |
 | Firmware updates | **never**, see [Safety](#safety) |

@@ -3,6 +3,8 @@
 //! The keyboard keeps its stored effect, but per-key colors (realtime mode) are
 //! gone after it is unplugged or the computer sleeps. The window and the command
 //! line write here what they show; the background service shows it again.
+//!
+//! Per-key colors can also be saved under a name ([`Layouts`]).
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
@@ -139,6 +141,86 @@ fn parse(text: &str) -> Lighting {
     Lighting { mode, leds }
 }
 
+/// Longest layout name.
+pub const MAX_LAYOUT_NAME: usize = 32;
+
+/// Named per-key color layouts: `$XDG_CONFIG_HOME/quietlinux/layouts/NAME.toml`,
+/// each with a `[leds]` table as in `lighting.toml`.
+#[derive(Debug, Clone)]
+pub struct Layouts {
+    dir: PathBuf,
+}
+
+impl Layouts {
+    pub fn new(dir: impl Into<PathBuf>) -> Self {
+        Self { dir: dir.into() }
+    }
+
+    /// `$XDG_CONFIG_HOME/quietlinux/layouts`.
+    pub fn standard() -> Option<Self> {
+        Some(Self::new(config::config_dir()?.join("layouts")))
+    }
+
+    pub fn dir(&self) -> &Path {
+        &self.dir
+    }
+
+    fn path(&self, name: &str) -> PathBuf {
+        self.dir.join(format!("{name}.toml"))
+    }
+
+    pub fn exists(&self, name: &str) -> bool {
+        config::check_name("layout", name, MAX_LAYOUT_NAME).is_ok() && self.path(name).is_file()
+    }
+
+    /// The layouts, in alphabetical order.
+    pub fn names(&self) -> Vec<String> {
+        let Ok(entries) = std::fs::read_dir(&self.dir) else {
+            return Vec::new();
+        };
+        let mut names: Vec<String> = entries
+            .filter_map(|e| {
+                let name = e.ok()?.file_name().into_string().ok()?;
+                let name = name.strip_suffix(".toml")?;
+                self.exists(name).then(|| name.to_owned())
+            })
+            .collect();
+        names.sort();
+        names
+    }
+
+    /// The colors of a layout, by LED index.
+    pub fn load(&self, name: &str) -> Result<BTreeMap<u8, Rgb>, String> {
+        config::check_name("layout", name, MAX_LAYOUT_NAME)?;
+        let path = self.path(name);
+        let text =
+            std::fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+        text.parse::<toml::Table>()
+            .map_err(|e| format!("{}: {e}", path.display()))?;
+        Ok(parse(&text).leds)
+    }
+
+    pub fn save(&self, name: &str, leds: &BTreeMap<u8, Rgb>) -> std::io::Result<()> {
+        config::check_name("layout", name, MAX_LAYOUT_NAME)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
+        std::fs::create_dir_all(&self.dir)?;
+        let mut t = String::from(
+            "# A per-key color layout of QuietLinux (`quietlinux light layout`), by LED\n\
+             # index (`quietlinux keys`, `quietlinux zones`); LEDs not listed are off.\n[leds]\n",
+        );
+        for (led, color) in leds {
+            let _ = writeln!(t, "{led:02x} = \"{color}\"");
+        }
+        std::fs::write(self.path(name), t)
+    }
+
+    pub fn delete(&self, name: &str) -> std::io::Result<()> {
+        config::check_name("layout", name, MAX_LAYOUT_NAME)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
+        std::fs::remove_file(self.path(name))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -155,6 +237,28 @@ mod tests {
         save_to(&path, &lighting).unwrap();
         assert_eq!(load_from(&path), lighting);
         assert_eq!(lighting.led_list().len(), 2);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn layouts() {
+        let dir = std::env::temp_dir().join(format!("quietlinux-layouts-{}", std::process::id()));
+        let layouts = Layouts::new(&dir);
+        assert_eq!(layouts.names(), Vec::<String>::new());
+        let leds: BTreeMap<u8, Rgb> =
+            [(0x2e, Rgb::new(255, 0, 0)), (0x00, Rgb::new(0, 0, 9))].into();
+        layouts.save("wasd", &leds).unwrap();
+        layouts
+            .save("all-red", &[(0x2e, Rgb::new(255, 0, 0))].into())
+            .unwrap();
+        assert_eq!(layouts.names(), ["all-red", "wasd"]);
+        assert_eq!(layouts.load("wasd").unwrap(), leds);
+        assert!(layouts.load("nope").is_err());
+        assert!(layouts.save("../x", &leds).is_err());
+        std::fs::write(dir.join("broken.toml"), "[leds\n").unwrap();
+        assert!(layouts.load("broken").is_err());
+        layouts.delete("wasd").unwrap();
+        assert_eq!(layouts.names(), ["all-red", "broken"]);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

@@ -95,6 +95,9 @@ Colors for single keys, like `quietlinux light set`:
   ([installation](installation.md#background-service-optional)).
 - When the window opens, the Lighting tab shows **Per key** if the keyboard is
   in per-key mode, else **Effect**.
+- **Layout**: type a name and **Save colors** to keep the painted keys and
+  light bars as a layout; choose one and **Show** to paint and send it again,
+  **Delete** to remove it. The same layouts as `quietlinux light layout`.
 
 ## Keys
 

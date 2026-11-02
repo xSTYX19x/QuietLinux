@@ -1,6 +1,7 @@
 //! `quietlinux`: command line tool for the be quiet! Light Mount keyboard.
 
 mod calibrate;
+mod json;
 mod report;
 
 use std::io::{self, BufRead, Write};
@@ -38,6 +39,10 @@ struct Cli {
     /// Keycap legends to show: uk, de or fr (default: the layout the keyboard reports, else uk)
     #[arg(long, global = true)]
     layout: Option<Layout>,
+
+    /// Print JSON (status, info, keys, zones, macro list/show, profile list, light layout list)
+    #[arg(long, global = true)]
+    json: bool,
 
     #[command(subcommand)]
     command: Command,
@@ -503,6 +508,33 @@ enum Light {
         #[arg(long, default_value_t = 1.0)]
         dim: f32,
     },
+    /// Per-key color layouts saved under a name (~/.config/quietlinux/layouts)
+    #[command(subcommand)]
+    Layout(LayoutCommand),
+}
+
+#[derive(Debug, Subcommand)]
+enum LayoutCommand {
+    /// List the saved layouts (does not touch the keyboard)
+    List,
+    /// Save the per-key colors QuietLinux showed last (`light set`, the window) under a name
+    Save {
+        /// Layout name: 1 to 32 characters A-Z, a-z, 0-9, - and _
+        name: String,
+        /// Replace an existing layout
+        #[arg(long)]
+        force: bool,
+    },
+    /// Show a saved layout on the keyboard (volatile, like `light set`)
+    Load {
+        /// Layout name (see `quietlinux light layout list`)
+        name: String,
+    },
+    /// Delete a saved layout (does not touch the keyboard)
+    Delete {
+        /// Layout name
+        name: String,
+    },
 }
 
 /// One of the names of `values` (the shell completions offer them), parsed as `T`.
@@ -625,11 +657,69 @@ fn ask_terminal(key: &Key, layout: Layout) -> Answer {
     }
 }
 
+/// The commands `--json` works with.
+fn json_supported(command: &Command) -> bool {
+    matches!(
+        command,
+        Command::Status
+            | Command::Info
+            | Command::Keys
+            | Command::Zones
+            | Command::Macro(MacroCommand::List | MacroCommand::Show { .. })
+            | Command::Profile(ProfileCommand::List)
+            | Command::Light(Light::Layout(LayoutCommand::List))
+    )
+}
+
 // One arm per command: splitting the dispatch would not make it clearer.
 #[allow(clippy::too_many_lines)]
 fn run(cli: Cli) -> Result<ExitCode, Box<dyn std::error::Error>> {
     let usb_path = cli.usb_path.as_deref();
+    let as_json = cli.json;
+    if as_json && !json_supported(&cli.command) {
+        return Err(
+            "--json works with status, info, keys, zones, macro list, macro show, \
+                    profile list and light layout list"
+                .into(),
+        );
+    }
     match cli.command {
+        Command::Zones if as_json => json::print(&json::zones()),
+        Command::Keys if as_json => json::print(&json::keys(cli.layout.unwrap_or_default())),
+        Command::Status if as_json => {
+            let (keyboard, mut session) = device::open(usb_path, cli.allow_unknown_firmware)?;
+            let mode = session.lighting_mode()?;
+            json::print(&json::status(
+                &keyboard.usb_path,
+                &keyboard.vendor_node().display().to_string(),
+                session.identity(),
+                mode,
+            ));
+        }
+        Command::Info if as_json => {
+            let mut session = open_session(usb_path, cli.allow_unknown_firmware)?;
+            json::print(&json::snapshot(&config::read_snapshot(&mut session)?));
+        }
+        Command::Macro(MacroCommand::List) if as_json => {
+            let mut session = open_session(usb_path, cli.allow_unknown_firmware)?;
+            json::print(&json::macro_list(&session.read_macros()?));
+        }
+        Command::Macro(MacroCommand::Show { id }) if as_json => {
+            let mut session = open_session(usb_path, cli.allow_unknown_firmware)?;
+            let ids = session.macro_ids()?;
+            if !ids.contains(&id) {
+                return Err(format!("the keyboard has no macro {id} (macros: {ids:?})").into());
+            }
+            json::print(&json::macro_detail(&session.read_macro(id)?));
+        }
+        Command::Profile(ProfileCommand::List) if as_json => {
+            json::print(&json::profiles(&profiles()?));
+        }
+        Command::Light(Light::Layout(LayoutCommand::List)) if as_json => {
+            let layouts =
+                state::Layouts::standard().ok_or("no home folder: set HOME or XDG_CONFIG_HOME")?;
+            json::print(&json::layouts(&layouts));
+        }
         Command::Zones => {
             for zone in Zone::ALL {
                 let leds: Vec<u8> = zone.leds().collect();
@@ -880,6 +970,9 @@ fn run(cli: Cli) -> Result<ExitCode, Box<dyn std::error::Error>> {
             clap_complete::generate(shell, &mut Cli::command(), "quietlinux", &mut script);
             io::stdout().write_all(&script)?;
         }
+        Command::Light(Light::Layout(command)) => {
+            run_layout(command, usb_path, cli.allow_unknown_firmware)?;
+        }
         Command::Light(Light::Set { assignments, dim }) => {
             let (_, mut session) = device::open(usb_path, cli.allow_unknown_firmware)?;
             let leds = leds_for(&assignments, dim);
@@ -1021,6 +1114,70 @@ fn run_profile(
             }
             profiles.delete(&name)?;
             println!("Profile {name:?} deleted.");
+        }
+    }
+    Ok(())
+}
+
+fn run_layout(
+    command: LayoutCommand,
+    usb_path: Option<&str>,
+    allow_unknown_firmware: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let layouts =
+        state::Layouts::standard().ok_or("no home folder: set HOME or XDG_CONFIG_HOME")?;
+    match command {
+        LayoutCommand::List => {
+            let names = layouts.names();
+            if names.is_empty() {
+                println!("No layouts yet: save one with `quietlinux light layout save NAME`.");
+            }
+            for name in names {
+                println!("{name}");
+            }
+            eprintln!("Folder: {}", layouts.dir().display());
+        }
+        LayoutCommand::Save { name, force } => {
+            config::check_name("layout", &name, state::MAX_LAYOUT_NAME)?;
+            if layouts.exists(&name) && !force {
+                return Err(format!("layout {name:?} exists: add --force to replace it").into());
+            }
+            let lighting = state::load();
+            if lighting.leds.is_empty() {
+                return Err(
+                    "no per-key colors to save: set some with `quietlinux light set` or the window"
+                        .into(),
+                );
+            }
+            layouts.save(&name, &lighting.leds)?;
+            println!(
+                "Layout {name:?} saved ({} LED color(s)).",
+                lighting.leds.len()
+            );
+        }
+        LayoutCommand::Load { name } => {
+            let colors = layouts.load(&name)?;
+            // every LED: those not in the layout are switched off
+            let leds: Vec<Led> = layout::all_leds()
+                .map(|i| Led::new(i, colors.get(&i).copied().unwrap_or(Rgb::BLACK)))
+                .collect();
+            let (_, mut session) = device::open(usb_path, allow_unknown_firmware)?;
+            session.set_leds(&leds)?;
+            let lighting = state::Lighting {
+                mode: state::Mode::PerKey,
+                leds: colors,
+            };
+            if let Err(e) = state::save(&lighting) {
+                eprintln!("note: could not remember the colors: {e}");
+            }
+            println!("Layout {name:?} shown.");
+        }
+        LayoutCommand::Delete { name } => {
+            if !layouts.exists(&name) {
+                return Err(format!("no layout {name:?}").into());
+            }
+            layouts.delete(&name)?;
+            println!("Layout {name:?} deleted.");
         }
     }
     Ok(())

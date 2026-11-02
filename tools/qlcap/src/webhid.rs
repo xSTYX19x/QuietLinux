@@ -9,6 +9,9 @@
 use crate::decode::Event;
 use crate::usb::{Dir, Transfer};
 
+/// The first line of a log.
+pub const HEADER: &str = "# quietlinux webhid log";
+
 pub fn parse(text: &str) -> Result<Vec<Event>, String> {
     let mut events = Vec::new();
     for (n, line) in text.lines().enumerate() {

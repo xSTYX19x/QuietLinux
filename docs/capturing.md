@@ -225,20 +225,36 @@ status name if the keyboard reported an error, data.
   hidden as well.
 - `--device BUS.ADDRESS` picks a device if several are found (`qlcap` says so).
 - Several files (e.g. one per USB root hub) are merged by time:
-  `qlcap frames step/*.pcap`.
+  `qlcap frames step/*.pcap`, or the folder: `qlcap frames step/`.
 - A file whose last packet was cut off (capture stopped while writing) is read
   up to that packet.
 - The serial number is always redacted.
 
-To compare two captures, decode both and diff them:
+To compare two captures in which one setting was changed, use `qlcap diff`.
+Each side is a file or a folder (its captures are merged, e.g. one file per
+USB root hub from `windows-capture.ps1`; notes in the folder are skipped):
 
-```sh
-diff <(qlcap frames a.pcapng --no-key-events | cut -c13-) \
-     <(qlcap frames b.pcapng --no-key-events | cut -c13-)
+```console
+$ qlcap diff --writes captures/win-bind-profile captures/win-bind-website
+  ~ →  11:02 SetBinding
+      A: 03 00 08 03
+      B: 03 00 06 13 68 74 74 70 73 3a 2f 2f 65 78 61 6d 70 6c 65 2e 6f 72 67
+               ^^ ^^ ^^ ^^ ^^ ^^ ^^ ^^ ^^ ^^ ^^ ^^ ^^ ^^ ^^ ^^ ^^ ^^ ^^ ^^ ^^
+         21 byte(s) differ
+  - →  11:02 SetBinding  03 00 08 04
+A: 5 message(s), B: 2; 1 changed, 3 only in A (-), 0 only in B (+)
 ```
 
-(`cut` drops the time column; `qlcap` is `target/release/qlcap` after
-`cargo build --release`.)
+- Times, request IDs, session bytes and keep-alives are left out: they differ
+  in every capture. Key events too, unless `--key-events`.
+- `~` is a message whose data changed (the changed bytes marked `^^`), `-` one
+  only in A, `+` one only in B. Messages are matched in order, like lines in
+  `diff`.
+- `--writes` keeps only requests that change the keyboard (no reads, replies
+  or notifications); `--all` also prints the messages both have (`=`);
+  `--macro ID` shows one macro's contents, as for `frames`.
+
+(`qlcap` is `target/release/qlcap` after `cargo build --release -p qlcap`.)
 
 ## Sharing results
 

@@ -27,6 +27,8 @@ All notable changes to QuietLinux. The format follows
   list|save|load|delete`, and in the window's per-key page
 - `--json` for status, info, keys, zones, macro list/show, profile list and
   light layout list
+- `qlcap diff A B`: what differs between two captures in which one setting
+  was changed (for contributors); `qlcap` also takes folders of captures
 - The parsers are fuzzed: random and damaged input in `cargo test`,
   cargo-fuzz targets (`fuzz/`) and a weekly CI job
 - `quietlinux completions bash|zsh|fish`; `install.sh` and the packages install

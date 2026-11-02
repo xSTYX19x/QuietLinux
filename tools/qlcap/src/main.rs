@@ -5,6 +5,7 @@
 
 mod capture;
 mod decode;
+mod diff;
 mod usb;
 mod webhid;
 
@@ -56,6 +57,28 @@ enum Command {
         #[arg(long = "macro", value_name = "ID")]
         macro_id: Option<u16>,
     },
+    /// Compare two captures in which one setting was changed: what differs
+    ///
+    /// Times, request IDs, session bytes and keep-alives are left out. ~ marks a
+    /// changed message (its changed bytes with ^^), - one only in A, + one only in B.
+    Diff {
+        /// First capture: a file, or a folder whose captures are merged (e.g. one per USB root hub)
+        a: PathBuf,
+        /// Second capture: a file or a folder
+        b: PathBuf,
+        /// Only requests that change the keyboard (no reads, replies or notifications)
+        #[arg(long)]
+        writes: bool,
+        /// Also compare key events (11:02, 12:05)
+        #[arg(long)]
+        key_events: bool,
+        /// Also show the messages both captures have
+        #[arg(long)]
+        all: bool,
+        /// Show the events and name of this macro ID; those of other macros are always hidden
+        #[arg(long = "macro", value_name = "ID")]
+        macro_id: Option<u16>,
+    },
 }
 
 fn load(path: &Path) -> Result<Vec<Event>, String> {
@@ -82,12 +105,45 @@ fn load(path: &Path) -> Result<Vec<Event>, String> {
     Ok(events)
 }
 
-/// Events of several files, merged by time. USBPcap writes one file per root hub;
-/// their device names (`hub.address`) do not collide.
+/// The capture files of a folder (`.pcap`, `.pcapng`, WebHID logs), sorted; a
+/// file as it is. Other files (notes) are left out.
+fn expand(path: &Path) -> Result<Vec<PathBuf>, String> {
+    if !path.is_dir() {
+        return Ok(vec![path.to_owned()]);
+    }
+    let entries = std::fs::read_dir(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let mut files: Vec<PathBuf> = entries
+        .filter_map(|e| Some(e.ok()?.path()))
+        .filter(|p| {
+            let extension = p.extension().and_then(|e| e.to_str()).unwrap_or("");
+            p.is_file()
+                && match extension {
+                    "pcap" | "pcapng" => true,
+                    "txt" => {
+                        std::fs::read_to_string(p).is_ok_and(|t| t.starts_with(webhid::HEADER))
+                    }
+                    _ => false,
+                }
+        })
+        .collect();
+    files.sort();
+    if files.is_empty() {
+        return Err(format!(
+            "{}: no captures (.pcap, .pcapng, WebHID logs) in this folder",
+            path.display()
+        ));
+    }
+    Ok(files)
+}
+
+/// Events of several files (or folders of them), merged by time. USBPcap writes
+/// one file per root hub; their device names (`hub.address`) do not collide.
 fn load_all(paths: &[PathBuf]) -> Result<Vec<Event>, String> {
     let mut events = Vec::new();
     for path in paths {
-        events.extend(load(path)?);
+        for file in expand(path)? {
+            events.extend(load(&file)?);
+        }
     }
     events.sort_by(|a, b| a.time().total_cmp(&b.time()));
     Ok(events)
@@ -140,6 +196,31 @@ fn run(cli: Cli) -> Result<(), String> {
                 if let Some(text) = decode::format(&line, start, !no_key_events) {
                     println!("{text}");
                 }
+            }
+        }
+        Command::Diff {
+            a,
+            b,
+            writes,
+            key_events,
+            all,
+            macro_id,
+        } => {
+            let decoded = |path: &PathBuf| -> Result<Vec<decode::Line>, String> {
+                let events = load_all(std::slice::from_ref(path))?;
+                let device = choose_device(&events, None)?;
+                Ok(decode::hide_macros(
+                    decode::lines(&events, &device),
+                    macro_id,
+                ))
+            };
+            let options = diff::Options {
+                writes_only: writes,
+                key_events,
+                all,
+            };
+            for line in diff::diff(&decoded(&a)?, &decoded(&b)?, options)? {
+                println!("{line}");
             }
         }
         Command::Fixtures {

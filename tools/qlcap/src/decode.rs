@@ -163,7 +163,7 @@ pub fn hex(bytes: &[u8]) -> String {
     s
 }
 
-fn arrow(dir: Dir) -> &'static str {
+pub fn arrow(dir: Dir) -> &'static str {
     match dir {
         Dir::Out => "→",
         Dir::In => "←",
@@ -173,7 +173,7 @@ fn arrow(dir: Dir) -> &'static str {
 /// Key press notifications: `11:02` ActionFired and, while a macro is recorded,
 /// `12:05` InputEvent (request ID 0; as requests the same codes are `SetBinding`
 /// and `GetMacroEvents`).
-fn is_key_event(message: &Message) -> bool {
+pub fn is_key_event(message: &Message) -> bool {
     message.is_notification() && [p::ACTION_FIRED, p::INPUT_EVENT].contains(&message.cmd)
 }
 
@@ -233,7 +233,7 @@ pub fn hide_macros(lines: Vec<Line>, keep: Option<u16>) -> Vec<Line> {
 }
 
 /// Serial number replies are never printed: they identify the keyboard.
-fn is_serial_reply(dir: Dir, message: &Message) -> bool {
+pub fn is_serial_reply(dir: Dir, message: &Message) -> bool {
     dir == Dir::In && message.cmd == p::GET_SERIAL_NUMBER
 }
 

@@ -224,7 +224,7 @@ no reset problems when handing the device over.
 
 ### 4.3 Analysis tools (`tools/`)
 - [x] `qlcap frames`: pcap/pcapng (usbmon, USBPcap) or WebHID log → vendor messages (direction, time, `cmd:sub`, fragments reassembled, serial redacted)
-- [ ] `framediff`: compare two captures in which exactly one setting was changed (for now: `diff` of two `qlcap frames` outputs, see `docs/capturing.md`)
+- [x] `framediff`: `qlcap diff A B` compares two captures (files or folders) in which one setting was changed: without times, request IDs, sessions, keep-alives and key events; changed bytes marked (0.2.0)
 - [x] `qlcap fixtures`: anonymized fixture lines (no `03:02` replies, no key events, no macro contents except `--macro ID`)
 
 ## 5. Phase 2 – Data collection
@@ -391,7 +391,7 @@ GUI: Slint) and are checked in CI (`cargo deny`).
 - [x] First release (0.1.0, 2026-10-28), listed on GitHub
 - [ ] Try the .deb and .rpm (e.g. in an Ubuntu and a Fedora VM or container)
 - [ ] Publish the AUR package
-- [ ] Not planned: AppImage, Flatpak (the udev rule and the background service need the host system)
+- Not planned: AppImage, Flatpak (the udev rule and the background service need the host system)
 
 ## 7. Safety rules (apply to the whole project)
 

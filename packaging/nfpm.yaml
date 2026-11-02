@@ -15,7 +15,7 @@ license: GPL-3.0-or-later
 description: |-
   Configure the be quiet! Light Mount keyboard on Linux
   Lighting effects and per-key colors, key bindings (both layers, the knob,
-  M1-M5), macros, game mode and backups, with a command line tool
+  M1-M5), macros, game mode, profiles and backups, with a command line tool
   (quietlinux), a window (quietlinux-gui) and an optional background service
   (quietlinux-daemon). Unofficial: not affiliated with be quiet!.
 
@@ -58,6 +58,15 @@ contents:
     file_info: { mode: 0644 }
   - src: crates/quietlinux-gui/ui/icon.svg
     dst: /usr/share/icons/hicolor/scalable/apps/quietlinux.svg
+    file_info: { mode: 0644 }
+  - src: target/package/completions/quietlinux.bash
+    dst: /usr/share/bash-completion/completions/quietlinux
+    file_info: { mode: 0644 }
+  - src: target/package/completions/_quietlinux
+    dst: /usr/share/zsh/site-functions/_quietlinux
+    file_info: { mode: 0644 }
+  - src: target/package/completions/quietlinux.fish
+    dst: /usr/share/fish/vendor_completions.d/quietlinux.fish
     file_info: { mode: 0644 }
   # owned by the package, so that the .rpm removes it again
   - dst: /usr/share/doc/quietlinux

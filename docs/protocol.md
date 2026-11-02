@@ -362,7 +362,7 @@ Action types and their data:
 | `05` | open file | `[length][path, ASCII]` |
 | `06` | open website | `[length][URL, ASCII]` [cap]; QuietLinux writes it (up to 51 characters, one packet as captured) and its background service opens it |
 | `07` | Windows shortcut | `[action]` (file explorer, calculator, task manager, lock, …) |
-| `08` | profile | `[action]`: 1 select (`[1][profile ID, 16 bytes]`: IO Center's UUID of the profile) [cap], 2 cycle, 3 next [cap], 4 previous [cap] |
+| `08` | profile | `[action]`: 1 select (`[1][profile ID, 16 bytes]`: IO Center's UUID of the profile; QuietLinux writes the profile's name, zero-padded) [cap], 2 cycle, 3 next [cap], 4 previous [cap] |
 | `09` | backlight | `[action]`: 1 select effect (`[1][effect]`), 2 next effect, 3 previous effect, 4 brighter, 5 darker |
 | `0a` | macro | `[macro ID u16]` [cap] (IO Center Web's code suggests an action byte before the ID; the Windows app sends none) |
 | `0b` | special key ("alt code") | `[02][code u16]` |
@@ -611,12 +611,13 @@ the profile writes all settings of the new profile: `12:0b` AbortPlayback,
 ClearBinding for each key the other profile changed and `11:02` SetBinding for
 each binding of the new one. A profile binding (`08`) only makes the keyboard
 report the key press; IO Center then switches. On Linux, profiles are setting
-files (`quietlinux backup`/`apply`).
+files (`quietlinux profile`, in the format of `backup`); QuietLinux's
+background service switches them when a profile key is pressed.
 
 ## Unknown so far
 
 - Payload layouts of `10:07`/`10:08` (layer masks), `10:0b`/`10:0c` (playback), `11:04`/`11:05`, `11:06`, the `31` CONTROLS feature.
 - The `02 00 00` bytes of a macro's config; the purpose of `12:09` StartRecording when IO Center starts; whether a recording ends with the session.
-- Whether the `11:02` event of a website key carries the address (QuietLinux's background service reads the binding if not).
+- Whether the `11:02` event of a website or "select profile" key carries the address or the profile ID (QuietLinux's background service reads the binding if not).
 - Polling rate, quick tap and LED calibration: IO Center for Windows has no settings for them on the Light Mount (fixed 1000 Hz; quick tap and calibration are for the TKL and the fans).
 - Everything marked **[web]** only: to be captured before use. See [todo.md](todo.md).

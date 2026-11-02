@@ -23,15 +23,17 @@ Not affiliated with or endorsed by be quiet!. See [Safety](#safety).
 | Find the keyboard; read firmware, layout, lighting, game mode, quick tap and key bindings (`info`) | ✅ |
 | Show the key presses the keyboard reports (`events`) | ✅ |
 | Effects (static, color wave, tornado, breathing, reactive, matrix) with color or gradient, brightness, speed, direction (stored in the keyboard); lighting off | ✅ |
-| Key bindings on both layers (normal and Fn) and the knob: keys and combinations, media, mouse buttons, lighting actions, macros, websites, disable, reset | ✅ |
+| Key bindings on both layers (normal and Fn) and the knob: keys and combinations, media, mouse buttons, lighting actions, macros, websites, profiles, disable, reset | ✅ |
 | Game mode: which shortcuts it blocks | ✅ |
 | Backup and restore of bindings, game mode and macros as a TOML file (`backup`, `apply`) | ✅ |
-| Background service (`quietlinux-daemon`): per-key colors shown again after replugging or sleep; website keys | ✅ |
+| Profiles: named sets of bindings, macros, game mode shortcuts and lighting, switched by command, window or profile key (`profile`) | ✅ |
+| Background service (`quietlinux-daemon`): per-key colors shown again after replugging or sleep; website and profile keys | ✅ |
 | Per-LED colors by zone (keys, top bar, knob, side strips) or by key (volatile) | ✅ |
 | Key map with layout-independent key names, legends for UK, German and French ISO | ✅ |
 | Macros stored in the keyboard: record by typing, list, show, create, edit, delete (`macro`) | ✅ |
-| Keys that open files or folders, profile switching keys | planned |
-| Graphical interface (`quietlinux-gui`): lighting with a color wheel, per-key colors, key bindings, macros, backup, game mode; demo mode with a simulated keyboard | ✅ first version |
+| Shell completions for bash, zsh and fish (`completions`) | ✅ |
+| Keys that open files or folders | planned |
+| Graphical interface (`quietlinux-gui`): lighting with a color wheel and a live preview of the effect, per-key colors, key bindings, macros, profiles, backup, game mode; demo mode with a simulated keyboard | ✅ |
 | Firmware updates | **never**, see [Safety](#safety) |
 
 Tested with: Light Mount Silent Linear, German ISO layout, firmware 2.3.0.

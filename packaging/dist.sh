@@ -36,6 +36,12 @@ mkdir -p "$stage" "$dist"
 cargo about generate --locked --config packaging/about.toml \
     --output-file "$stage/THIRD-PARTY-LICENSES.html" packaging/about.hbs
 
+# shell completions for the packages (the archive's install.sh writes its own)
+mkdir -p "$stage/completions"
+target/release/quietlinux completions bash >"$stage/completions/quietlinux.bash"
+target/release/quietlinux completions zsh >"$stage/completions/_quietlinux"
+target/release/quietlinux completions fish >"$stage/completions/quietlinux.fish"
+
 # the packages put the programs in /usr/bin
 sed 's|^ExecStart=.*|ExecStart=/usr/bin/quietlinux-daemon|' \
     packaging/systemd/quietlinux-daemon.service >"$stage/quietlinux-daemon.service"

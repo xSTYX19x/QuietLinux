@@ -4,9 +4,52 @@ Goal: a free, public Linux replacement for be quiet! **IO Center** for the
 **be quiet! Light Mount** (USB `373f:0002`), with a **CLI** and a **GUI**,
 well documented and with a clear notice about AI assistance.
 
-Status (2026-10-28): **phases 0–6 done for the reference keyboard** (CLI,
+Status (2026-11-02): **phases 0–6 done for the reference keyboard** (CLI,
 GUI, background service, install script, docs); **0.1.0 released** on GitHub.
-Next: the AUR package and trying the packages (6.6), then the open points below.
+0.2.0 in progress (profiles, effect preview, shell completions; see below);
+the AUR package and trying the packages (6.6) come later.
+
+## 0.2.0 (in progress)
+
+Chosen for 0.2.0 (2026-11-02): profiles with profile keys, a live preview of
+the effect, shell completions. The AUR package comes later.
+
+**Profiles** (2.4, 6.3, 6.5)
+- [x] A profile is a settings file in `~/.config/quietlinux/profiles/NAME.toml`
+  (format of `backup`, plus `[effect]` and a new `[lighting]` section: mode and
+  per-key colors). Names: 1–16 characters `A-Z a-z 0-9 - _`, so that a name
+  fits the 16-byte ID of a "select profile" binding; the active profile's name
+  is in `profiles/active`
+- [x] Switching applies the profile like `apply` (only what differs is
+  written); the settings are saved to the active profile first, as IO Center
+  does, so that changes made since are not lost
+- [x] CLI: `profile list|save|switch|delete`; `switch next|previous`
+  (alphabetical order)
+- [x] Profile bindings (`08`, captured from the Windows app): `bind KEY profile
+  next|previous|NAME`; the profile's name is the 16-byte ID (zero-padded); IO
+  Center's UUIDs are kept as raw bindings
+- [x] Background service: switches the profile when a profile key is pressed
+  (one switch a second at most, read the binding if the event does not carry it)
+- [x] Note when the profile switched to has no profile key left
+- [x] GUI: profile choice in the title line, profiles in the settings (save,
+  switch, delete), "Profile" in the key editor
+- [x] Tests (core with the simulated keyboard, daemon events), docs
+- [x] Tested on the reference keyboard (2026-11-02): `profile save`, `switch --dry-run`, `switch`
+- [ ] Test on the reference keyboard: a profile key with the background service, the window's profile choice
+
+**Live preview of the effect** (6.4)
+- [x] Keyboard view on the effect page, animated in the window (no extra
+  traffic to the keyboard): static, breathing, color wave, tornado, reactive,
+  matrix with colors, brightness, speed and direction; an approximation of the
+  keyboard's animation
+- [x] Runs only while the effect page is shown; can be paused
+- [x] Compared with the keyboard (2026-11-02): the animations match; tornado
+  with one color turns that color and black; matrix runs drops with a tail in
+  the direction (both now in the preview too)
+
+**Shell completions** (6.3)
+- [x] `quietlinux completions bash|zsh|fish` (clap_complete)
+- [x] Installed by `install.sh`, the .deb/.rpm and the AUR package; the command line offers effect, direction, media, … names (fish completes option values only: a limit of clap_complete)
 
 ---
 
@@ -110,7 +153,7 @@ Windows app and the web app in phase 2. ✔ = already known thanks to bbossa.
 
 ### 2.4 Profiles
 - [x] Find out how many profiles the device holds: none. IO Center for Windows keeps profiles on the PC and writes all settings when switching [cap]
-- [ ] Profile switching keys (binding type `08`): needs the background service
+- [x] Profile switching keys (binding type `08`): `bind KEY profile next|previous|NAME`, switched by the background service (0.2.0)
 - [x] Export/import profiles as files (own documented format, e.g. TOML): `backup`/`apply`
 - [ ] Import and export IO Center for Windows backups (`.zip`), so that settings move between IO Center and QuietLinux. A sample export of the reference keyboard is available locally (`captures/`, not committed: it contains the user's macros). Analyze the format first, document it in `protocol.md` or its own doc, and add only an anonymized or self-made sample as a fixture
 
@@ -284,9 +327,10 @@ GUI: Slint) and are checked in CI (`cargo deny`).
 - [x] `light effect …` for every effect
 - [x] `keymap get|set|reset`: done as `info` (bindings), `bind KEY …` and `bind KEY default`
 - [x] `macro list|show|create|edit|delete`, `bind KEY macro ID`, `light off`; tested on the reference keyboard (2026-10-27)
-- [ ] Named profiles (list, switch) on top of backup files, also for the profile keys (2.4); export/import is `backup`/`apply`
+- [x] Named profiles (list, save, switch, delete) on top of backup files, also for the profile keys (2.4); export/import is `backup`/`apply` (0.2.0)
 - [x] `game-mode --block` (quick tap: not on the Light Mount)
-- [ ] Shell completions (bash/zsh/fish), `--json` output for scripts
+- [x] Shell completions (bash/zsh/fish) (0.2.0)
+- [ ] `--json` output for scripts
 
 ### 6.4 Phase 5 – GUI
 - [x] Keyboard view (schematic ISO layout, legends of the reported layout), click a key → its bindings
@@ -302,7 +346,7 @@ GUI: Slint) and are checked in CI (`cargo deny`).
 - [ ] A file chooser for the backup (needs the XDG desktop portal; today a file name field)
 - [ ] Screen reader support: Slint's "accessibility" feature is off because its D-Bus stack needs quick-xml 0.38 (RUSTSEC-2026-0194/-0195); turn it on once AccessKit moves to quick-xml 0.41+
 - [ ] Remove the `cargo deny` ignores for unmaintained crates (ttf-parser, zvariant, zbus_names) when Slint/winit move on
-- [ ] Live preview of an effect
+- [x] Live preview of an effect (0.2.0)
 - [x] Color wheel to pick colors (effect colors; later per-key colors), next to the hex field
 - [x] Record a macro by typing it (the keyboard's own recording; interface 2's key events have no releases), with a choice of pauses
 - [x] Light and dark theme, or the system's (saved in `~/.config/quietlinux/gui.toml`)
@@ -311,8 +355,8 @@ GUI: Slint) and are checked in CI (`cargo deny`).
 ### 6.5 Phase 6 – Daemon (optional)
 - [ ] Evaluate keeping hidraw access to the daemon only (system service with its own user, GUI/CLI talk to it over D-Bus), so that user processes cannot read key presses from interface 2
 - [x] Website keys: `bind KEY website URL` (CLI, GUI, backup); the daemon listens to `11:02` and opens http(s) addresses with `xdg-open`
-- [ ] Find out whether the `11:02` event of a website key carries the address (the daemon reads the binding if not)
-- [ ] Other host-side actions: open file/folder (`04`/`05`, not captured), profile keys (`08`: switch between backup files?)
+- [ ] Find out whether the `11:02` event of a website or profile key carries the address or profile ID (the daemon reads the binding if not)
+- [ ] Other host-side actions: open file/folder (`04`/`05`, not captured); profile keys done (0.2.0)
 - [x] Reapply after replug/resume: `quietlinux-daemon` shows the per-key colors (or "off") from `lighting.toml` again; polls sysfs every 2 s, detects sleep by wall vs. monotonic clock
 - [x] systemd user service (`packaging/systemd/quietlinux-daemon.service`)
 - [x] Daemon tested on the reference keyboard (2026-10-27): per-key colors shown again after replugging, website key opens the browser

@@ -185,6 +185,9 @@ quietlinux light effect tornado --gradient ff0000@0,ffff00@30,0000ff@100
 | `--speed` | 0–100 | 50 |
 | `--direction` | `color-wave`, `matrix`: `up`, `down`, `left`, `right`; `tornado`: `clockwise`, `counterclockwise` | the first one |
 
+With one color, `tornado` turns that color together with black (as with
+`--dual COLOR,000000`).
+
 `static`, `breathing` and `reactive` do not move and take no `--direction`;
 a direction an effect does not move in is refused before anything is sent.
 
@@ -220,6 +223,8 @@ quietlinux bind --fn F1 media play-pause  # Fn+F1
 quietlinux bind --fn F1 default
 quietlinux bind KnobRight media next-track
 quietlinux bind M5 macro 2                # a macro stored in the keyboard
+quietlinux bind --fn M1 profile next      # switch profiles (background service)
+quietlinux bind --fn M2 profile gaming
 ```
 
 | Action | Values |
@@ -231,6 +236,7 @@ quietlinux bind M5 macro 2                # a macro stored in the keyboard
 | `shortcut NAME` | Windows shortcuts (`calculator`, `task-manager`, `lock-pc`, …): IO Center performs them on Windows; on Linux nothing happens yet |
 | `macro ID` | a macro stored in the keyboard; `quietlinux info` lists their IDs. The keyboard plays it itself |
 | `website URL` | open a website (`http://` or `https://` and a host, at most 51 characters, no spaces or quotes). The keyboard only reports the press: the [background service](installation.md#background-service-optional) opens it |
+| `profile TARGET` | switch [profiles](#profile-list--save--switch--delete): `next`, `previous` or a profile's name. The keyboard only reports the press: the background service switches |
 | `disable` | the key does nothing |
 | `default` | back to the factory binding |
 
@@ -242,9 +248,9 @@ quietlinux bind M5 macro 2                # a macro stored in the keyboard
   brighter/darker, Fn+←/→ previous/next effect.
 - `quietlinux info` lists all bindings that differ from the factory ones.
 - Macros are created with [`macro create`](#macro-list--show--create--edit--delete).
-- Not yet: opening files and folders, Windows shortcuts and switching profiles
-  (performed on the PC; their bindings are not captured or not done yet),
-  selecting an effect, mouse double click and auto fire.
+- Not yet: opening files and folders, Windows shortcuts (performed on the PC;
+  their bindings are not captured or not done yet), cycling profiles, selecting
+  an effect, mouse double click and auto fire.
 
 ## `macro list | show | create | edit | delete`
 
@@ -358,9 +364,9 @@ events = "+ctrl KeyA -ctrl 50ms +ctrl KeyC -ctrl"
   The file ends with a commented-out `[effect]` section: remove the `#` signs
   and fill it in to have `apply` set an effect.
 - Bindings use the syntax of `bind` (`key …`, `media …`, `mouse …`, `lighting …`,
-  `shortcut …`, `website …`, `macro …`, `disable`, `default`); `"Fn+KEY"` is the
-  Fn layer. Bindings QuietLinux cannot write yet (profiles, files, …) are
-  stored as `raw` bytes.
+  `shortcut …`, `website …`, `macro …`, `profile …`, `disable`, `default`);
+  `"Fn+KEY"` is the Fn layer. Bindings QuietLinux cannot write yet (files, IO
+  Center's profiles, …) are stored as `raw` bytes.
 - Macros are stored with their events in the syntax of `macro create`
   (`+ctrl KeyA -ctrl` is the same as `ctrl+KeyA`). Events without a name are
   stored as `raw_events` (4 hex bytes each), a config `apply` has no name for
@@ -375,7 +381,7 @@ differs is sent; `--dry-run` lists the changes without making them.
 
 ```console
 $ quietlinux apply ~/lightmount.toml --dry-run
-  note: Fn+Home: kept (profile: next); QuietLinux cannot recreate it, `quietlinux bind --fn Home default` resets it
+  note: Fn+Home: kept (profile: cycle); QuietLinux cannot recreate it, `quietlinux bind --fn Home default` resets it
   M3: media: next track
   CapsLock: factory binding
 2 change(s); nothing written (--dry-run).
@@ -397,7 +403,59 @@ $ quietlinux apply ~/lightmount.toml --dry-run
 - `[effect]` (optional): `effect`, one of `color`, `dual` (two colors) or
   `gradient` (list like `["ff0000@0", "0000ff@100"]`), `brightness`, `speed`,
   `direction`, with the values and defaults of `light effect`.
+- `[lighting]` (optional, written into profiles): `mode` is `effect` (the stored
+  effect), `per-key` or `off`; `[lighting.leds]` holds per-key colors by LED
+  index (`2e = "ff0000"`, see `quietlinux keys` and `zones`). Per-key colors are
+  sent every time (the keyboard does not report them; they are volatile).
+- If keys switch profiles now and none would afterwards, a note says so.
 - The whole file is checked before anything is sent; errors name the line's key.
+
+## `profile list | save | switch | delete`
+
+A profile is a set of settings: key bindings, macros, game mode shortcuts, the
+effect and the lighting (per-key colors or off). The Light Mount holds no
+profiles: like IO Center for Windows, QuietLinux keeps them on the PC
+(`~/.config/quietlinux/profiles/NAME.toml`) and writes a profile to the keyboard
+when you switch to it.
+
+```console
+$ quietlinux profile save work
+Profile "work" saved (6 binding(s), 2 macro(s), effect and lighting) and active.
+$ quietlinux bind CapsLock disable
+$ quietlinux profile save gaming --force
+$ quietlinux profile list
+* gaming
+  work
+$ quietlinux profile switch work
+Settings saved to profile "gaming".
+  CapsLock: factory binding
+  lighting: the stored effect
+Switched to profile "work": 2 change(s) written.
+```
+
+- `save NAME` saves what the keyboard reports, the last effect and the lighting
+  QuietLinux set, and makes the profile the active one. Names: 1 to 16
+  characters `A-Z a-z 0-9 - _`. An existing profile other than the active one
+  is only replaced with `--force`.
+- `switch NAME|next|previous` first saves the keyboard's settings to the active
+  profile (so that changes made since are kept, as in IO Center), then writes
+  the other profile like [`apply`](#apply-file---dry-run): only what differs.
+  `next` and `previous` go through the profiles in alphabetical order.
+  Switching to the active profile writes it again: that undoes changes made
+  since it was saved. `--dry-run` shows the changes and saves nothing.
+- `list` marks the active profile with `*`; `delete NAME` deletes one. Neither
+  touches the keyboard.
+- **Profile keys:** `quietlinux bind KEY profile next` (or `previous`, or a
+  profile's name) makes a key switch profiles; the
+  [background service](installation.md#background-service-optional) does the
+  switching. Keep a profile key in every profile (`profile next` on the same
+  key, for example), or you need the window or `profile switch` to get back;
+  `switch` warns when no profile key is left.
+- A profile file has the format of a [backup](#backup-file---force), with
+  `[effect]` and `[lighting]`. A backup copied into the profile folder as
+  `NAME.toml` is a profile too.
+- Like backups, profiles contain what your macros type; they are readable only
+  by you.
 
 ## `calibrate [--start HEX]`
 
@@ -423,6 +481,20 @@ $ quietlinux calibrate --layout de
 At the end the previous lighting mode is restored. If the keyboard was in
 realtime mode before, its colors cannot be read back: set them again with `light set`.
 Exit status `1` if there was any mismatch.
+
+## `completions SHELL`
+
+Prints a completion script for `bash`, `zsh` or `fish`. `install.sh` and the
+packages install them; by hand:
+
+```sh
+quietlinux completions bash > ~/.local/share/bash-completion/completions/quietlinux
+quietlinux completions fish > ~/.local/share/fish/vendor_completions.d/quietlinux.fish
+quietlinux completions zsh > ~/.local/share/zsh/site-functions/_quietlinux
+```
+
+For zsh, the folder must be in `fpath` (in `~/.zshrc`, before `compinit`):
+`fpath=(~/.local/share/zsh/site-functions $fpath)`.
 
 ## Exit status
 

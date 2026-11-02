@@ -15,6 +15,7 @@ path = "src/main.rs"
 [dependencies]
 quietlinux-core.workspace = true
 clap.workspace = true
+clap_complete.workspace = true
 
 [lints]
 workspace = true

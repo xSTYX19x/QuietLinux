@@ -123,6 +123,16 @@ if [ "$gui" = 1 ]; then
     done
 fi
 
+# shell completions, written by the program itself; bash and fish find them in
+# ~/.local/share, zsh only if the folder is in its fpath
+say "Adding shell completions (bash, zsh, fish)"
+completions="$prefix/share"
+install -d "$completions/bash-completion/completions" "$completions/zsh/site-functions" \
+    "$completions/fish/vendor_completions.d"
+"$bin/quietlinux" completions bash >"$completions/bash-completion/completions/quietlinux"
+"$bin/quietlinux" completions zsh >"$completions/zsh/site-functions/_quietlinux"
+"$bin/quietlinux" completions fish >"$completions/fish/vendor_completions.d/quietlinux.fish"
+
 # the service runs from $bin
 unit="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/quietlinux-daemon.service"
 install -Dm644 packaging/systemd/quietlinux-daemon.service "$unit"
@@ -159,5 +169,5 @@ echo "  quietlinux status          check that the keyboard is found"
 [ "$gui" = 1 ] && echo "  quietlinux-gui             the window (also in the application menu)"
 if [ "$service" = 0 ]; then
     echo "  systemctl --user enable --now quietlinux-daemon"
-    echo "                             the background service (per-key colors after replug/sleep, website keys)"
+    echo "                             the background service (per-key colors after replug/sleep, website and profile keys)"
 fi

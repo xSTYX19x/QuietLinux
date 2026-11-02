@@ -4,16 +4,21 @@
 //! bindings that differ from the factory ones, the game mode shortcuts and the
 //! macros. The
 //! Light Mount does not report its effect, so an `[effect]` section is only applied
-//! when the user writes one. See docs/usage-cli.md for the format.
+//! when the user writes one. Profiles (`profile`) are the same files with an
+//! `[effect]` and a `[lighting]` section. See docs/usage-cli.md for the format.
 
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::{self, Write as _};
 use std::path::{Path, PathBuf};
 
 use crate::device::{Error, LightingMode, Session, Transport};
-use crate::info::{self, Action, Binding, Colors, Layout, Macro, parse_action};
+use crate::info::{
+    self, Action, Binding, Colors, Layout, Macro, PROFILE_NEXT, PROFILE_PREVIOUS, parse_action,
+};
 use crate::keymap;
+use crate::profile;
 use crate::protocol as p;
+use crate::state::{self, Lighting, Mode};
 use serde::Deserialize;
 
 use crate::macros::{self, RepeatMode};
@@ -131,6 +136,10 @@ pub fn action_text(action: &Action) -> Option<String> {
         Action::WindowsShortcut(a) => format!("shortcut {}", Shortcut(*a).name()?),
         Action::OpenWebsite(url) if info::website_ok(url) => format!("website {url}"),
         Action::Macro(id) => format!("macro {id}"),
+        Action::Profile(PROFILE_NEXT) => "profile next".to_owned(),
+        Action::Profile(PROFILE_PREVIOUS) => "profile previous".to_owned(),
+        // IO Center's profile UUIDs are no names: kept raw
+        Action::ProfileSelect(id) => format!("profile {}", profile::name_from_id(id)?),
         _ => return None,
     })
 }
@@ -178,6 +187,11 @@ pub fn parse_desired(text: &str) -> Result<Desired, String> {
             arg.parse()
                 .map_err(|_| format!("invalid macro ID {arg:?} in {text:?}"))?,
         ),
+        "profile" => match arg.parse::<profile::Target>()? {
+            profile::Target::Next => Action::Profile(PROFILE_NEXT),
+            profile::Target::Previous => Action::Profile(PROFILE_PREVIOUS),
+            profile::Target::Name(name) => Action::ProfileSelect(profile::id(&name)),
+        },
         "disable" if arg.is_empty() => Action::Disabled,
         "default" if arg.is_empty() => return Ok(Desired::Default),
         "raw" => {
@@ -196,7 +210,7 @@ pub fn parse_desired(text: &str) -> Result<Desired, String> {
         }
         _ => {
             return Err(format!(
-                "invalid binding {text:?}: expected key, media, mouse, lighting, shortcut, website, macro, disable, default or raw"
+                "invalid binding {text:?}: expected key, media, mouse, lighting, shortcut, website, macro, profile, disable, default or raw"
             ));
         }
     };
@@ -250,6 +264,66 @@ pub fn backup_text(s: &Snapshot) -> String {
         t,
         "# Restore them with `quietlinux apply FILE` (try `--dry-run` first)."
     );
+    snapshot_sections(&mut t, s);
+    t.push_str(EFFECT_TEMPLATE);
+    t
+}
+
+/// Text of a profile: what the keyboard reports, and what QuietLinux remembers
+/// because the keyboard does not report it (the effect, the lighting).
+pub fn profile_text(
+    s: &Snapshot,
+    effect: Option<&EffectSetting>,
+    lighting: Option<&Lighting>,
+) -> String {
+    let mut t = String::new();
+    let _ = writeln!(
+        t,
+        "# A QuietLinux profile of a be quiet! Light Mount (`quietlinux profile`)."
+    );
+    let _ = writeln!(
+        t,
+        "# Switching to it writes what differs; it is saved again when you switch away."
+    );
+    snapshot_sections(&mut t, s);
+    match effect.and_then(effect_section) {
+        Some(section) => {
+            let _ = writeln!(t);
+            let _ = writeln!(t, "# The effect (the keyboard does not report it).");
+            t.push_str(&section);
+        }
+        None => t.push_str(EFFECT_TEMPLATE),
+    }
+    if let Some(lighting) = lighting {
+        lighting_section(&mut t, lighting);
+    }
+    t
+}
+
+/// A `[lighting]` section: what the lighting shows, and the per-key colors.
+fn lighting_section(t: &mut String, lighting: &Lighting) {
+    let _ = writeln!(t);
+    let _ = writeln!(
+        t,
+        "# What the lighting shows: effect (the stored effect), per-key or off."
+    );
+    let _ = writeln!(t, "[lighting]");
+    let _ = writeln!(t, "mode = \"{}\"", lighting.mode.name());
+    if !lighting.leds.is_empty() {
+        let _ = writeln!(t);
+        let _ = writeln!(
+            t,
+            "# Per-key colors by LED index (`quietlinux keys`, `quietlinux zones`); others are off."
+        );
+        let _ = writeln!(t, "[lighting.leds]");
+        for (led, color) in &lighting.leds {
+            let _ = writeln!(t, "{led:02x} = \"{color}\"");
+        }
+    }
+}
+
+/// The version and the sections of what the keyboard reports.
+fn snapshot_sections(t: &mut String, s: &Snapshot) {
     let _ = writeln!(t, "version = {VERSION}");
     if s.macros.as_ref().is_some_and(Vec::is_empty) {
         let _ = writeln!(
@@ -326,7 +400,7 @@ pub fn backup_text(s: &Snapshot) -> String {
         }
     }
     match &s.macros {
-        Some(list) if !list.is_empty() => macro_sections(&mut t, list),
+        Some(list) if !list.is_empty() => macro_sections(t, list),
         Some(_) => {}
         None => {
             let _ = writeln!(t);
@@ -336,8 +410,6 @@ pub fn backup_text(s: &Snapshot) -> String {
             );
         }
     }
-    t.push_str(EFFECT_TEMPLATE);
-    t
 }
 
 /// A TOML basic string.
@@ -398,6 +470,33 @@ struct File {
     bindings: Option<BTreeMap<String, String>>,
     effect: Option<EffectSection>,
     macros: Option<Vec<MacroSection>>,
+    lighting: Option<LightingSection>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LightingSection {
+    mode: String,
+    leds: Option<BTreeMap<String, String>>,
+}
+
+fn lighting_setting(l: LightingSection) -> Result<Lighting, String> {
+    let mode = Mode::from_name(&l.mode)
+        .ok_or_else(|| format!("mode {:?}: expected effect, per-key or off", l.mode))?;
+    let leds = l
+        .leds
+        .unwrap_or_default()
+        .into_iter()
+        .map(|(led, color)| {
+            let index = u8::from_str_radix(&led, 16)
+                .ok()
+                .filter(|i| crate::layout::all_leds().any(|l| l == *i))
+                .ok_or_else(|| format!("leds: unknown LED index {led:?}"))?;
+            let color = color.parse().map_err(|e| format!("leds.{led}: {e}"))?;
+            Ok((index, color))
+        })
+        .collect::<Result<_, String>>()?;
+    Ok(Lighting { mode, leds })
 }
 
 #[derive(Debug, Deserialize)]
@@ -486,6 +585,8 @@ pub struct Settings {
     pub effect: Option<EffectSetting>,
     /// All macros, sorted by ID.
     pub macros: Option<Vec<Macro>>,
+    /// What the lighting shows (profiles).
+    pub lighting: Option<Lighting>,
 }
 
 /// Parse and check a config file; nothing is sent to the keyboard.
@@ -554,11 +655,17 @@ pub fn parse(text: &str) -> Result<Settings, String> {
             Ok(list)
         })
         .transpose()?;
+    let lighting = file
+        .lighting
+        .map(lighting_setting)
+        .transpose()
+        .map_err(|e| format!("[lighting] {e}"))?;
     Ok(Settings {
         game_mode,
         bindings,
         effect,
         macros,
+        lighting,
     })
 }
 
@@ -694,6 +801,8 @@ pub enum Op {
         fn_layer: bool,
     },
     Effect(EffectSetting),
+    /// Show the stored effect, per-key colors (volatile) or switch the lighting off.
+    Lighting(Lighting),
     /// Write all macros (`summary` says what changes, without the contents).
     Macros {
         macros: Vec<Macro>,
@@ -719,6 +828,11 @@ impl fmt::Display for Op {
             Op::Bind { name, action, .. } => write!(f, "{name}: {action}"),
             Op::Reset { name, .. } => write!(f, "{name}: factory binding"),
             Op::Macros { summary, .. } => write!(f, "macros: {summary}"),
+            Op::Lighting(l) => match l.mode {
+                Mode::Effect => write!(f, "lighting: the stored effect"),
+                Mode::PerKey => write!(f, "lighting: per-key colors ({} LEDs)", l.leds.len()),
+                Mode::Off => write!(f, "lighting: off"),
+            },
             Op::Effect(e) => write!(
                 f,
                 "effect: {}, colors {}, brightness {}, speed {}{}",
@@ -842,7 +956,64 @@ pub fn plan(settings: &Settings, current: &Snapshot) -> Plan {
     if let Some(effect) = &settings.effect {
         plan.ops.push(Op::Effect(effect.clone()));
     }
+    plan_lighting(&mut plan, settings, current);
+    if let Some(note) = profile_key_note(&plan, current) {
+        plan.notes.push(note);
+    }
     plan
+}
+
+/// Show the lighting of `settings`, if it does not already.
+fn plan_lighting(plan: &mut Plan, settings: &Settings, current: &Snapshot) {
+    if let Some(lighting) = &settings.lighting {
+        let needed = match lighting.mode {
+            // the keyboard does not report per-key colors; they are volatile
+            Mode::PerKey => true,
+            Mode::Off => current.lighting_mode != LightingMode::Off,
+            // setting an effect shows it
+            Mode::Effect => {
+                settings.effect.is_none() && current.lighting_mode != LightingMode::General
+            }
+        };
+        if needed {
+            plan.ops.push(Op::Lighting(lighting.clone()));
+        }
+    }
+}
+
+/// Whether a binding switches profiles.
+fn is_profile_action(action: &Action) -> bool {
+    matches!(action, Action::Profile(_) | Action::ProfileSelect(_))
+}
+
+/// A note when keys switch profiles now and none will after the plan: the
+/// profile keys would be gone.
+fn profile_key_note(plan: &Plan, current: &Snapshot) -> Option<String> {
+    let changed = |key: u8, fn_l: bool| {
+        plan.ops.iter().any(|op| match op {
+            Op::Bind {
+                key_id, fn_layer, ..
+            }
+            | Op::Reset {
+                key_id, fn_layer, ..
+            } => (*key_id, *fn_layer) == (key, fn_l),
+            _ => false,
+        })
+    };
+    let now: Vec<&Binding> = current
+        .bindings
+        .iter()
+        .filter(|b| is_profile_action(&b.action))
+        .collect();
+    let kept = now.iter().any(|b| !changed(b.key_id, b.fn_layer));
+    let new = plan.ops.iter().any(|op| match op {
+        Op::Bind { action, .. } => is_profile_action(action),
+        _ => false,
+    });
+    (!now.is_empty() && !kept && !new).then(|| {
+        "no key switches profiles afterwards: switch with `quietlinux profile switch` or the window"
+            .to_owned()
+    })
 }
 
 /// The macro ID a binding will name, if any.
@@ -939,9 +1110,28 @@ pub fn execute<T: Transport>(
             Op::Effect(e) => {
                 session.set_effect(e.effect.0, e.direction.0, e.brightness, e.speed, &e.colors)?;
             }
+            Op::Lighting(l) => match l.mode {
+                Mode::Effect => session.show_stored_effect()?,
+                Mode::PerKey => session.set_leds(&l.led_list())?,
+                Mode::Off => session.set_lighting_mode(LightingMode::Off)?,
+            },
         }
     }
     Ok(())
+}
+
+/// Remember what an executed plan showed, as the keyboard does not report it:
+/// the effect (`last-effect.toml`) and the lighting (`lighting.toml`, for the
+/// window and the background service).
+pub fn remember(settings: &Settings, plan: &Plan) -> std::io::Result<()> {
+    if let Some(effect) = plan.effect() {
+        save_last_effect(effect)?;
+    }
+    match &settings.lighting {
+        Some(lighting) => state::save(lighting),
+        None if plan.effect().is_some() => state::save_mode(Mode::Effect),
+        None => Ok(()),
+    }
 }
 
 #[cfg(test)]
@@ -1168,13 +1358,13 @@ mod tests {
     #[test]
     fn kept_binding_note_names_the_command() {
         let mut current = snapshot();
-        current.bindings = parse_bindings(&[1, 0, 0x55, 0x80, 0x08, 0x03]).unwrap().1;
+        current.bindings = parse_bindings(&[1, 0, 0x55, 0x80, 0x08, 0x02]).unwrap().1;
         let plan = plan(&parse("version = 1\n[bindings]\n").unwrap(), &current);
         assert_eq!(plan.ops, []);
         assert_eq!(
             plan.notes,
             [
-                "Fn+Home: kept (profile: next); QuietLinux cannot recreate it, \
+                "Fn+Home: kept (profile: cycle); QuietLinux cannot recreate it, \
               `quietlinux bind --fn Home default` resets it"
             ]
         );
@@ -1266,11 +1456,106 @@ mod tests {
                 "version = 1\n[effect]\neffect = \"static\"\ncolor = \"ff0000\"\ndual = [\"ff0000\", \"00ff00\"]",
                 "only one",
             ),
-            ("version = 1\n[lighting]\nmode = 1", "unknown field"),
+            ("version = 1\n[colors]\nmode = 1", "unknown field"),
+            ("version = 1\n[lighting]\nmode = \"sparkle\"", "sparkle"),
+            (
+                "version = 1\n[lighting]\nmode = \"off\"\n[lighting.leds]\nff = \"ff0000\"",
+                "unknown LED index \"ff\"",
+            ),
+            (
+                "version = 1\n[lighting]\nmode = \"off\"\n[lighting.leds]\n2e = \"red\"",
+                "leds.2e",
+            ),
+            (
+                "version = 1\n[bindings]\nM1 = \"profile no way\"",
+                "invalid profile name",
+            ),
         ] {
             let err = parse(text).unwrap_err();
             assert!(err.contains(expected), "{text:?}: {err}");
         }
+    }
+
+    #[test]
+    fn profile_text_round_trips() {
+        let effect = EffectSetting {
+            effect: Effect::STATIC,
+            direction: Direction(0),
+            brightness: 80,
+            speed: 50,
+            colors: Colors::Single(crate::Rgb::new(1, 2, 3)),
+        };
+        let lighting = Lighting {
+            mode: Mode::PerKey,
+            leds: [
+                (0x2e, crate::Rgb::new(255, 0, 0)),
+                (0x2d, crate::Rgb::new(0, 0, 255)),
+            ]
+            .into(),
+        };
+        let text = profile_text(&snapshot(), Some(&effect), Some(&lighting));
+        let settings = parse(&text).unwrap();
+        assert_eq!(settings.effect, Some(effect));
+        assert_eq!(settings.lighting, Some(lighting));
+        assert_eq!(settings.bindings.unwrap().len(), 5);
+        // without them: the effect template, no lighting
+        let settings = parse(&profile_text(&snapshot(), None, None)).unwrap();
+        assert_eq!((settings.effect, settings.lighting), (None, None));
+    }
+
+    #[test]
+    fn lighting_is_shown_as_needed() {
+        let ops = |text: &str, mode: LightingMode| {
+            let mut current = snapshot();
+            current.lighting_mode = mode;
+            plan(&parse(text).unwrap(), &current)
+                .ops
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+        };
+        let lighting = |mode: &str| format!("version = 1\n[lighting]\nmode = \"{mode}\"\n");
+        // per-key colors are not reported: always shown
+        assert_eq!(
+            ops(&lighting("per-key"), LightingMode::Realtime),
+            ["lighting: per-key colors (0 LEDs)"]
+        );
+        assert_eq!(
+            ops(&lighting("off"), LightingMode::Off),
+            Vec::<String>::new()
+        );
+        assert_eq!(
+            ops(&lighting("off"), LightingMode::General),
+            ["lighting: off"]
+        );
+        assert_eq!(
+            ops(&lighting("effect"), LightingMode::General),
+            Vec::<String>::new()
+        );
+        assert_eq!(
+            ops(&lighting("effect"), LightingMode::Off),
+            ["lighting: the stored effect"]
+        );
+        // an effect is shown when it is set
+        let with_effect = format!("{}[effect]\neffect = \"static\"\n", lighting("effect"));
+        assert_eq!(ops(&with_effect, LightingMode::Off).len(), 1);
+    }
+
+    #[test]
+    fn note_when_no_profile_key_is_left() {
+        let mut current = snapshot();
+        current.bindings = parse_bindings(&[1, 0, 0x06, 0x00, 0x08, 0x03]).unwrap().1;
+        let notes = |text: &str| plan(&parse(text).unwrap(), &current).notes;
+        assert_eq!(
+            notes("version = 1\n[bindings]\nM2 = \"key F13\"\n").len(),
+            1
+        );
+        assert_eq!(
+            notes("version = 1\n[bindings]\nM4 = \"profile previous\"\n"),
+            Vec::<String>::new()
+        );
+        // bindings left alone: the profile key stays
+        assert_eq!(notes("version = 1\n"), Vec::<String>::new());
     }
 
     #[test]
@@ -1285,6 +1570,9 @@ mod tests {
             "shortcut calculator",
             "macro 2",
             "website https://example.org",
+            "profile next",
+            "profile previous",
+            "profile gaming",
         ] {
             let Desired::Action(action) = parse_desired(text).unwrap() else {
                 panic!("{text}")
@@ -1292,6 +1580,13 @@ mod tests {
             assert_eq!(action_text(&action).as_deref(), Some(text));
         }
         assert_eq!(action_text(&Action::ProfileSelect([0; 16])), None);
+        // as captured from the Windows app: `08 01` and the 16-byte profile ID
+        let Ok(Desired::Action(select)) = parse_desired("profile gaming") else {
+            panic!()
+        };
+        let mut bytes = vec![0x08, 0x01];
+        bytes.extend_from_slice(b"gaming\0\0\0\0\0\0\0\0\0\0");
+        assert_eq!(select.to_bytes(), Some(bytes));
         assert_eq!(parse_desired("default"), Ok(Desired::Default));
         assert_eq!(
             parse_desired("raw 0a 02 00"),

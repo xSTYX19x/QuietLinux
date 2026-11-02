@@ -7,6 +7,7 @@
 mod backend;
 mod keyboard;
 mod prefs;
+mod preview;
 mod screenshot;
 mod wheel;
 
@@ -14,6 +15,7 @@ use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::process::ExitCode;
+use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, mpsc};
 use std::time::Duration;
@@ -26,6 +28,7 @@ use quietlinux_core::info::{Action, Colors, Macro};
 use quietlinux_core::keymap::{self, KEYS, Layout};
 use quietlinux_core::layout::Zone;
 use quietlinux_core::macros::{self, RepeatMode};
+use quietlinux_core::profile::{self, Profiles, Target};
 use quietlinux_core::protocol::{self as p, Led};
 use quietlinux_core::settings::{
     self, Direction, Effect, LightingAction, MediaAction, MouseButton,
@@ -33,7 +36,7 @@ use quietlinux_core::settings::{
 use quietlinux_core::state;
 use slint::{ComponentHandle, Model, ModelRc, SharedString, StandardListViewItem, VecModel};
 
-use crate::backend::{Backend, Outcome, Request, State};
+use crate::backend::{Backend, Outcome, Request, State, profile_folder};
 use crate::ui::WheelPick;
 
 /// The types generated from ui/app.slint.
@@ -69,17 +72,21 @@ struct Cli {
 }
 
 /// Binding kinds of the key editor: the word `bind` takes, and the label.
-const BIND_KINDS: [(&str, &str); 8] = [
+const BIND_KINDS: [(&str, &str); 9] = [
     ("default", "Factory binding"),
     ("key", "Key or combination"),
     ("media", "Media"),
     ("mouse", "Mouse button"),
     ("lighting", "Lighting"),
     ("macro", "Macro"),
-    // opened by the background service
+    // switched and opened by the background service
+    ("profile", "Profile"),
     ("website", "Website"),
     ("disable", "Disabled"),
 ];
+
+/// Binding kinds that take typed text, with an example.
+const TEXT_KINDS: [(&str, &str); 2] = [("key", "ctrl+KeyC"), ("website", "https://example.org")];
 
 /// A changed effect is applied this long after the last change: it is stored
 /// in the keyboard, so not every step of a drag or slider is written.
@@ -91,6 +98,11 @@ const PAINT_DELAY: Duration = Duration::from_millis(150);
 
 /// How often the window asks whether game mode is on (Fn+Pause switches it).
 const GAME_MODE_POLL: Duration = Duration::from_secs(2);
+
+/// Time between two frames of the effect preview, and between two looks
+/// whether it is shown while it is not animated.
+const PREVIEW_FRAME: Duration = Duration::from_millis(40);
+const PREVIEW_IDLE: Duration = Duration::from_millis(500);
 
 /// Work for the backend thread.
 #[derive(Debug)]
@@ -116,6 +128,8 @@ enum Pending {
     /// Checking the file as typed in the window.
     Check(String),
     ApplyFile,
+    /// Saving or switching a profile.
+    Profile,
 }
 
 /// Painted colors on their way to the keyboard.
@@ -128,6 +142,8 @@ enum Paint {
 }
 
 /// The window's state on the UI thread.
+// independent flags, not one state in disguise
+#[allow(clippy::struct_excessive_bools)]
 struct Controller {
     ui: slint::Weak<AppWindow>,
     requests: Option<mpsc::Sender<Job>>,
@@ -156,6 +172,18 @@ struct Controller {
     /// Key and target the key editor shows (to tell a target change from a kind change).
     editor_key: String,
     editor_target: i32,
+    /// The profile folder, and the profiles and the active one the window shows.
+    profiles: Option<Profiles>,
+    profile_names: Vec<String>,
+    active_profile: Option<String>,
+    /// The effect preview: its keys, the legends they show, its timer, whether
+    /// the timer runs fast, and its time in seconds (it stops while paused).
+    preview: Rc<VecModel<KeyCap>>,
+    preview_legends: Option<Layout>,
+    preview_timer: slint::Timer,
+    preview_fast: bool,
+    preview_time: f32,
+    preview_last: std::time::Instant,
 }
 
 impl Controller {
@@ -177,6 +205,15 @@ impl Controller {
             view_chosen: false,
             editor_key: String::new(),
             editor_target: 0,
+            profiles: None,
+            profile_names: Vec::new(),
+            active_profile: None,
+            preview: Rc::new(VecModel::default()),
+            preview_legends: None,
+            preview_timer: slint::Timer::default(),
+            preview_fast: false,
+            preview_time: 0.0,
+            preview_last: std::time::Instant::now(),
         }
     }
 }
@@ -230,6 +267,7 @@ impl Controller {
             Request::Refresh => Pending::Refresh,
             Request::CheckFile(_) => Pending::Check(ui.get_file().to_string()),
             Request::ApplyFile(_) => Pending::ApplyFile,
+            Request::SaveProfile(_) | Request::SwitchProfile(_) => Pending::Profile,
             _ => Pending::Other,
         };
         ui.set_busy(true);
@@ -286,6 +324,15 @@ impl Controller {
                     Pending::Check(file) => ui.set_checked_file(file.into()),
                     // check again before the next apply
                     Pending::ApplyFile => ui.set_checked_file("".into()),
+                    Pending::Profile => {
+                        // the profile's effect and lighting are what QuietLinux remembers now
+                        if self.remember {
+                            self.restore(ui);
+                        }
+                        if let Some(mode) = state.lighting_mode {
+                            ui.set_lighting_view(i32::from(mode == LightingMode::Realtime));
+                        }
+                    }
                     Pending::Refresh | Pending::Other => {}
                 }
                 ui.set_game_mode(game_mode_code(state.game_mode_on));
@@ -319,6 +366,7 @@ impl Controller {
                 show_error(ui, &e);
             }
         }
+        self.show_profiles(ui);
     }
 
     fn legends(&self) -> Layout {
@@ -438,7 +486,7 @@ impl Controller {
         let kind = BIND_KINDS.iter().position(|(w, _)| *w == word).unwrap_or(0);
         ui.set_bind_kind(i32::try_from(kind).unwrap_or(0));
         self.kind_changed(ui);
-        if kind == 1 || kind == 6 {
+        if TEXT_KINDS.iter().any(|(w, _)| *w == word) {
             ui.set_bind_text(value.into());
         } else {
             let values = ui.get_bind_values();
@@ -461,35 +509,50 @@ impl Controller {
         }
     }
 
+    /// The word of the binding kind the key editor shows.
+    fn kind_word(ui: &AppWindow) -> &'static str {
+        let kind = usize::try_from(ui.get_bind_kind()).unwrap_or(0);
+        BIND_KINDS[kind.min(BIND_KINDS.len() - 1)].0
+    }
+
     /// The value choices of the selected binding kind.
     fn kind_changed(&self, ui: &AppWindow) {
         let names =
             |n: Vec<Option<&'static str>>| n.into_iter().flatten().map(str::to_owned).collect();
-        let values: Vec<String> = match ui.get_bind_kind() {
-            2 => names(
+        let word = Self::kind_word(ui);
+        let text = TEXT_KINDS.iter().find(|(w, _)| *w == word);
+        ui.set_bind_free_text(text.is_some());
+        ui.set_bind_placeholder(text.map_or("", |(_, example)| *example).into());
+        let values: Vec<String> = match word {
+            "media" => names(
                 MediaAction::all()
                     .into_iter()
                     .map(MediaAction::name)
                     .collect(),
             ),
-            3 => names(
+            "mouse" => names(
                 MouseButton::all()
                     .into_iter()
                     .map(MouseButton::name)
                     .collect(),
             ),
-            4 => names(
+            "lighting" => names(
                 LightingAction::all()
                     .into_iter()
                     .map(LightingAction::name)
                     .collect(),
             ),
-            5 => self
+            "macro" => self
                 .state
                 .macros
                 .iter()
                 .flatten()
                 .map(|m| format!("{}: {}", m.id, m.name))
+                .collect(),
+            "profile" => ["next", "previous"]
+                .into_iter()
+                .map(str::to_owned)
+                .chain(self.profile_names.iter().cloned())
                 .collect(),
             _ => Vec::new(),
         };
@@ -501,11 +564,10 @@ impl Controller {
         let Some((key_id, fn_layer)) = Self::target(ui) else {
             return;
         };
-        let kind = usize::try_from(ui.get_bind_kind()).unwrap_or(0);
-        let (word, _) = BIND_KINDS[kind.min(BIND_KINDS.len() - 1)];
-        let value = match kind {
-            1 | 6 => ui.get_bind_text().trim().to_string(),
-            2..=5 => {
+        let word = Self::kind_word(ui);
+        let value = match word {
+            "key" | "website" => ui.get_bind_text().trim().to_string(),
+            "media" | "mouse" | "lighting" | "macro" | "profile" => {
                 let values = ui.get_bind_values();
                 let Some(v) = usize::try_from(ui.get_bind_value_index())
                     .ok()
@@ -534,6 +596,95 @@ impl Controller {
             }
             Err(e) => show_error(ui, &e),
         }
+    }
+
+    /// Show the profiles and the active one, if they changed; returns whether
+    /// the active profile changed.
+    fn show_profiles(&mut self, ui: &AppWindow) -> bool {
+        let Some(profiles) = &self.profiles else {
+            return false;
+        };
+        let names = profiles.names();
+        let active = profiles.active();
+        let changed = active != self.active_profile;
+        if names == self.profile_names && !changed {
+            return false;
+        }
+        let index = |name: Option<&String>| {
+            name.and_then(|n| names.iter().position(|x| x == n))
+                .and_then(|i| i32::try_from(i).ok())
+                .unwrap_or(-1)
+        };
+        ui.set_profile_names(strings(names.iter().cloned()));
+        ui.set_profile_index(index(active.as_ref()));
+        let delete = usize::try_from(ui.get_profile_delete_index()).unwrap_or(0);
+        ui.set_profile_delete_index(
+            i32::try_from(delete.min(names.len().saturating_sub(1))).unwrap_or(0),
+        );
+        self.profile_names = names;
+        self.active_profile = active;
+        changed
+    }
+
+    /// Look for profile changes from elsewhere (a profile key, the command line):
+    /// the keyboard's settings changed with them.
+    fn poll_profiles(&mut self, ui: &AppWindow) {
+        if ui.get_busy() || !self.show_profiles(ui) || !ui.get_connected() {
+            return;
+        }
+        if self.remember {
+            self.restore(ui);
+        }
+        self.send(ui, Request::Refresh);
+    }
+
+    /// A profile chosen in the title line: switch to it.
+    fn profile_chosen(&mut self, ui: &AppWindow) {
+        let Some(name) = usize::try_from(ui.get_profile_index())
+            .ok()
+            .and_then(|i| self.profile_names.get(i).cloned())
+        else {
+            return;
+        };
+        self.send(ui, Request::SwitchProfile(Target::Name(name)));
+    }
+
+    fn profile_save(&mut self, ui: &AppWindow) {
+        let name = ui.get_profile_name().trim().to_owned();
+        if let Err(e) = profile::check_name(&name) {
+            show_error(ui, &e);
+            return;
+        }
+        let taken =
+            self.profile_names.contains(&name) && self.active_profile.as_ref() != Some(&name);
+        if taken {
+            show_error(
+                ui,
+                &format!("profile {name:?} exists: delete it first, or save under another name"),
+            );
+            return;
+        }
+        self.send(ui, Request::SaveProfile(name));
+    }
+
+    fn profile_delete(&mut self, ui: &AppWindow) {
+        let Some(name) = usize::try_from(ui.get_profile_delete_index())
+            .ok()
+            .and_then(|i| self.profile_names.get(i).cloned())
+        else {
+            return;
+        };
+        let Some(profiles) = &self.profiles else {
+            return;
+        };
+        match profiles.delete(&name) {
+            Ok(()) => {
+                ui.set_status_error(false);
+                ui.set_status(format!("Profile {name:?} deleted.").into());
+            }
+            Err(e) => show_error(ui, &format!("profile {name:?}: {e}")),
+        }
+        self.show_profiles(ui);
     }
 
     fn show_macros(&self, ui: &AppWindow) {
@@ -854,6 +1005,7 @@ impl Controller {
 
     fn effect_changed(&mut self, ui: &AppWindow) {
         self.show_directions(ui, None);
+        self.preview_tick(ui);
         self.color_timer
             .start(slint::TimerMode::SingleShot, EFFECT_DELAY, || {
                 with_controller(|c, ui| {
@@ -894,10 +1046,34 @@ impl Controller {
 
     /// Store the effect. `quiet`: a color still being typed is no error.
     fn apply_effect(&mut self, ui: &AppWindow, quiet: bool) {
-        let index = |i: i32| usize::try_from(i).unwrap_or(0);
-        let Some(effect) = Effect::all().get(index(ui.get_effect_index())).copied() else {
-            return;
+        let e = match self.shown_effect(ui) {
+            Ok(e) => e,
+            Err(e) => {
+                if !quiet {
+                    show_error(ui, &e);
+                }
+                return;
+            }
         };
+        self.send(
+            ui,
+            Request::Effect {
+                effect: e.effect.0,
+                direction: e.direction.0,
+                brightness: e.brightness,
+                speed: e.speed,
+                colors: e.colors,
+            },
+        );
+    }
+
+    /// The effect the lighting fields show; an error for a color still being typed.
+    fn shown_effect(&self, ui: &AppWindow) -> Result<EffectSetting, String> {
+        let index = |i: i32| usize::try_from(i).unwrap_or(0);
+        let effect = Effect::all()
+            .get(index(ui.get_effect_index()))
+            .copied()
+            .unwrap_or(Effect::STATIC);
         let direction = self
             .directions
             .get(index(ui.get_direction_index()))
@@ -914,15 +1090,6 @@ impl Controller {
                 .and_then(|a| color(ui.get_color2()).map(|b| Colors::Dual(a, b))),
             _ => Ok(Colors::Gradient(settings::rainbow())),
         };
-        let colors = match colors {
-            Ok(colors) => colors,
-            Err(e) => {
-                if !quiet {
-                    show_error(ui, &e);
-                }
-                return;
-            }
-        };
         let percent = |v: f32| v.round().clamp(0.0, 100.0);
         // clamped to 0..=100 above
         #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
@@ -930,16 +1097,88 @@ impl Controller {
             percent(ui.get_brightness()) as u8,
             percent(ui.get_speed()) as u8,
         );
-        self.send(
-            ui,
-            Request::Effect {
-                effect: effect.0,
-                direction: direction.0,
-                brightness,
-                speed,
-                colors,
-            },
-        );
+        Ok(EffectSetting {
+            effect,
+            direction,
+            brightness,
+            speed,
+            colors: colors?,
+        })
+    }
+
+    /// Whether the effect page, with its preview, is shown.
+    fn preview_shown(ui: &AppWindow) -> bool {
+        ui.get_page() == 0 && ui.get_lighting_view() == 0 && !ui.get_settings_open()
+    }
+
+    /// (Re)start the preview's timer: a frame every [`PREVIEW_FRAME`] while it
+    /// animates, else a look every [`PREVIEW_IDLE`] whether it is shown.
+    fn start_preview_timer(&mut self) {
+        let interval = if self.preview_fast {
+            PREVIEW_FRAME
+        } else {
+            PREVIEW_IDLE
+        };
+        self.preview_timer
+            .start(slint::TimerMode::Repeated, interval, || {
+                with_controller(Controller::preview_tick);
+            });
+    }
+
+    fn preview_tick(&mut self, ui: &AppWindow) {
+        let shown = Self::preview_shown(ui);
+        let effect = self.shown_effect(ui);
+        let fast = shown && ui.get_animate() && effect.as_ref().is_ok_and(preview::moves);
+        if fast != self.preview_fast {
+            self.preview_fast = fast;
+            self.start_preview_timer();
+        }
+        let now = std::time::Instant::now();
+        if fast {
+            self.preview_time += now.duration_since(self.preview_last).as_secs_f32();
+        }
+        self.preview_last = now;
+        if let (true, Ok(e)) = (shown, effect) {
+            self.draw_preview(ui, &e);
+        }
+    }
+
+    /// Draw the preview at its time; only keys whose color changed are redrawn.
+    fn draw_preview(&mut self, ui: &AppWindow, e: &EffectSetting) {
+        let legends = self.legends();
+        if self.preview_legends != Some(legends) {
+            self.preview_legends = Some(legends);
+            let caps: Vec<KeyCap> = keyboard::caps()
+                .into_iter()
+                .map(|c| KeyCap {
+                    code: c.code.into(),
+                    legend: if c.round { "" } else { legends.legend(c.code) }.into(),
+                    x: c.x,
+                    y: c.y,
+                    w: c.w,
+                    h: c.h,
+                    round: c.round,
+                    painted: true,
+                    ..KeyCap::default()
+                })
+                .collect();
+            self.preview = Rc::new(VecModel::from(caps));
+            ui.set_preview_keys(ModelRc::from(self.preview.clone()));
+        }
+        let count = self.preview.row_count();
+        for i in 0..count {
+            let Some(mut cap) = self.preview.row_data(i) else {
+                continue;
+            };
+            let center = (cap.x + cap.w / 2.0, cap.y + cap.h / 2.0);
+            let rgb = preview::color(e, i, count, center, self.preview_time);
+            let color = to_color(rgb);
+            if cap.color != color {
+                cap.color = color;
+                cap.ink = ink(rgb);
+                self.preview.set_row_data(i, cap);
+            }
+        }
     }
 
     fn apply_game_mode(&mut self, ui: &AppWindow) {
@@ -1062,7 +1301,12 @@ fn binding_label(action: &Action, legends: Layout, macros: Option<&[Macro]>) -> 
         Action::OpenWebsite(_) => "Website",
         Action::OpenFile(_) => "File",
         Action::OpenFolder(_) => "Folder",
-        Action::Profile(_) | Action::ProfileSelect(_) => "Profile",
+        Action::Profile(quietlinux_core::info::PROFILE_NEXT) => "Profile ›",
+        Action::Profile(quietlinux_core::info::PROFILE_PREVIOUS) => "‹ Profile",
+        Action::ProfileSelect(id) => {
+            return profile::name_from_id(id).unwrap_or_else(|| "Profile".to_owned());
+        }
+        Action::Profile(_) => "Profile",
         Action::SpecialKey(_) => "Special",
         Action::Unknown { .. } => "?",
     };
@@ -1188,10 +1432,18 @@ fn set_up(ui: &AppWindow) {
     ui.on_save_backup(|| with_controller(Controller::save_backup));
     ui.on_check_file(|| with_controller(Controller::check_file));
     ui.on_apply_file(|| with_controller(Controller::apply_file));
+    ui.on_profile_chosen(|| with_controller(Controller::profile_chosen));
+    ui.on_profile_save(|| with_controller(Controller::profile_save));
+    ui.on_profile_delete(|| with_controller(Controller::profile_delete));
     ui.on_refresh(|| with_controller(|c, ui| c.send(ui, Request::Refresh)));
     ui.on_effect_changed(|| with_controller(Controller::effect_changed));
     ui.on_lighting_chosen(|| with_controller(Controller::lighting_chosen));
-    ui.on_lighting_view_chosen(|| with_controller(Controller::lighting_view_chosen));
+    ui.on_lighting_view_chosen(|| {
+        with_controller(|c, ui| {
+            c.lighting_view_chosen(ui);
+            c.preview_tick(ui);
+        });
+    });
     ui.on_paint_key(|code| with_controller(|c, ui| c.paint_key(ui, &code, false)));
     ui.on_erase_key(|code| with_controller(|c, ui| c.paint_key(ui, &code, true)));
     ui.on_paint_all(|| with_controller(Controller::paint_all));
@@ -1295,10 +1547,17 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
     };
     let requests = spawn_backend(backend);
     let demo = cli.demo;
+    let profiles = profile_folder(demo);
+    if demo && let Some(profiles) = &profiles {
+        demo_profiles(profiles);
+    }
     CONTROLLER.with(|c| {
-        *c.borrow_mut() = Some(Controller::new(&ui, Some(requests)));
+        let mut controller = Controller::new(&ui, Some(requests));
+        controller.profiles.clone_from(&profiles);
+        *c.borrow_mut() = Some(controller);
     });
     with_controller(|c, ui| c.show_directions(ui, None));
+    with_controller(|c, _| c.start_preview_timer());
     // the demo keyboard starts fresh; the real one gets what was set last time
     if !demo {
         with_controller(|c, ui| {
@@ -1311,9 +1570,26 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
     let poll = slint::Timer::default();
     poll.start(slint::TimerMode::Repeated, GAME_MODE_POLL, || {
         with_controller(Controller::poll_game_mode);
+        with_controller(Controller::poll_profiles);
     });
     ui.run()?;
+    if demo && let Some(profiles) = profiles {
+        let _ = std::fs::remove_dir_all(profiles.dir());
+    }
     Ok(())
+}
+
+/// Two profiles for the demo mode, in its own folder.
+fn demo_profiles(profiles: &Profiles) {
+    let default = "version = 1\n[bindings]\nM1 = \"media mic-mute\"\nM2 = \"key F13\"\n\
+                   M5 = \"macro 1\"\nCapsLock = \"key F14\"\n\
+                   [effect]\neffect = \"static\"\ncolor = \"e63000\"\n";
+    let gaming = "version = 1\n[game_mode]\nblocks = [\"win\", \"alt-tab\"]\n\
+                  [bindings]\nM1 = \"profile previous\"\nCapsLock = \"disable\"\n\
+                  [effect]\neffect = \"color-wave\"\nspeed = 70\n";
+    let _ = profiles.write("default", default);
+    let _ = profiles.write("gaming", gaming);
+    let _ = profiles.set_active(Some("default"));
 }
 
 fn main() -> ExitCode {
@@ -1366,6 +1642,7 @@ mod tests {
                 "mouse" => "mouse left",
                 "lighting" => "lighting brighter",
                 "macro" => "macro 1",
+                "profile" => "profile next",
                 "website" => "website https://example.org",
                 other => other,
             };

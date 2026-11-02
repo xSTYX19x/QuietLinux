@@ -592,6 +592,13 @@ impl Action {
                 vec![0x0a, lo, hi]
             }
             Action::WindowsShortcut(action) => vec![0x07, *action],
+            // [cap] next and previous profile; select with the 16-byte profile ID
+            Action::Profile(action @ (PROFILE_NEXT | PROFILE_PREVIOUS)) => vec![0x08, *action],
+            Action::ProfileSelect(id) => {
+                let mut bytes = vec![0x08, 0x01];
+                bytes.extend_from_slice(id);
+                bytes
+            }
             // [cap] `06 13 "https://example.org"`; only what fits one packet, as captured
             Action::OpenWebsite(url) if website_ok(url) => {
                 let mut bytes = vec![0x06, u8::try_from(url.len()).ok()?];
@@ -717,6 +724,9 @@ const WINDOWS_SHORTCUTS: [&str; 22] = [
     "email",
 ];
 const PROFILE: [&str; 5] = ["none", "select", "cycle", "next", "previous"];
+/// Profile actions QuietLinux writes besides select (cycle is not captured).
+pub const PROFILE_NEXT: u8 = 3;
+pub const PROFILE_PREVIOUS: u8 = 4;
 const BACKLIGHT: [&str; 6] = [
     "none",
     "select effect",
@@ -771,7 +781,10 @@ impl fmt::Display for Action {
                 write!(f, "Windows shortcut: {}", named(&WINDOWS_SHORTCUTS, *a))
             }
             Action::Profile(a) => write!(f, "profile: {}", named(&PROFILE, *a)),
-            Action::ProfileSelect(_) => write!(f, "profile: select"),
+            Action::ProfileSelect(id) => match crate::profile::name_from_id(id) {
+                Some(name) => write!(f, "profile: select {name:?}"),
+                None => write!(f, "profile: select (an IO Center profile)"),
+            },
             Action::Backlight {
                 action,
                 effect: Some(e),

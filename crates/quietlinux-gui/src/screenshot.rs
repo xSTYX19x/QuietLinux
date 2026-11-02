@@ -9,8 +9,8 @@ use slint::platform::software_renderer::{MinimalSoftwareWindow, RepaintBufferTyp
 use slint::platform::{Platform, WindowAdapter};
 use slint::{ComponentHandle, PhysicalSize, Rgb8Pixel};
 
-use crate::backend::{Backend, Request};
-use crate::{AppWindow, CONTROLLER, Controller, set_up, with_controller};
+use crate::backend::{Backend, Request, profile_folder};
+use crate::{AppWindow, CONTROLLER, Controller, demo_profiles, set_up, with_controller};
 
 const WIDTH: u32 = 1100;
 const HEIGHT: u32 = 720;
@@ -30,8 +30,14 @@ pub fn run(path: &Path, page: i32, theme: i32) -> Result<(), Box<dyn Error>> {
     let ui = AppWindow::new()?;
     set_up(&ui);
     window.set_size(PhysicalSize::new(WIDTH, HEIGHT));
+    let profiles = profile_folder(true);
+    if let Some(profiles) = &profiles {
+        demo_profiles(profiles);
+    }
     CONTROLLER.with(|c| {
-        *c.borrow_mut() = Some(Controller::new(&ui, None));
+        let mut controller = Controller::new(&ui, None);
+        controller.profiles.clone_from(&profiles);
+        *c.borrow_mut() = Some(controller);
     });
     with_controller(|c, ui| c.show_directions(ui, None));
     let outcome = Backend::demo().handle(Request::Refresh);
@@ -48,6 +54,14 @@ pub fn run(path: &Path, page: i32, theme: i32) -> Result<(), Box<dyn Error>> {
     ui.set_lighting_view(lighting_view);
     ui.set_settings_open(page == 4);
     match page {
+        // the preview of a color wave, a moment in
+        0 => with_controller(|c, ui| {
+            ui.set_effect_index(1);
+            ui.set_color_mode(2);
+            c.show_directions(ui, None);
+            c.preview_time = 1.0;
+            c.preview_tick(ui);
+        }),
         1 => with_controller(|c, ui| {
             // a few painted keys
             for (code, hex) in [
@@ -80,6 +94,9 @@ pub fn run(path: &Path, page: i32, theme: i32) -> Result<(), Box<dyn Error>> {
     let mut image = format!("P6\n{WIDTH} {HEIGHT}\n255\n").into_bytes();
     for p in &pixels {
         image.extend_from_slice(&[p.r, p.g, p.b]);
+    }
+    if let Some(profiles) = profiles {
+        let _ = std::fs::remove_dir_all(profiles.dir());
     }
     std::fs::write(path, image)?;
     Ok(())

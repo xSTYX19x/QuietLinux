@@ -51,6 +51,11 @@ package() {
   sed -i 's|^ExecStart=.*|ExecStart=/usr/bin/quietlinux-daemon|' "$pkgdir/usr/lib/systemd/user/quietlinux-daemon.service"
   install -Dm644 packaging/desktop/quietlinux.desktop "$pkgdir/usr/share/applications/quietlinux.desktop"
   install -Dm644 crates/quietlinux-gui/ui/icon.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/quietlinux.svg"
+  install -d "$pkgdir/usr/share/bash-completion/completions" "$pkgdir/usr/share/zsh/site-functions" \
+    "$pkgdir/usr/share/fish/vendor_completions.d"
+  target/release/quietlinux completions bash >"$pkgdir/usr/share/bash-completion/completions/quietlinux"
+  target/release/quietlinux completions zsh >"$pkgdir/usr/share/zsh/site-functions/_quietlinux"
+  target/release/quietlinux completions fish >"$pkgdir/usr/share/fish/vendor_completions.d/quietlinux.fish"
   install -Dm644 README.md CHANGELOG.md NOTICE -t "$pkgdir/usr/share/doc/$pkgname/"
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
 }

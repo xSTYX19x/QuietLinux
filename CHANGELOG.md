@@ -4,6 +4,31 @@ All notable changes to QuietLinux. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **Profiles**: named sets of key bindings, macros, game mode shortcuts, effect
+  and lighting, kept in `~/.config/quietlinux/profiles` (the keyboard holds
+  none). `quietlinux profile list|save|switch|delete`; switching saves the
+  keyboard's settings to the active profile first and writes only what differs
+- Profile keys: `quietlinux bind KEY profile next|previous|NAME` (also in the
+  window's key editor); the background service switches the profile
+- The window: the active profile in the title line, profiles in the settings
+- The window: a live preview of the effect on the effect page (animated in the
+  window only; nothing is sent to the keyboard)
+- `quietlinux completions bash|zsh|fish`; `install.sh` and the packages install
+  the completions
+- Settings files may have a `[lighting]` section: the stored effect, per-key
+  colors or off
+- The command line offers the names of effects, directions, media actions,
+  mouse buttons, lighting actions and shortcuts in `--help` and completions
+
+### Changed
+
+- `apply` remembers the lighting it sets, for the window and the background
+  service
+
 ## [0.1.0] - 2026-10-28
 
 The first version. Tested with the Light Mount Silent Linear, German ISO
@@ -50,4 +75,5 @@ layout, firmware 2.3.0; other firmware versions are read-only unless
 - Website keys open only `http(s)` addresses, without a shell, at most one a
   second
 
+[Unreleased]: https://github.com/xSTYX19x/QuietLinux/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/xSTYX19x/QuietLinux/releases/tag/v0.1.0

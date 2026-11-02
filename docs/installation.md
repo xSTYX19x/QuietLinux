@@ -24,8 +24,9 @@ packages for x86-64 (built on Ubuntu 22.04: they need glibc 2.35 or newer):
 
 `SHA256SUMS` lists the files' checksums (`sha256sum -c SHA256SUMS --ignore-missing`).
 
-The packages install the programs to `/usr/bin`, the menu entry, the udev rule
-and the background service (not started). After installing:
+The packages install the programs to `/usr/bin`, the menu entry, the shell
+completions (bash, zsh, fish), the udev rule and the background service (not
+started). After installing:
 
 - **Replug the keyboard** (or log out and in) so that the udev rule applies.
 - The background service, if you want it:
@@ -46,7 +47,9 @@ cd QuietLinux
 ```
 
 It builds the programs, installs them to `~/.local/bin`, adds QuietLinux to the
-application menu and installs the [udev rule](#permissions-udev-rule).
+application menu, adds the shell completions to `~/.local/share` (bash and fish
+find them there; zsh only with `fpath=(~/.local/share/zsh/site-functions $fpath)`
+in `~/.zshrc`) and installs the [udev rule](#permissions-udev-rule).
 `--no-gui` leaves out the window, `--no-udev` the rule, `--prefix DIR` installs
 elsewhere. Run it as your normal user, not with `sudo`: it asks sudo itself,
 only for the udev rule. `./uninstall.sh` removes everything again (your
@@ -86,11 +89,15 @@ install -Dm755 target/release/quietlinux-daemon ~/.local/bin/quietlinux-daemon
   URL`) only report the press; the service opens the address with `xdg-open`
   (without a shell, only `http://` and `https://` addresses, at most one a
   second).
+- **Profile keys.** Keys bound to a profile (`quietlinux bind KEY profile
+  next`) only report the press too; the service switches the
+  [profile](usage-cli.md#profile-list--save--switch--delete), at most once a
+  second.
 
 To see those presses, it reads the key events of the keyboard's vendor
 interface, which reports **every** key press (see
 [Permissions](#permissions-udev-rule)). It drops every press that is not a
-website key at once; nothing is stored or logged. It needs the desktop's
+website or profile key at once; nothing is stored or logged. It needs the desktop's
 `WAYLAND_DISPLAY`/`DISPLAY` in the systemd user environment to start the
 browser (desktops set it up; if not: `systemctl --user import-environment
 WAYLAND_DISPLAY DISPLAY`).
@@ -170,6 +177,8 @@ systemctl --user disable --now quietlinux-daemon
 rm ~/.config/systemd/user/quietlinux-daemon.service
 rm ~/.local/bin/quietlinux ~/.local/bin/quietlinux-gui ~/.local/bin/quietlinux-daemon
 rm ~/.local/share/applications/quietlinux.desktop ~/.local/share/icons/hicolor/scalable/apps/quietlinux.svg
+rm ~/.local/share/bash-completion/completions/quietlinux ~/.local/share/zsh/site-functions/_quietlinux \
+   ~/.local/share/fish/vendor_completions.d/quietlinux.fish
 sudo rm /etc/udev/rules.d/70-quietlinux.rules
 sudo udevadm control --reload
 ```

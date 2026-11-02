@@ -3,6 +3,7 @@
 //! Every request opens a session like the CLI does, makes its change and reads the
 //! state again. The demo mode talks to a simulated keyboard instead.
 
+use std::fmt::Write as _;
 use std::path::PathBuf;
 
 use quietlinux_core::config::{self, Desired};
@@ -11,6 +12,7 @@ use quietlinux_core::device::{self, LightingMode, Session, Transport};
 use quietlinux_core::info::{self, Action, Binding, Colors, Macro};
 use quietlinux_core::keymap::{self, Layout};
 use quietlinux_core::macros::{self, Changes, RepeatMode};
+use quietlinux_core::profile::{Profiles, Remembered, Target};
 use quietlinux_core::protocol::{self as p, Led};
 use quietlinux_core::settings::{Direction, Effect};
 use quietlinux_core::state;
@@ -52,6 +54,19 @@ pub enum Request {
     /// What applying a file would change (nothing is written).
     CheckFile(PathBuf),
     ApplyFile(PathBuf),
+    /// Save the keyboard's settings as a profile.
+    SaveProfile(String),
+    SwitchProfile(Target),
+}
+
+/// The profile folder; the demo mode has its own, in the temporary folder.
+pub fn profile_folder(demo: bool) -> Option<Profiles> {
+    if demo {
+        let dir = std::env::temp_dir().join(format!("quietlinux-demo-{}", std::process::id()));
+        Some(Profiles::new(dir))
+    } else {
+        Profiles::standard()
+    }
 }
 
 /// What the keyboard reported.
@@ -207,6 +222,14 @@ fn handle<T: Transport>(session: &mut Session<T>, request: Request, remember: bo
         Request::ApplyFile(path) => {
             apply_file(session, &path, true, remember).map_err(|e| e.to_string())?
         }
+        Request::SaveProfile(name) => (
+            save_profile(session, &name, remember).map_err(|e| e.to_string())?,
+            None,
+        ),
+        Request::SwitchProfile(target) => (
+            switch_profile(session, &target, remember).map_err(|e| e.to_string())?,
+            None,
+        ),
         request => (
             change(session, request, remember).map_err(|e| e.to_string())?,
             None,
@@ -221,6 +244,42 @@ fn handle<T: Transport>(session: &mut Session<T>, request: Request, remember: bo
 }
 
 type Lines = (String, Option<String>);
+
+fn save_profile<T: Transport>(
+    session: &mut Session<T>,
+    name: &str,
+    remember: bool,
+) -> Result<String, Box<dyn std::error::Error>> {
+    let profiles = profile_folder(!remember).ok_or("no home folder for the profiles")?;
+    let remembered = if remember {
+        Remembered::load()
+    } else {
+        Remembered::default()
+    };
+    profiles.save(session, name, &remembered)?;
+    Ok(format!("Profile {name:?} saved and active."))
+}
+
+fn switch_profile<T: Transport>(
+    session: &mut Session<T>,
+    target: &Target,
+    remember: bool,
+) -> Result<String, Box<dyn std::error::Error>> {
+    let profiles = profile_folder(!remember).ok_or("no home folder for the profiles")?;
+    let switch = profiles.switch(session, target, remember, false)?;
+    let mut message = format!(
+        "Switched to profile {:?}: {} change(s) written.",
+        switch.name,
+        switch.plan.ops.len()
+    );
+    if let Some(saved) = &switch.saved {
+        let _ = write!(message, " Settings saved to {saved:?} first.");
+    }
+    for note in &switch.plan.notes {
+        let _ = write!(message, " Note: {note}.");
+    }
+    Ok(message)
+}
 
 fn backup<T: Transport>(
     session: &mut Session<T>,
@@ -276,9 +335,8 @@ fn apply_file<T: Transport>(
         "Nothing to change.".to_owned()
     } else if write {
         config::execute(session, &plan)?;
-        if let (true, Some(effect)) = (remember, plan.effect()) {
-            let _ = config::save_last_effect(effect);
-            let _ = state::save_mode(state::Mode::Effect);
+        if remember {
+            let _ = config::remember(&settings, &plan);
         }
         format!("{count} change(s) written.")
     } else {
@@ -297,7 +355,11 @@ fn change<T: Transport>(
             session.set_game_mode_blocks(flags)?;
             "Game mode shortcuts stored.".to_owned()
         }
-        Request::Backup { .. } | Request::CheckFile(_) | Request::ApplyFile(_) => {
+        Request::Backup { .. }
+        | Request::CheckFile(_)
+        | Request::ApplyFile(_)
+        | Request::SaveProfile(_)
+        | Request::SwitchProfile(_) => {
             unreachable!("handled above")
         }
         Request::Refresh => String::new(),

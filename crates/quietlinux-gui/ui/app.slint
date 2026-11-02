@@ -266,12 +266,40 @@ component LightingPage inherits VerticalBox {
     in-out property <float> speed;
     in-out property <int> direction-index;
     in property <bool> enabled;
+    // the keyboard view with the animated preview
+    in property <[KeyCap]> preview-keys;
+    in property <float> keyboard-width;
+    in property <float> keyboard-height;
+    in-out property <bool> animate;
     pure callback swatch(hex: string) -> color;
     pure callback wheel-pick(x: float, y: float, value: float) -> WheelPick;
     pure callback wheel-find(hex: string) -> WheelPick;
     // something changed: applied right away
     callback effect-changed();
     alignment: start;
+
+    KeyboardView {
+        keys: root.preview-keys;
+        units-wide: root.keyboard-width;
+        units-high: root.keyboard-height;
+        paint: true;
+        preferred-height: 200px;
+    }
+
+    HorizontalLayout {
+        spacing: 12px;
+        alignment: start;
+        CheckBox {
+            text: "Animate";
+            checked <=> root.animate;
+        }
+
+        Text {
+            text: "Preview in the window: close to the keyboard's own animation, not exact.";
+            color: Palette.alternate-foreground;
+            vertical-alignment: center;
+        }
+    }
 
     GroupBox {
         title: "Effect (stored in the keyboard; changes apply at once)";
@@ -569,6 +597,9 @@ component KeysPage inherits VerticalBox {
     in-out property <int> bind-kind;
     in-out property <int> bind-value-index;
     in-out property <string> bind-text;
+    // the binding kind takes typed text (key, website), with this example
+    in property <bool> bind-free-text;
+    in property <string> bind-placeholder;
     in property <bool> enabled;
     callback key-clicked(code: string);
     callback editor-changed();
@@ -628,12 +659,12 @@ component KeysPage inherits VerticalBox {
                 }
 
                 // kinds typed as text: 1 key or combination, 6 website (src/main.rs BIND_KINDS)
-                if root.bind-kind == 1 || root.bind-kind == 6: LineEdit {
+                if root.bind-free-text: LineEdit {
                     text <=> root.bind-text;
-                    placeholder-text: root.bind-kind == 6 ? "https://example.org" : "ctrl+KeyC";
+                    placeholder-text: root.bind-placeholder;
                     min-width: 160px;
                 }
-                if root.bind-values.length > 0 && root.bind-kind != 1: ComboBox {
+                if root.bind-values.length > 0 && !root.bind-free-text: ComboBox {
                     model: root.bind-values;
                     current-index <=> root.bind-value-index;
                 }
@@ -874,11 +905,72 @@ component SettingsPage inherits VerticalBox {
     in property <string> device-title;
     in property <string> version;
     in property <bool> enabled;
+    in property <[string]> profile-names;
+    in-out property <string> profile-name;
+    in-out property <int> profile-delete-index;
     callback apply-game-mode();
     callback save-backup();
     callback check-file();
     callback apply-file();
+    callback profile-save();
+    callback profile-delete();
     alignment: start;
+
+    GroupBox {
+        title: "Profiles: key bindings, macros, game mode shortcuts and lighting, kept on this computer";
+        VerticalLayout {
+            spacing: 8px;
+
+            HorizontalLayout {
+                spacing: 8px;
+                Text {
+                    text: "Name";
+                    vertical-alignment: center;
+                    min-width: 50px;
+                }
+
+                LineEdit {
+                    text <=> root.profile-name;
+                    placeholder-text: "gaming";
+                }
+
+                Button {
+                    text: "Save current settings";
+                    enabled: root.enabled && root.profile-name != "";
+                    clicked => {
+                        root.profile-save();
+                    }
+                }
+            }
+
+            if root.profile-names.length > 0: HorizontalLayout {
+                spacing: 8px;
+                Text {
+                    text: "Profile";
+                    vertical-alignment: center;
+                    min-width: 50px;
+                }
+
+                ComboBox {
+                    model: root.profile-names;
+                    current-index <=> root.profile-delete-index;
+                }
+
+                Button {
+                    text: "Delete";
+                    clicked => {
+                        root.profile-delete();
+                    }
+                }
+            }
+
+            Text {
+                text: "Switch profiles in the title line. Switching saves the current settings to the active profile first, then writes the other one. Keys bound to a profile switch with the background service.";
+                color: Palette.alternate-foreground;
+                wrap: word-wrap;
+            }
+        }
+    }
 
     GroupBox {
         title: "Game mode: shortcuts it blocks (Fn+Pause switches game mode on and off)";
@@ -1183,6 +1275,9 @@ export component AppWindow inherits Window {
     // lighting: 0 off, 1 on; chosen in the title line
     in-out property <int> lighting-on: 1;
     callback lighting-chosen();
+    // the effect preview
+    in property <[KeyCap]> preview-keys;
+    in-out property <bool> animate: true;
 
     // per key
     in-out property <string> brush: "e63000";
@@ -1211,6 +1306,8 @@ export component AppWindow inherits Window {
     in-out property <int> bind-kind;
     in-out property <int> bind-value-index;
     in-out property <string> bind-text;
+    in property <bool> bind-free-text;
+    in property <string> bind-placeholder;
     callback key-clicked(code: string);
     callback editor-changed();
     callback apply-binding();
@@ -1248,6 +1345,15 @@ export component AppWindow inherits Window {
     callback check-file();
     callback apply-file();
 
+    // profiles: the active one is chosen in the title line (-1: none)
+    in property <[string]> profile-names;
+    in-out property <int> profile-index: -1;
+    callback profile-chosen();
+    in-out property <string> profile-name;
+    in-out property <int> profile-delete-index;
+    callback profile-save();
+    callback profile-delete();
+
     property <bool> can-write: root.connected && !root.busy;
 
     VerticalLayout {
@@ -1269,6 +1375,29 @@ export component AppWindow inherits Window {
                 color: Palette.alternate-foreground;
                 vertical-alignment: center;
                 horizontal-stretch: 1;
+            }
+
+            if root.profile-names.length > 0: HorizontalLayout {
+                spacing: 6px;
+                horizontal-stretch: 0;
+                Text {
+                    text: "Profile";
+                    color: Palette.alternate-foreground;
+                    vertical-alignment: center;
+                }
+
+                VerticalLayout {
+                    alignment: center;
+                    ComboBox {
+                        width: 170px;
+                        model: root.profile-names;
+                        current-index <=> root.profile-index;
+                        enabled: root.can-write;
+                        selected => {
+                            root.profile-chosen();
+                        }
+                    }
+                }
             }
 
             if root.game-mode > 0: VerticalLayout {
@@ -1351,6 +1480,10 @@ export component AppWindow inherits Window {
                             speed <=> root.speed;
                             direction-index <=> root.direction-index;
                             enabled: root.can-write;
+                            preview-keys: root.preview-keys;
+                            keyboard-width: root.keyboard-width;
+                            keyboard-height: root.keyboard-height;
+                            animate <=> root.animate;
                             swatch(hex) => {
                                 return root.swatch(hex);
                             }
@@ -1421,6 +1554,8 @@ export component AppWindow inherits Window {
                     bind-kind <=> root.bind-kind;
                     bind-value-index <=> root.bind-value-index;
                     bind-text <=> root.bind-text;
+                    bind-free-text: root.bind-free-text;
+                    bind-placeholder: root.bind-placeholder;
                     enabled: root.can-write;
                     key-clicked(code) => {
                         root.key-clicked(code);
@@ -1505,6 +1640,15 @@ export component AppWindow inherits Window {
                     device-title: root.device-title;
                     version: root.version;
                     enabled: root.can-write;
+                    profile-names: root.profile-names;
+                    profile-name <=> root.profile-name;
+                    profile-delete-index <=> root.profile-delete-index;
+                    profile-save => {
+                        root.profile-save();
+                    }
+                    profile-delete => {
+                        root.profile-delete();
+                    }
                     apply-game-mode => {
                         root.apply-game-mode();
                     }

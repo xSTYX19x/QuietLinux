@@ -36,6 +36,14 @@ impl Mode {
             .find(|(m, _)| *m == self)
             .map_or("effect", |(_, n)| n)
     }
+
+    /// The mode named `name` (`effect`, `per-key`, `off`).
+    pub fn from_name(name: &str) -> Option<Mode> {
+        Self::NAMES
+            .iter()
+            .find(|(_, n)| *n == name)
+            .map(|(m, _)| *m)
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -112,8 +120,8 @@ fn parse(text: &str) -> Lighting {
     let mode = table
         .get("mode")
         .and_then(toml::Value::as_str)
-        .and_then(|name| Mode::NAMES.iter().find(|(_, n)| *n == name))
-        .map_or(Mode::Effect, |(m, _)| *m);
+        .and_then(Mode::from_name)
+        .unwrap_or_default();
     let leds = table
         .get("leds")
         .and_then(toml::Value::as_table)

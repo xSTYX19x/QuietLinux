@@ -19,6 +19,11 @@ The switch at the left of the title line turns the **lighting off and on**
 Lighting tab shows **Per key**. Next to it, a note appears when no keyboard is
 connected or its firmware is untested (read-only).
 
+With at least one [profile](#profiles), the title line shows the **active
+profile**; choosing another one switches to it (the current settings are saved
+to the active profile first). A profile switched by a profile key or the
+command line shows within 2 seconds, and the window reads the keyboard again.
+
 The title line also shows whether **game mode** is on. Game mode is switched on the
 keyboard with Fn+Pause, so the window asks for it every 2 seconds (a read-only
 request; not while a change is being sent).
@@ -44,6 +49,10 @@ the keyboard at once: the stored effect, or the painted keys.
 
 ![The lighting tab](images/gui-lighting.png)
 
+- The keyboard at the top shows a **preview** of the effect, animated in the
+  window: close to the keyboard's own animation, but not exact (the keyboard
+  does not tell how it draws its effects). Nothing is sent to the keyboard for
+  it. It runs only while this page is shown; **Animate** pauses it.
 - **Effect**, **Colors**, **Brightness**, **Speed** and **Direction** as in
   `quietlinux light effect`. Colors are six hex digits (`e63000`); "Rainbow" is
   IO Center's color gradient.
@@ -106,6 +115,7 @@ then **Apply**:
 | Key or combination | as in `bind KEY key`, e.g. `ctrl+KeyC`, `F13` |
 | Media, Mouse button, Lighting | from the list |
 | Macro | one of the macros stored in the keyboard |
+| Profile | next, previous or a profile; switched by the [background service](installation.md#background-service-optional) |
 | Website | `https://…` (at most 51 characters); opened by the [background service](installation.md#background-service-optional) |
 | Disabled | (none) |
 
@@ -143,6 +153,7 @@ keyboard has no other way), as described in
 The gear in the top right corner shows the settings instead of the tabs; the
 arrow at the top left (or the gear again) returns to the tabs.
 
+- **Profiles**: see [below](#profiles).
 - **Game mode**: the shortcuts game mode blocks, as `quietlinux game-mode
   --block`. Fn+Pause switches game mode on and off.
 - **Backup**: the file of `quietlinux backup` and `apply` (key bindings, game
@@ -153,6 +164,24 @@ arrow at the top left (or the gear again) returns to the tabs.
   what your macros type: it is readable only by you; keep it private.
 - **Device**: model and firmware version of the keyboard.
 - **About**: QuietLinux's version and license.
+
+## Profiles
+
+A profile holds the key bindings, macros, game mode shortcuts, the effect and
+the lighting (see [usage-cli.md](usage-cli.md#profile-list--save--switch--delete)).
+In the settings:
+
+- **Save current settings** saves what the keyboard has now as a profile with
+  the typed name (1 to 16 characters `A-Z a-z 0-9 - _`); it becomes the active
+  profile. To replace another profile, delete it first.
+- **Delete** deletes the profile chosen next to it (the keyboard keeps its
+  settings).
+
+Switch profiles in the title line. Switching saves the current settings to the
+active profile first, then writes only what differs; choosing the active
+profile again writes it again (undoing changes made since). In the
+[Keys](#keys) tab, "Profile" makes a key switch profiles; keep such a key in
+every profile.
 
 ## Not in the window yet
 

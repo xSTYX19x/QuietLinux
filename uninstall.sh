@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # QuietLinux: removes what install.sh installed.
 #
-#   ./uninstall.sh               programs, menu entry, service, udev rule
+#   ./uninstall.sh               programs, menu entry, completions, service, udev rule
 #   ./uninstall.sh --keep-udev   leave the udev rule
 #   ./uninstall.sh --prefix DIR  as given to install.sh (default: ~/.local)
 #
@@ -52,6 +52,9 @@ say "Removing the programs from $prefix/bin"
 rm -f "$prefix/bin/quietlinux" "$prefix/bin/quietlinux-gui" "$prefix/bin/quietlinux-daemon"
 rm -f "$prefix/share/applications/quietlinux.desktop" \
     "$prefix/share/icons/hicolor/scalable/apps/quietlinux.svg"
+rm -f "$prefix/share/bash-completion/completions/quietlinux" \
+    "$prefix/share/zsh/site-functions/_quietlinux" \
+    "$prefix/share/fish/vendor_completions.d/quietlinux.fish"
 if [ -f "$prefix/share/icons/hicolor/icon-theme.cache" ] && command -v gtk-update-icon-cache >/dev/null; then
     gtk-update-icon-cache -q -f -t "$prefix/share/icons/hicolor" || true
 fi

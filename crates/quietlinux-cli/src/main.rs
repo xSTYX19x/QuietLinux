@@ -8,12 +8,13 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 use std::str::FromStr;
 
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory as _, Parser, Subcommand};
 use quietlinux_core::Rgb;
 use quietlinux_core::device::{self, fmt_version};
 use quietlinux_core::info::{Action, Colors};
 use quietlinux_core::keymap::{self, KEYS, Key, Layout};
 use quietlinux_core::layout::{self, Zone};
+use quietlinux_core::profile::{self, Profiles};
 use quietlinux_core::protocol::Led;
 use quietlinux_core::{config, macros, settings, state};
 
@@ -113,6 +114,14 @@ enum Command {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Profiles: named settings (key bindings, macros, game mode shortcuts, lighting)
+    ///
+    /// Kept in ~/.config/quietlinux/profiles, not in the keyboard. Switching saves the
+    /// keyboard's settings to the active profile first, then writes the other
+    /// profile (only what differs). Keys bound to `profile next`, `profile previous`
+    /// or `profile NAME` switch with the background service (quietlinux-daemon).
+    #[command(subcommand)]
+    Profile(ProfileCommand),
     /// Choose the shortcuts game mode blocks (stored in the keyboard; Fn+Pause toggles game mode)
     GameMode {
         /// `none` or a comma-separated list of shift-tab, alt-f4, win, alt-tab, caps-lock
@@ -128,6 +137,55 @@ enum Command {
         #[arg(long, value_name = "HEX", value_parser = parse_hex_u8)]
         start: Option<u8>,
     },
+    /// Print a completion script for your shell (does not touch the keyboard)
+    ///
+    /// Examples: quietlinux completions fish > ~/.config/fish/completions/quietlinux.fish;
+    /// quietlinux completions bash > ~/.local/share/bash-completion/completions/quietlinux
+    Completions {
+        /// bash, zsh or fish
+        shell: Shell,
+    },
+}
+
+/// Shells `completions` writes scripts for.
+#[derive(Debug, Clone, Copy, clap::ValueEnum)]
+enum Shell {
+    Bash,
+    Zsh,
+    Fish,
+}
+
+#[derive(Debug, Subcommand)]
+enum ProfileCommand {
+    /// List the profiles; * marks the active one (does not touch the keyboard)
+    List,
+    /// Save the keyboard's settings, the effect and the lighting as a profile
+    ///
+    /// The profile becomes the active one. An existing profile other than the
+    /// active one is only replaced with --force.
+    Save {
+        /// Profile name: 1 to 16 characters A-Z, a-z, 0-9, - and _
+        name: String,
+        /// Replace an existing profile
+        #[arg(long)]
+        force: bool,
+    },
+    /// Switch to a profile: NAME, next or previous (alphabetical order)
+    ///
+    /// Saves the keyboard's settings to the active profile first. Switching to the
+    /// active profile writes it again (undoing changes made since it was saved).
+    Switch {
+        /// Profile name, next or previous
+        target: profile::Target,
+        /// Show the changes without saving or writing anything
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Delete a profile (does not touch the keyboard)
+    Delete {
+        /// Profile name
+        name: String,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -139,18 +197,36 @@ enum BindAction {
         combo: settings::KeyCombo,
     },
     /// volume-up, volume-down, mute, mic-mute, next-track, previous-track, play-pause, stop
-    Media { action: settings::MediaAction },
+    Media {
+        #[arg(value_parser = one_of(settings::MediaAction::all(), settings::MediaAction::name))]
+        action: settings::MediaAction,
+    },
     /// A mouse button: left, right, middle, forward, back
-    Mouse { button: settings::MouseButton },
+    Mouse {
+        #[arg(value_parser = one_of(settings::MouseButton::all(), settings::MouseButton::name))]
+        button: settings::MouseButton,
+    },
     /// next-effect, previous-effect, brighter, darker
-    Lighting { action: settings::LightingAction },
+    Lighting {
+        #[arg(value_parser = one_of(settings::LightingAction::all(), settings::LightingAction::name))]
+        action: settings::LightingAction,
+    },
     /// A Windows shortcut (calculator, task-manager, …): performed by IO Center on
     /// Windows; on Linux nothing happens yet
-    Shortcut { name: settings::Shortcut },
+    Shortcut {
+        #[arg(value_parser = one_of(settings::Shortcut::all(), settings::Shortcut::name))]
+        name: settings::Shortcut,
+    },
     /// A macro stored in the keyboard, by its ID; the keyboard plays it itself
     Macro {
         /// Macro ID (see `quietlinux macro list`)
         id: u16,
+    },
+    /// Switch profiles: next, previous or a profile's name; the background
+    /// service (quietlinux-daemon) switches when the key is pressed
+    Profile {
+        /// next, previous or a profile name (see `quietlinux profile list`)
+        target: profile::Target,
     },
     /// Open a website (http or https, at most 51 characters); the background
     /// service (quietlinux-daemon) opens it when the key is pressed
@@ -185,6 +261,13 @@ impl BindAction {
             },
             BindAction::Shortcut { name } => Action::WindowsShortcut(name.0),
             BindAction::Macro { id } => Action::Macro(*id),
+            BindAction::Profile { target } => match target {
+                profile::Target::Next => Action::Profile(quietlinux_core::info::PROFILE_NEXT),
+                profile::Target::Previous => {
+                    Action::Profile(quietlinux_core::info::PROFILE_PREVIOUS)
+                }
+                profile::Target::Name(name) => Action::ProfileSelect(profile::id(name)),
+            },
             BindAction::Website { url } => Action::OpenWebsite(url.clone()),
             BindAction::Disable => Action::Disabled,
             BindAction::Default => return None,
@@ -362,6 +445,7 @@ enum Light {
     /// Examples: quietlinux light effect breathing; quietlinux light effect static --color ff1493
     Effect {
         /// static, color-wave, tornado, breathing, reactive or matrix
+        #[arg(value_parser = one_of(settings::Effect::all(), settings::Effect::name))]
         effect: settings::Effect,
         /// One color (default for static: e63000; for the others IO Center's rainbow gradient)
         #[arg(long, conflicts_with_all = ["gradient", "dual"])]
@@ -380,7 +464,7 @@ enum Light {
         speed: u8,
         /// color-wave, matrix: up (default), down, left, right; tornado: clockwise
         /// (default), counterclockwise; the other effects do not move
-        #[arg(long)]
+        #[arg(long, value_parser = one_of((0..=5).map(settings::Direction).collect(), settings::Direction::name))]
         direction: Option<settings::Direction>,
     },
     /// Show the effect stored in the keyboard again (leaves realtime mode or "off")
@@ -400,6 +484,19 @@ enum Light {
         #[arg(long, default_value_t = 1.0)]
         dim: f32,
     },
+}
+
+/// One of the names of `values` (the shell completions offer them), parsed as `T`.
+fn one_of<T>(
+    values: Vec<T>,
+    name: fn(T) -> Option<&'static str>,
+) -> impl clap::builder::TypedValueParser<Value = T>
+where
+    T: FromStr<Err = String> + Clone + Send + Sync + 'static,
+{
+    use clap::builder::TypedValueParser as _;
+    clap::builder::PossibleValuesParser::new(values.into_iter().filter_map(name))
+        .try_map(|s: String| s.parse::<T>())
 }
 
 fn parse_website(s: &str) -> Result<String, String> {
@@ -639,6 +736,16 @@ fn run(cli: Cli) -> Result<ExitCode, Box<dyn std::error::Error>> {
                     return Err(format!("the keyboard has no macro {id} (macros: {ids:?})").into());
                 }
             }
+            if let BindAction::Profile {
+                target: profile::Target::Name(name),
+            } = &action
+            {
+                if !profiles()?.exists(name) {
+                    eprintln!(
+                        "note: there is no profile {name:?} yet: save it with `quietlinux profile save {name}`"
+                    );
+                }
+            }
             let prefix = if fn_layer { "Fn+" } else { "" };
             if let Some(action) = action.action() {
                 session.set_binding(key.key_id, fn_layer, &action)?;
@@ -701,8 +808,8 @@ fn run(cli: Cli) -> Result<ExitCode, Box<dyn std::error::Error>> {
                     println!("{} change(s); nothing written (--dry-run).", plan.ops.len());
                 } else {
                     config::execute(&mut session, &plan)?;
-                    if let Some(effect) = plan.effect() {
-                        remember_effect(effect);
+                    if let Err(e) = config::remember(&settings, &plan) {
+                        eprintln!("note: could not remember the effect and lighting: {e}");
                     }
                     println!("{} change(s) written.", plan.ops.len());
                 }
@@ -734,6 +841,20 @@ fn run(cli: Cli) -> Result<ExitCode, Box<dyn std::error::Error>> {
         Command::Macro(command) => {
             let mut session = open_session(usb_path, cli.allow_unknown_firmware)?;
             run_macro(&mut session, command)?;
+        }
+        Command::Profile(command) => {
+            run_profile(command, usb_path, cli.allow_unknown_firmware)?;
+        }
+        Command::Completions { shell } => {
+            let shell = match shell {
+                Shell::Bash => clap_complete::Shell::Bash,
+                Shell::Zsh => clap_complete::Shell::Zsh,
+                Shell::Fish => clap_complete::Shell::Fish,
+            };
+            // written at once: a closed pipe is an error, not a panic
+            let mut script = Vec::new();
+            clap_complete::generate(shell, &mut Cli::command(), "quietlinux", &mut script);
+            io::stdout().write_all(&script)?;
         }
         Command::Light(Light::Set { assignments, dim }) => {
             let (_, mut session) = device::open(usb_path, cli.allow_unknown_firmware)?;
@@ -792,7 +913,89 @@ fn run(cli: Cli) -> Result<ExitCode, Box<dyn std::error::Error>> {
     Ok(ExitCode::SUCCESS)
 }
 
-/// Open the keyboard and a session, as IO Center does before changing settings.
+/// The profile folder.
+fn profiles() -> Result<Profiles, &'static str> {
+    Profiles::standard().ok_or("no home folder: set HOME or XDG_CONFIG_HOME")
+}
+
+fn run_profile(
+    command: ProfileCommand,
+    usb_path: Option<&str>,
+    allow_unknown_firmware: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let profiles = profiles()?;
+    match command {
+        ProfileCommand::List => {
+            let names = profiles.names();
+            if names.is_empty() {
+                println!("No profiles yet: save one with `quietlinux profile save NAME`.");
+            }
+            let active = profiles.active();
+            for name in names {
+                let mark = if active.as_ref() == Some(&name) {
+                    '*'
+                } else {
+                    ' '
+                };
+                println!("{mark} {name}");
+            }
+            eprintln!("Folder: {}", profiles.dir().display());
+        }
+        ProfileCommand::Save { name, force } => {
+            profile::check_name(&name)?;
+            if profiles.exists(&name) && !force && profiles.active().as_ref() != Some(&name) {
+                return Err(format!(
+                    "profile {name:?} exists and is not the active one: add --force to replace it"
+                )
+                .into());
+            }
+            let mut session = open_session(usb_path, allow_unknown_firmware)?;
+            let snapshot = profiles.save(&mut session, &name, &profile::Remembered::load())?;
+            println!(
+                "Profile {name:?} saved ({} binding(s), {}, effect and lighting) and active.",
+                snapshot.bindings.len(),
+                snapshot.macros.as_ref().map_or_else(
+                    || "macros not reported".to_owned(),
+                    |m| format!("{} macro(s)", m.len())
+                ),
+            );
+        }
+        ProfileCommand::Switch { target, dry_run } => {
+            // checked before the keyboard is opened
+            profiles.load(&profiles.resolve(&target)?)?;
+            let mut session = open_session(usb_path, allow_unknown_firmware)?;
+            let switch = profiles.switch(&mut session, &target, true, dry_run)?;
+            if let Some(saved) = &switch.saved {
+                println!("Settings saved to profile {saved:?}.");
+            }
+            for note in &switch.plan.notes {
+                println!("  note: {note}");
+            }
+            for op in &switch.plan.ops {
+                println!("  {op}");
+            }
+            let count = switch.plan.ops.len();
+            let name = &switch.name;
+            if dry_run {
+                println!(
+                    "Profile {name:?}: {count} change(s); nothing saved or written (--dry-run)."
+                );
+            } else {
+                println!("Switched to profile {name:?}: {count} change(s) written.");
+            }
+        }
+        ProfileCommand::Delete { name } => {
+            profile::check_name(&name)?;
+            if !profiles.exists(&name) {
+                return Err(format!("no profile {name:?}").into());
+            }
+            profiles.delete(&name)?;
+            println!("Profile {name:?} deleted.");
+        }
+    }
+    Ok(())
+}
+
 /// Remember the effect for the GUI (the keyboard does not report it); the
 /// lighting shows the effect now.
 fn remember_effect(e: &config::EffectSetting) {
@@ -809,6 +1012,7 @@ fn remember_mode(mode: state::Mode) {
     }
 }
 
+/// Open the keyboard and a session, as IO Center does before changing settings.
 fn open_session(
     usb_path: Option<&str>,
     allow_unknown_firmware: bool,
@@ -872,6 +1076,33 @@ mod tests {
             panic!()
         };
         assert_eq!(events.unwrap(), ["-ctrl", "KeyC"]);
+    }
+
+    #[test]
+    fn profile_bindings_and_targets() {
+        let action = |target: &str| {
+            let cli = Cli::try_parse_from(["quietlinux", "bind", "M5", "profile", target]).unwrap();
+            let Command::Bind { action, .. } = cli.command else {
+                panic!()
+            };
+            action.action()
+        };
+        assert_eq!(action("next"), Some(Action::Profile(3)));
+        assert_eq!(action("previous"), Some(Action::Profile(4)));
+        assert_eq!(
+            action("work"),
+            Some(Action::ProfileSelect(profile::id("work")))
+        );
+        assert!(Cli::try_parse_from(["quietlinux", "bind", "M5", "profile", "a b"]).is_err());
+        let cli = Cli::try_parse_from(["quietlinux", "profile", "switch", "--dry-run", "previous"])
+            .unwrap();
+        assert!(matches!(
+            cli.command,
+            Command::Profile(ProfileCommand::Switch {
+                target: profile::Target::Previous,
+                dry_run: true
+            })
+        ));
     }
 
     #[test]

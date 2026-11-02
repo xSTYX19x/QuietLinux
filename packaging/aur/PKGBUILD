@@ -4,9 +4,9 @@
 # docs/releasing.md.
 
 pkgname=quietlinux
-pkgver=0.1.0
+pkgver=0.2.0
 pkgrel=1
-pkgdesc='Configure the be quiet! Light Mount keyboard: lighting, key bindings, macros (unofficial)'
+pkgdesc='Configure the be quiet! Light Mount keyboard: lighting, key bindings, macros, profiles (unofficial)'
 arch=('x86_64')
 url='https://github.com/xSTYX19x/QuietLinux'
 license=('GPL-3.0-or-later')

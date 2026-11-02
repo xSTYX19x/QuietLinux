@@ -4,7 +4,11 @@ All notable changes to QuietLinux. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.2.0] - 2026-11-02
+
+Profiles, the import of IO Center for Windows profiles and a live preview of
+the effect. Tested with the Light Mount Silent Linear, German ISO layout,
+firmware 2.3.0.
 
 ### Added
 
@@ -92,5 +96,5 @@ layout, firmware 2.3.0; other firmware versions are read-only unless
 - Website keys open only `http(s)` addresses, without a shell, at most one a
   second
 
-[Unreleased]: https://github.com/xSTYX19x/QuietLinux/compare/v0.1.0...HEAD
+[0.2.0]: https://github.com/xSTYX19x/QuietLinux/releases/tag/v0.2.0
 [0.1.0]: https://github.com/xSTYX19x/QuietLinux/releases/tag/v0.1.0

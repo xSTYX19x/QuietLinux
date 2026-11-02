@@ -6,10 +6,11 @@ well documented and with a clear notice about AI assistance.
 
 Status (2026-11-02): **phases 0–6 done for the reference keyboard** (CLI,
 GUI, background service, install script, docs); **0.1.0 released** on GitHub.
-0.2.0 in progress (profiles, effect preview, shell completions; see below);
-the AUR package and trying the packages (6.6) come later.
+0.2.0 prepared (profiles, IO Center import, effect preview, layouts, JSON,
+completions, fuzzing; see below). The AUR package waits: registering on
+aur.archlinux.org is not possible at the moment (2026-11-02).
 
-## 0.2.0 (in progress)
+## 0.2.0
 
 Chosen for 0.2.0 (2026-11-02): profiles with profile keys, a live preview of
 the effect, shell completions; then the IO Center import and a file chooser.
@@ -389,8 +390,9 @@ GUI: Slint) and are checked in CI (`cargo deny`).
 - [x] Issue templates (bug, device report, feature), `SECURITY.md`, `CHANGELOG.md`
 - [x] Release workflow run: builds the packages, the archive and the draft release
 - [x] First release (0.1.0, 2026-10-28), listed on GitHub
+- [ ] Release 0.2.0: push, tag `v0.2.0`, publish the draft release
 - [ ] Try the .deb and .rpm (e.g. in an Ubuntu and a Fedora VM or container)
-- [ ] Publish the AUR package
+- [ ] Publish the AUR package (registration on aur.archlinux.org closed as of 2026-11-02; the PKGBUILD is ready for 0.2.0)
 - Not planned: AppImage, Flatpak (the udev rule and the background service need the host system)
 
 ## 7. Safety rules (apply to the whole project)

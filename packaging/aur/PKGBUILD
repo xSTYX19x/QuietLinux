@@ -4,7 +4,7 @@
 # docs/releasing.md.
 
 pkgname=quietlinux
-pkgver=0.2.0
+pkgver=0.2.1
 pkgrel=1
 pkgdesc='Configure the be quiet! Light Mount keyboard: lighting, key bindings, macros, profiles (unofficial)'
 arch=('x86_64')

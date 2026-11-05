@@ -4,7 +4,7 @@ All notable changes to QuietLinux. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/).
 
-## [0.2.1] - unreleased
+## [0.2.1] - 2026-11-05
 
 Updates of two libraries the window is built with, one of them for a
 security advisory. QuietLinux itself is unchanged.
@@ -13,7 +13,7 @@ security advisory. QuietLinux itself is unchanged.
 
 - pulldown-cmark, a Markdown parser that the window's toolkit Slint compiles
   in, is updated from 0.13.5 to 0.13.6: it fixes
-  [RUSTSEC-2026-0433](https://rustsec.org/advisories/RUSTSEC-2026-0433.html),
+  [RUSTSEC-2026-0433](https://rustsec.org/advisories/RUSTSEC-2026-0433),
   slow (quadratic) parsing of nested image wikilinks. QuietLinux was not
   affected in practice: the window uses no Markdown text, and Slint parses
   Markdown without wikilinks. Only the window (`quietlinux-gui`) contains the
@@ -117,5 +117,6 @@ layout, firmware 2.3.0; other firmware versions are read-only unless
 - Website keys open only `http(s)` addresses, without a shell, at most one a
   second
 
+[0.2.1]: https://github.com/xSTYX19x/QuietLinux/releases/tag/v0.2.1
 [0.2.0]: https://github.com/xSTYX19x/QuietLinux/releases/tag/v0.2.0
 [0.1.0]: https://github.com/xSTYX19x/QuietLinux/releases/tag/v0.1.0

@@ -4,6 +4,27 @@ All notable changes to QuietLinux. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [0.2.1] - unreleased
+
+Updates of two libraries the window is built with, one of them for a
+security advisory. QuietLinux itself is unchanged.
+
+### Security
+
+- pulldown-cmark, a Markdown parser that the window's toolkit Slint compiles
+  in, is updated from 0.13.5 to 0.13.6: it fixes
+  [RUSTSEC-2026-0433](https://rustsec.org/advisories/RUSTSEC-2026-0433.html),
+  slow (quadratic) parsing of nested image wikilinks. QuietLinux was not
+  affected in practice: the window uses no Markdown text, and Slint parses
+  Markdown without wikilinks. Only the window (`quietlinux-gui`) contains the
+  crate; the command line and the background service do not
+
+### Changed
+
+- async-executor, part of the D-Bus library (zbus) the window uses for desktop
+  settings and the file chooser, is updated from 1.14.0 to 1.14.1: its authors
+  withdrew (yanked) 1.14.0, and the dependency check refuses withdrawn releases
+
 ## [0.2.0] - 2026-11-02
 
 Profiles, the import of IO Center for Windows profiles and a live preview of

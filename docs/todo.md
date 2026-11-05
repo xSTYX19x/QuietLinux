@@ -4,11 +4,12 @@ Goal: a free, public Linux replacement for be quiet! **IO Center** for the
 **be quiet! Light Mount** (USB `373f:0002`), with a **CLI** and a **GUI**,
 well documented and with a clear notice about AI assistance.
 
-Status (2026-11-02): **phases 0–6 done for the reference keyboard** (CLI,
-GUI, background service, install script, docs); **0.1.0 released** on GitHub.
-0.2.0 prepared (profiles, IO Center import, effect preview, layouts, JSON,
-completions, fuzzing; see below). The AUR package waits: registering on
-aur.archlinux.org is not possible at the moment (2026-11-02).
+Status (2026-11-05): **phases 0–6 done for the reference keyboard** (CLI,
+GUI, background service, install script, docs); **0.1.0 and 0.2.0 released**
+on GitHub (0.2.0: profiles, IO Center import, effect preview, layouts, JSON,
+completions, fuzzing; see below). 0.2.1 prepared: a security update of a
+dependency (pulldown-cmark, RUSTSEC-2026-0433). The AUR package waits:
+registering on aur.archlinux.org is not possible at the moment (2026-11-02).
 
 ## 0.2.0
 
@@ -390,9 +391,10 @@ GUI: Slint) and are checked in CI (`cargo deny`).
 - [x] Issue templates (bug, device report, feature), `SECURITY.md`, `CHANGELOG.md`
 - [x] Release workflow run: builds the packages, the archive and the draft release
 - [x] First release (0.1.0, 2026-10-28), listed on GitHub
-- [ ] Release 0.2.0: push, tag `v0.2.0`, publish the draft release
+- [x] Release 0.2.0 (2026-11-02), listed on GitHub
+- [ ] Release 0.2.1 (pulldown-cmark 0.13.6 through Slint, RUSTSEC-2026-0433; not reachable from QuietLinux, as Slint does not enable wikilinks; async-executor 1.14.1 in place of the yanked 1.14.0): push, tag `v0.2.1`, publish the draft release
 - [ ] Try the .deb and .rpm (e.g. in an Ubuntu and a Fedora VM or container)
-- [ ] Publish the AUR package (registration on aur.archlinux.org closed as of 2026-11-02; the PKGBUILD is ready for 0.2.0)
+- [ ] Publish the AUR package (registration on aur.archlinux.org closed as of 2026-11-02; the PKGBUILD is ready for 0.2.1)
 - Not planned: AppImage, Flatpak (the udev rule and the background service need the host system)
 
 ## 7. Safety rules (apply to the whole project)

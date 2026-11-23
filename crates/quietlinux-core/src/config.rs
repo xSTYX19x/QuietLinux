@@ -13,9 +13,9 @@ use std::path::{Path, PathBuf};
 
 use crate::device::{Error, LightingMode, Session, Transport};
 use crate::info::{
-    self, Action, Binding, Colors, Layout, Macro, PROFILE_NEXT, PROFILE_PREVIOUS, parse_action,
+    self, Action, Binding, Colors, Macro, PROFILE_NEXT, PROFILE_PREVIOUS, parse_action,
 };
-use crate::keymap;
+use crate::keymap::{self, Form};
 use crate::profile;
 use crate::protocol as p;
 use crate::state::{self, Lighting, Mode};
@@ -38,6 +38,8 @@ pub struct Snapshot {
     pub model: Option<&'static str>,
     pub firmware: Option<String>,
     pub layout: Option<String>,
+    /// Which keys the keyboard has: bindings of keys it lacks are left out.
+    pub form: Form,
     pub polling_rate: Option<u16>,
     pub lighting_mode: LightingMode,
     pub game_mode_flags: u8,
@@ -51,17 +53,14 @@ pub struct Snapshot {
 
 pub fn read_snapshot<T: Transport>(session: &mut Session<T>) -> Result<Snapshot, Error> {
     let identity = session.identity().info();
-    let layout = session
-        .query(p::GET_LAYOUT, &[])
-        .ok()
-        .and_then(|m| Layout::parse(&m.data))
-        .map(|l| {
-            format!(
-                "{}, {}",
-                l.physical_name().unwrap_or("unknown"),
-                l.visual_name().unwrap_or("unknown")
-            )
-        });
+    let form = session.form();
+    let layout = session.reported_layout().map(|l| {
+        format!(
+            "{}, {}",
+            l.physical_name().unwrap_or("unknown"),
+            l.visual_name().unwrap_or("unknown")
+        )
+    });
     let polling_rate = session
         .query(p::GET_POLLING_RATE, &[])
         .ok()
@@ -87,6 +86,7 @@ pub fn read_snapshot<T: Transport>(session: &mut Session<T>) -> Result<Snapshot,
                 .join(", ")
         }),
         layout,
+        form,
         polling_rate,
         lighting_mode,
         game_mode_flags,
@@ -525,9 +525,11 @@ fn lighting_setting(l: LightingSection) -> Result<Lighting, String> {
         .unwrap_or_default()
         .into_iter()
         .map(|(led, color)| {
+            // a profile may come from a keyboard of the other form: the keyboard
+            // leaves out LEDs it lacks when the colors are shown
             let index = u8::from_str_radix(&led, 16)
                 .ok()
-                .filter(|i| crate::layout::all_leds().any(|l| l == *i))
+                .filter(|&i| crate::layout::exists_on_any(i))
                 .ok_or_else(|| format!("leds: unknown LED index {led:?}"))?;
             let color = color.parse().map_err(|e| format!("leds.{led}: {e}"))?;
             Ok((index, color))
@@ -606,11 +608,12 @@ pub struct EffectSetting {
     pub colors: Colors,
 }
 
-/// A key binding target in a config file.
+/// A key binding target in a config file. Its key ID depends on the keyboard's
+/// form, known when planning.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Target {
     pub name: String,
-    pub key_id: u8,
+    pub key: BindKey,
     pub fn_layer: bool,
 }
 
@@ -661,7 +664,7 @@ pub fn parse(text: &str) -> Result<Settings, String> {
                     Ok((
                         Target {
                             name: key.clone(),
-                            key_id: target.key_id,
+                            key: target,
                             fn_layer,
                         },
                         desired,
@@ -948,9 +951,16 @@ pub fn plan(settings: &Settings, current: &Snapshot) -> Plan {
             .map(|b| ((b.key_id, b.fn_layer), b))
             .collect();
         for (target, desired) in bindings {
-            let existing = now.remove(&(target.key_id, target.fn_layer));
+            let key_id = match target.key.key_id(current.form) {
+                Ok(key_id) => key_id,
+                Err(e) => {
+                    plan.notes.push(format!("{e}, left out"));
+                    continue;
+                }
+            };
+            let existing = now.remove(&(key_id, target.fn_layer));
             let current_raw = existing.map(|b| b.raw.as_slice());
-            let (name, key_id, fn_layer) = (target.name.clone(), target.key_id, target.fn_layer);
+            let (name, fn_layer) = (target.name.clone(), target.fn_layer);
             match desired {
                 Desired::Default => {
                     if existing.is_some() {
@@ -1217,6 +1227,7 @@ mod tests {
             model: Some("Light Mount"),
             firmware: Some("2.3.0".to_owned()),
             layout: Some("ISO, German".to_owned()),
+            form: Form::Iso,
             polling_rate: Some(1000),
             lighting_mode: LightingMode::General,
             game_mode_flags: 0x1f,
@@ -1452,6 +1463,52 @@ mod tests {
         assert_eq!(
             plan.notes,
             ["M1: the keyboard has no macro 7, left as it is"]
+        );
+    }
+
+    #[test]
+    fn bindings_follow_the_form() {
+        let text = "version = 1\n[bindings]\n\
+                    Backslash = \"media stop\"\n\
+                    IntlBackslash = \"media stop\"\n";
+        let settings = parse(text).unwrap();
+        let bound = |plan: &Plan| -> Vec<(String, u8)> {
+            plan.ops
+                .iter()
+                .filter_map(|op| match op {
+                    Op::Bind { name, key_id, .. } => Some((name.clone(), *key_id)),
+                    _ => None,
+                })
+                .collect()
+        };
+        let mut current = snapshot();
+        current.bindings.clear();
+        let iso = plan(&settings, &current);
+        assert_eq!(
+            bound(&iso),
+            [
+                ("Backslash".to_owned(), 0x71),
+                ("IntlBackslash".to_owned(), 0x72)
+            ]
+        );
+        assert_eq!(iso.notes, Vec::<String>::new());
+        // ANSI: the backslash key above Enter, and no key right of the left Shift
+        current.form = Form::Ansi;
+        let ansi = plan(&settings, &current);
+        assert_eq!(bound(&ansi), [("Backslash".to_owned(), 0x30)]);
+        assert_eq!(
+            ansi.notes,
+            ["IntlBackslash: only ISO keyboards have this key, this one is ANSI, left out"]
+        );
+        // per-key colors of both forms are read; the keyboard leaves out what it lacks
+        let both = "version = 1\n[lighting]\nmode = \"per-key\"\n[lighting.leds]\n\
+                    62 = \"ff0000\"\n77 = \"00ff00\"\n";
+        assert_eq!(parse(both).unwrap().lighting.unwrap().leds.len(), 2);
+        assert!(
+            parse(
+                "version = 1\n[lighting]\nmode = \"per-key\"\n[lighting.leds]\n89 = \"ff0000\"\n"
+            )
+            .is_err()
         );
     }
 

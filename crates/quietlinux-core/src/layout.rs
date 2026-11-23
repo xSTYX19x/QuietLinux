@@ -1,16 +1,38 @@
 //! Vendor LED indexes (`10:0d`) per zone.
 //!
 //! Indexes from `lightmount/layout.py` of `bbossa/keyboard_bequiet_lightmount_rgb`,
-//! checked visually on the keyboard.
+//! checked visually on the keyboard. ISO and ANSI keyboards share the numbering;
+//! only the keys that exist differ ([`unused`]).
 
 use std::fmt;
 use std::ops::RangeInclusive;
 use std::str::FromStr;
 
-/// Indexes inside the key range that IO Center never writes.
-pub const UNUSED: [u8; 2] = [0x62, 0x89];
+use crate::keymap::Form;
+
 /// Highest LED index.
 pub const LAST: u8 = 0xa7;
+
+/// Indexes inside the key range without a key on this form: `62` is the ANSI
+/// backslash key, `77` and `7e` are the two ISO keys, `89` is never written by
+/// IO Center.
+pub const fn unused(form: Form) -> &'static [u8] {
+    match form {
+        Form::Iso => &[0x62, 0x89],
+        Form::Ansi => &[0x77, 0x7e, 0x89],
+    }
+}
+
+/// True if the keyboard of this form has an LED with this index.
+pub fn exists(led: u8, form: Form) -> bool {
+    led <= LAST && !unused(form).contains(&led)
+}
+
+/// True if a keyboard of some form has an LED with this index (files that may
+/// come from another keyboard are checked with this).
+pub fn exists_on_any(led: u8) -> bool {
+    Form::ALL.into_iter().any(|form| exists(led, form))
+}
 
 /// A predefined lighting zone.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -50,9 +72,9 @@ impl Zone {
         }
     }
 
-    /// LED indexes of the zone.
-    pub fn leds(self) -> impl Iterator<Item = u8> {
-        self.range().filter(|i| !UNUSED.contains(i))
+    /// LED indexes of the zone on a keyboard of this form.
+    pub fn leds(self, form: Form) -> impl Iterator<Item = u8> {
+        self.range().filter(move |&i| exists(i, form))
     }
 }
 
@@ -73,9 +95,9 @@ impl FromStr for Zone {
     }
 }
 
-/// Every LED index (166).
-pub fn all_leds() -> impl Iterator<Item = u8> {
-    (0..=LAST).filter(|i| !UNUSED.contains(i))
+/// Every LED index of a keyboard of this form (ISO 166, ANSI 165).
+pub fn all_leds(form: Form) -> impl Iterator<Item = u8> {
+    (0..=LAST).filter(move |&i| exists(i, form))
 }
 
 #[cfg(test)]
@@ -84,19 +106,37 @@ mod tests {
 
     #[test]
     fn counts() {
-        assert_eq!(all_leds().count(), 166);
-        assert_eq!(Zone::Top.leds().count(), 45);
-        assert_eq!(Zone::Knob.leds().collect::<Vec<_>>(), [0x2d]);
-        assert_eq!(Zone::Keys.leds().count(), 0x9e - 0x2e - 2);
-        assert_eq!(Zone::Left.leds().count(), 5);
-        assert_eq!(Zone::Right.leds().count(), 5);
+        assert_eq!(all_leds(Form::Iso).count(), 166);
+        assert_eq!(all_leds(Form::Ansi).count(), 165);
+        for form in Form::ALL {
+            assert_eq!(Zone::Top.leds(form).count(), 45);
+            assert_eq!(Zone::Knob.leds(form).collect::<Vec<_>>(), [0x2d]);
+            assert_eq!(Zone::Left.leds(form).count(), 5);
+            assert_eq!(Zone::Right.leds(form).count(), 5);
+        }
+        assert_eq!(Zone::Keys.leds(Form::Iso).count(), 0x9e - 0x2e - 2);
+        assert_eq!(Zone::Keys.leds(Form::Ansi).count(), 0x9e - 0x2e - 3);
     }
 
     #[test]
     fn zones_cover_all_leds_once() {
-        let mut leds: Vec<u8> = Zone::ALL.into_iter().flat_map(Zone::leds).collect();
-        leds.sort_unstable();
-        assert_eq!(leds, all_leds().collect::<Vec<_>>());
+        for form in Form::ALL {
+            let mut leds: Vec<u8> = Zone::ALL.into_iter().flat_map(|z| z.leds(form)).collect();
+            leds.sort_unstable();
+            assert_eq!(leds, all_leds(form).collect::<Vec<_>>(), "{form:?}");
+        }
+    }
+
+    #[test]
+    fn forms_differ_in_three_keys() {
+        // the ANSI backslash key, and the ISO keys left of Enter and right of Shift
+        assert!(exists(0x62, Form::Ansi) && !exists(0x62, Form::Iso));
+        for iso_only in [0x77, 0x7e] {
+            assert!(exists(iso_only, Form::Iso) && !exists(iso_only, Form::Ansi));
+        }
+        assert!(!exists_on_any(0x89));
+        assert!(!exists_on_any(LAST + 1));
+        assert!(exists_on_any(0x62) && exists_on_any(0x77));
     }
 
     #[test]

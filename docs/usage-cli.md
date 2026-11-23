@@ -12,7 +12,7 @@ quietlinux [--usb-path PATH] [--allow-unknown-firmware] [--layout LAYOUT] <comma
 |---|---|
 | `--usb-path PATH` | Pick one keyboard when several are plugged in. `PATH` is the USB port path shown by `quietlinux status`, e.g. `1-2` or `3-1.4`. |
 | `--allow-unknown-firmware` | Allow writing to a firmware version that was never tested. Without it, such keyboards are read-only. |
-| `--layout LAYOUT` | Keycap legends to show: `uk`, `de` or `fr`. Default: the layout the keyboard reports (`events`, `calibrate`), otherwise `uk`. Only changes what is displayed. |
+| `--layout LAYOUT` | Keycap legends, and with them which keys there are: `uk`, `de`, `fr` (ISO) or `us` (ANSI, **experimental**, see [ANSI keyboards](#ansi-keyboards-experimental)). Default: the layout the keyboard reports, otherwise `uk`. Given, it replaces the reported layout for every command: for an ANSI keyboard it also decides which key `Backslash` is and which LEDs are written. |
 | `--json` | Print JSON instead of text, for scripts: `status`, `info`, `keys`, `zones`, `macro list`, `macro show`, `profile list`, `light layout list`. Other commands refuse it. See [JSON output](#json-output). |
 
 ## Key names
@@ -22,6 +22,26 @@ Keys are named by their **physical position**, with the W3C
 name works on every layout: `KeyQ` is the key right of Tab, whether it reads Q
 (English, German) or A (French). Keys without a W3C name are `M1`–`M5`, `Fn`
 and `Knob`. Names are case-sensitive. `quietlinux keys` lists them all.
+
+## ANSI keyboards (experimental)
+
+ANSI keyboards have the same keys as ISO ones except three, and QuietLinux
+supports them **experimentally**: the key map comes from an owner's
+calibration with bbossa's lightmount and is not yet confirmed with QuietLinux.
+
+| | ISO (`uk`, `de`, `fr`) | ANSI (`us`) |
+|---|---|---|
+| `Backslash` | the key left of Enter (`# ~`, `# '`), LED `77` | the key above Enter (`\ \|`), LED `62` |
+| `IntlBackslash` | the key right of the short left Shift (`\ \|`, `< >`), LED `7e` | none |
+| Keys (with the knob) | 111 | 110 |
+
+QuietLinux reads the form from the layout the keyboard reports (`info` shows
+it: `Layout: ANSI, US (experimental in QuietLinux)`), and prints a note on
+stderr whenever a command depends on the keys of an ANSI keyboard. If the
+keyboard reports something else, `--layout us` sets the form for that command.
+Settings files may come from a keyboard of the other form: `apply` and
+`profile switch` leave out bindings of keys the keyboard does not have (with a
+note), and per-key colors of LEDs it lacks are not sent.
 
 ## `status`
 
@@ -101,6 +121,7 @@ Lists the lighting zones and their vendor LED indexes. Does not touch the keyboa
 
 ```console
 $ quietlinux zones
+Zones of ISO keyboards:
 top     45 LEDs  00-2c
 knob     1 LEDs  2d-2d
 keys   110 LEDs  2e-9d
@@ -108,13 +129,15 @@ left     5 LEDs  9e-a2
 right    5 LEDs  a3-a7
 ```
 
+`--layout us` lists the zones of ANSI keyboards (109 key LEDs).
+
 ## `keys`
 
 Lists every key with its LED index, name and legend. Does not touch the keyboard.
 
 ```console
 $ quietlinux keys --layout de
-LED  NAME            LEGEND (de)
+LED  NAME            LEGEND (de, ISO keyboard)
 2d   Knob            Knob
 2e   Escape          Esc
 …
@@ -499,7 +522,7 @@ your keyboard, or to contribute the legends of another layout.
 
 ```console
 $ quietlinux calibrate --layout de
-111 keys, one at a time (de legends). Enter = the lit key is the one shown, otherwise type what is lit; q = stop.
+111 keys of an ISO keyboard, one at a time (de legends). Enter = the lit key is the one shown, otherwise type what is lit; q = stop.
 2d  Knob            Knob
 2e  Escape          Esc
 2f  F1              F1
@@ -515,6 +538,11 @@ $ quietlinux calibrate --layout de
 At the end the previous lighting mode is restored. If the keyboard was in
 realtime mode before, its colors cannot be read back: set them again with `light set`.
 Exit status `1` if there was any mismatch.
+
+On an ANSI keyboard (experimental) it checks 110 keys, the backslash key above
+Enter (LED `62`) included. A run with 0 mismatches is what confirms the ANSI
+key map with QuietLinux: please post its result in a
+[device report](contributing.md#device-reports).
 
 ## `completions SHELL`
 
@@ -549,9 +577,9 @@ $ quietlinux status --json
 | Command | JSON |
 |---|---|
 | `status` | `usb_path`, `node`, `firmware`, `tested`, `lighting_mode` |
-| `info` | `model`, `firmware`, `layout`, `polling_rate`, `lighting_mode`, `game_mode` (`on`, `blocks`), `bindings_enabled`, `bindings` (list of `key`, `key_id`, `fn`, `action` in the syntax of `bind` or `null`, `description`, `raw` bytes), `macros` (as `macro list`, or `null` if not reported) |
-| `keys` | list of `led` (hex), `name`, `legend` |
-| `zones` | list of `name`, `leds` (hex) |
+| `info` | `model`, `firmware`, `layout`, `form` (`ISO`, or `ANSI`: experimental), `polling_rate`, `lighting_mode`, `game_mode` (`on`, `blocks`), `bindings_enabled`, `bindings` (list of `key`, `key_id`, `fn`, `action` in the syntax of `bind` or `null`, `description`, `raw` bytes), `macros` (as `macro list`, or `null` if not reported) |
+| `keys` | list of `led` (hex), `name`, `legend`, for the form of `--layout` (default ISO) |
+| `zones` | list of `name`, `leds` (hex), for the form of `--layout` (default ISO) |
 | `macro list` | list of `id`, `name`, `repeat`, `events` (count) |
 | `macro show ID` | `id`, `name`, `repeat`, `events` (text, as `macro create` takes it) |
 | `profile list` | `active` (or `null`), `profiles`, `folder` |

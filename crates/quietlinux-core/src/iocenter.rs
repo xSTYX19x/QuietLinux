@@ -15,7 +15,7 @@ use serde_json::Value;
 use crate::Rgb;
 use crate::config::{self, EffectSetting};
 use crate::info::{Action, Binding, Colors, Macro};
-use crate::keymap;
+use crate::keymap::{self, Form};
 use crate::profile;
 use crate::protocol as p;
 use crate::settings::{BindKey, Direction, Effect};
@@ -338,7 +338,7 @@ impl Import {
             let list = layer.get("value").and_then(Value::as_array);
             for entry in list.into_iter().flatten() {
                 let io_key = text(entry, "key").unwrap_or("?");
-                let Some(key) = bind_key(io_key) else {
+                let Some((key_name, key_id)) = bind_key(io_key) else {
                     self.note(format!("{prefix}{io_key}: key not known"));
                     continue;
                 };
@@ -346,14 +346,14 @@ impl Import {
                     Some(Ok(action)) => {
                         let raw = action.to_bytes().unwrap_or_default();
                         self.bindings.push(Binding {
-                            key_id: key.key_id,
+                            key_id,
                             fn_layer,
                             action,
                             raw,
                         });
                     }
-                    Some(Err(e)) => self.note(format!("{prefix}{}: {e}", key.name)),
-                    None => self.note(format!("{prefix}{}: no binding", key.name)),
+                    Some(Err(e)) => self.note(format!("{prefix}{key_name}: {e}")),
+                    None => self.note(format!("{prefix}{key_name}: no binding")),
                 }
             }
         }
@@ -488,8 +488,9 @@ fn hid_usage(name: &str) -> Option<u8> {
     })
 }
 
-/// The key a binding is for.
-fn bind_key(name: &str) -> Option<BindKey> {
+/// The key a binding is for: its name and key ID. IO Center names (as far as
+/// known) only keys both forms have, with the same key ID on ISO and ANSI.
+fn bind_key(name: &str) -> Option<(&'static str, u8)> {
     let code = match name {
         "Key_M1" => "M1",
         "Key_M2" => "M2",
@@ -501,7 +502,8 @@ fn bind_key(name: &str) -> Option<BindKey> {
         "Key_DialRotateRight" => "KnobRight",
         other => keymap::code_for_hid_usage(hid_usage(other)?)?,
     };
-    code.parse().ok()
+    let key: BindKey = code.parse().ok()?;
+    Some((key.name, key.key_id(Form::Iso).ok()?))
 }
 
 /// A macro event: key down (variant 0) or up (1) and the pause after it.
@@ -706,8 +708,8 @@ mod tests {
         assert_eq!(hid_usage("Key_F25"), None);
         assert_eq!(hid_usage("Key_LeftShift"), Some(0xe1));
         assert_eq!(hid_usage("Key_Escape"), None); // not seen yet
-        assert_eq!(bind_key("Key_DialRotateRight").unwrap().name, "KnobRight");
-        assert_eq!(bind_key("Key_Home").unwrap().name, "Home");
+        assert_eq!(bind_key("Key_DialRotateRight"), Some(("KnobRight", 0x6e)));
+        assert_eq!(bind_key("Key_Home").unwrap().0, "Home");
     }
 
     #[test]

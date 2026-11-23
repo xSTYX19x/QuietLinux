@@ -7,6 +7,7 @@ does is described in more detail in [usage-cli.md](usage-cli.md).
 ```sh
 quietlinux-gui            # the connected Light Mount
 quietlinux-gui --demo     # a simulated keyboard: try everything without changing yours
+quietlinux-gui --demo --demo-layout us   # the same with an ANSI US keyboard (experimental)
 ```
 
 The window reads the keyboard when it opens and after every change (**Reload**
@@ -108,7 +109,11 @@ highlighted border are bound to something other than their factory binding;
 such a key shows its binding ("F14", "Ctrl+C", "Mute", a macro's name, "off")
 with its own legend small in the corner. Bindings of the Fn layer show when
 you click the key.
-The legends follow the layout the keyboard reports (German, UK or French ISO).
+The legends follow the layout the keyboard reports (German, UK or French ISO,
+or US ANSI). ANSI keyboards are supported **experimentally**: the window draws
+the ANSI keys (flat Enter, long left Shift, `\ |` above Enter), the title line
+says "ANSI keyboard: experimental" and the Keys tab explains why. Please report
+what works and what does not ([device reports](contributing.md#device-reports)).
 
 To change a key, choose the layer (**Normal** or **With Fn**; for the knob
 **Press**, **Turn left** or **Turn right**), what it should do, and a value,

@@ -643,6 +643,8 @@ component KeysPage inherits VerticalBox {
     in property <string> key-title;
     in property <string> binding-summary;
     in property <string> key-note;
+    // why the keyboard's form is experimental, empty for the others
+    in property <string> form-note;
     in property <bool> key-editable;
     in property <[string]> bind-targets;
     in property <[string]> bind-kinds;
@@ -672,6 +674,12 @@ component KeysPage inherits VerticalBox {
 
     Text {
         text: "Keys with a highlighted border are bound to something other than their factory binding.";
+        color: Palette.alternate-foreground;
+        wrap: word-wrap;
+    }
+
+    if root.form-note != "": Text {
+        text: root.form-note;
         color: Palette.alternate-foreground;
         wrap: word-wrap;
     }
@@ -1397,6 +1405,7 @@ export component AppWindow inherits Window {
     in property <string> key-title: "Click a key";
     in property <string> binding-summary;
     in property <string> key-note;
+    in property <string> form-note;
     in property <bool> key-editable;
     in property <[string]> bind-targets;
     in property <[string]> bind-kinds;
@@ -1478,6 +1487,8 @@ export component AppWindow inherits Window {
                 color: Palette.alternate-foreground;
                 vertical-alignment: center;
                 horizontal-stretch: 1;
+                // a long note is cut, not the buttons pushed out
+                overflow: elide;
             }
 
             if root.profile-names.length > 0: HorizontalLayout {
@@ -1663,6 +1674,7 @@ export component AppWindow inherits Window {
                     key-title: root.key-title;
                     binding-summary: root.binding-summary;
                     key-note: root.key-note;
+                    form-note: root.form-note;
                     key-editable: root.key-editable;
                     bind-targets: root.bind-targets;
                     bind-kinds: root.bind-kinds;

@@ -26,7 +26,7 @@ use quietlinux_core::Rgb;
 use quietlinux_core::config::{self, EffectSetting};
 use quietlinux_core::device::LightingMode;
 use quietlinux_core::info::{Action, Colors, Macro};
-use quietlinux_core::keymap::{self, KEYS, Layout};
+use quietlinux_core::keymap::{self, Form, Layout};
 use quietlinux_core::layout::Zone;
 use quietlinux_core::macros::{self, RepeatMode};
 use quietlinux_core::profile::{self, Profiles, Target};
@@ -61,6 +61,10 @@ struct Cli {
     /// Use a simulated keyboard instead of the real one
     #[arg(long)]
     demo: bool,
+    /// Layout the simulated keyboard reports (--demo, --screenshot): uk, de, fr or
+    /// us (ANSI, experimental)
+    #[arg(long, value_name = "LAYOUT", default_value_t = Layout::De)]
+    demo_layout: Layout,
     /// Draw the window of the demo mode into an image (PPM) and quit; for the docs
     #[arg(long, value_name = "FILE", hide = true)]
     screenshot: Option<PathBuf>,
@@ -111,8 +115,8 @@ enum Job {
     Request(Request),
     /// Read only whether game mode is on; answered quietly.
     PollGameMode,
-    /// Per-LED colors; the state is not read again.
-    Leds(Vec<Led>),
+    /// Per-LED colors, with the layout the window knows; the state is not read again.
+    Leds(Vec<Led>, Option<Layout>),
     /// Record a macro until the flag is set.
     Record(Arc<AtomicBool>),
 }
@@ -244,8 +248,9 @@ impl Controller {
     }
 }
 
-/// What a key's bindings can be set for: a label, the key ID, the Fn layer.
-fn targets(code: &str) -> Vec<(&'static str, u8, bool)> {
+/// What a key's bindings can be set for on a keyboard of this form: a label, the
+/// key ID, the Fn layer.
+fn targets(code: &str, form: Form) -> Vec<(&'static str, u8, bool)> {
     if code == "Knob" {
         return [
             ("Press", "Knob"),
@@ -253,10 +258,10 @@ fn targets(code: &str) -> Vec<(&'static str, u8, bool)> {
             ("Turn right", "KnobRight"),
         ]
         .into_iter()
-        .filter_map(|(label, code)| Some((label, keymap::key_id_for_code(code)?, false)))
+        .filter_map(|(label, code)| Some((label, keymap::key_id_for_code(code, form)?, false)))
         .collect();
     }
-    keymap::key_id_for_code(code)
+    keymap::key_id_for_code(code, form)
         .map(|id| vec![("Normal", id, false), ("With Fn", id, true)])
         .unwrap_or_default()
 }
@@ -332,14 +337,18 @@ impl Controller {
                 let state = reply.state;
                 ui.set_connected(true);
                 ui.set_device_title(state.title.as_str().into());
-                let note = if !state.writable {
-                    "Read-only: firmware not tested"
-                } else if self.remember {
-                    ""
-                } else {
-                    "Demo: simulated keyboard"
-                };
-                ui.set_device_note(note.into());
+                let mut notes = Vec::new();
+                if !state.writable {
+                    notes.push("Read-only: firmware not tested");
+                } else if !self.remember {
+                    notes.push("Demo: simulated keyboard");
+                }
+                let form = state.legends.unwrap_or_default().form();
+                if form.experimental() {
+                    notes.push("ANSI keyboard: experimental");
+                }
+                ui.set_device_note(notes.join(" · ").into());
+                ui.set_form_note(form.note().unwrap_or_default().into());
                 ui.set_lighting_on(i32::from(state.lighting_mode != Some(LightingMode::Off)));
                 ui.set_status_error(false);
                 ui.set_status(reply.message.into());
@@ -399,6 +408,11 @@ impl Controller {
         self.state.legends.unwrap_or(Layout::Uk)
     }
 
+    /// Which keys the keyboard has: the form of its legends.
+    fn form(&self) -> Form {
+        self.legends().form()
+    }
+
     fn binding(&self, key_id: u8, fn_layer: bool) -> Option<&quietlinux_core::info::Binding> {
         self.state
             .bindings
@@ -408,18 +422,19 @@ impl Controller {
 
     fn show_keys(&self, ui: &AppWindow) {
         let legends = self.legends();
-        let caps: Vec<KeyCap> = keyboard::caps()
+        let form = legends.form();
+        let caps: Vec<KeyCap> = keyboard::caps(form)
             .into_iter()
             .map(|c| {
-                let changed = targets(c.code)
+                let changed = targets(c.code, form)
                     .iter()
                     .any(|&(_, id, fn_layer)| self.binding(id, fn_layer).is_some());
-                let painted = keymap::by_code(c.code).and_then(|k| self.painted.get(&k.led));
+                let painted = keymap::by_code(c.code, form).and_then(|k| self.painted.get(&k.led));
                 let (color, ink) = painted
                     .map_or((slint::Color::default(), slint::Color::default()), |&rgb| {
                         (to_color(rgb), ink(rgb))
                     });
-                let bound = keymap::by_code(c.code)
+                let bound = keymap::by_code(c.code, form)
                     .filter(|_| !c.round)
                     .and_then(|k| self.binding(k.key_id, false))
                     .map(|b| binding_label(&b.action, legends, self.state.macros.as_deref()))
@@ -451,13 +466,13 @@ impl Controller {
 
     fn select_key(&mut self, ui: &AppWindow, code: &str) {
         ui.set_selected_key(code.into());
-        let legend = keymap::by_code(code).map(|k| self.legends().legend(k.code));
+        let legend = keymap::by_code(code, self.form()).map(|k| self.legends().legend(k.code));
         let title = match legend {
             Some(legend) if legend != code => format!("{code}  [{legend}]"),
             _ => code.to_owned(),
         };
         ui.set_key_title(title.into());
-        let targets = targets(code);
+        let targets = targets(code, self.form());
         let summary: Vec<String> = targets
             .iter()
             .map(|&(label, id, fn_layer)| format!("{label}: {}", self.binding_text(id, fn_layer)))
@@ -485,8 +500,8 @@ impl Controller {
     }
 
     /// The target the key editor shows.
-    fn target(ui: &AppWindow) -> Option<(u8, bool)> {
-        let targets = targets(&ui.get_selected_key());
+    fn target(&self, ui: &AppWindow) -> Option<(u8, bool)> {
+        let targets = targets(&ui.get_selected_key(), self.form());
         let (_, id, fn_layer) = *targets.get(usize::try_from(ui.get_bind_target()).ok()?)?;
         Some((id, fn_layer))
     }
@@ -494,7 +509,7 @@ impl Controller {
     /// Fill the key editor with the binding of the selected key and target.
     fn load_editor(&mut self, ui: &AppWindow) {
         self.editor_target = ui.get_bind_target();
-        let Some((key_id, fn_layer)) = Self::target(ui) else {
+        let Some((key_id, fn_layer)) = self.target(ui) else {
             return;
         };
         let text = self
@@ -587,7 +602,7 @@ impl Controller {
     }
 
     fn apply_binding(&mut self, ui: &AppWindow) {
-        let Some((key_id, fn_layer)) = Self::target(ui) else {
+        let Some((key_id, fn_layer)) = self.target(ui) else {
             return;
         };
         let word = Self::kind_word(ui);
@@ -790,7 +805,7 @@ impl Controller {
     }
 
     fn paint_key(&mut self, ui: &AppWindow, code: &str, erase: bool) {
-        let Some(key) = keymap::by_code(code) else {
+        let Some(key) = keymap::by_code(code, self.form()) else {
             return;
         };
         if erase {
@@ -809,7 +824,7 @@ impl Controller {
         let Some(brush) = brush(ui) else {
             return;
         };
-        self.painted = KEYS.iter().map(|k| (k.led, brush)).collect();
+        self.painted = keymap::keys(self.form()).map(|k| (k.led, brush)).collect();
         self.show_keys(ui);
         self.schedule_paint();
     }
@@ -847,7 +862,7 @@ impl Controller {
             return;
         }
         let leds = self.current_leds(ui);
-        if requests.send(Job::Leds(leds)).is_ok() {
+        if requests.send(Job::Leds(leds, self.state.legends)).is_ok() {
             self.paint = Paint::Sending;
         }
     }
@@ -949,7 +964,7 @@ impl Controller {
         ] {
             // empty or not yet a color: the zone stays off
             if let Ok(rgb) = hex.trim().parse::<Rgb>() {
-                leds.extend(zone.leds().map(|led| Led::new(led, rgb)));
+                leds.extend(zone.leds(self.form()).map(|led| Led::new(led, rgb)));
             }
         }
         leds
@@ -982,14 +997,21 @@ impl Controller {
 
     /// Per-key colors in the per-key page: the painted keys and the zones.
     fn show_lighting(&mut self, ui: &AppWindow, leds: &BTreeMap<u8, Rgb>) {
+        // keys of either form: this may run before the keyboard reported its
+        // layout; keys it lacks are not drawn, and left out when sent
         self.painted = leds
             .iter()
-            .filter(|(led, _)| keymap::by_led(**led).is_some())
+            .filter(|(led, _)| {
+                Form::ALL
+                    .iter()
+                    .any(|&f| keymap::by_led(**led, f).is_some())
+            })
             .map(|(&led, &rgb)| (led, rgb))
             .collect();
         // a zone shows a color only if all its LEDs have it
+        let form = self.form();
         let zone = |zone: Zone| {
-            let colors: Vec<Option<&Rgb>> = zone.leds().map(|led| leds.get(&led)).collect();
+            let colors: Vec<Option<&Rgb>> = zone.leds(form).map(|led| leds.get(&led)).collect();
             match colors.first() {
                 Some(Some(first)) if colors.iter().all(|c| *c == Some(*first)) => first.to_string(),
                 _ => String::new(),
@@ -1272,7 +1294,7 @@ impl Controller {
         let legends = self.legends();
         if self.preview_legends != Some(legends) {
             self.preview_legends = Some(legends);
-            let caps: Vec<KeyCap> = keyboard::caps()
+            let caps: Vec<KeyCap> = keyboard::caps(legends.form())
                 .into_iter()
                 .map(|c| KeyCap {
                     code: c.code.into(),
@@ -1740,8 +1762,8 @@ fn spawn_backend(mut backend: Backend) -> mpsc::Sender<Job> {
                         with_controller(|c, ui| c.apply(ui, outcome));
                     })
                 }
-                Job::Leds(leds) => {
-                    let result = backend.set_leds(&leds);
+                Job::Leds(leds, layout) => {
+                    let result = backend.set_leds(&leds, layout);
                     slint::invoke_from_event_loop(move || {
                         with_controller(|c, ui| c.painted(ui, result));
                     })
@@ -1778,7 +1800,7 @@ fn spawn_backend(mut backend: Backend) -> mpsc::Sender<Job> {
 
 fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
     if let Some(file) = cli.screenshot {
-        return screenshot::run(&file, cli.page, cli.theme);
+        return screenshot::run(&file, cli.page, cli.theme, cli.demo_layout);
     }
     let ui = AppWindow::new()?;
     // matches packaging/desktop/quietlinux.desktop: the desktop shows its name and
@@ -1798,7 +1820,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
     });
     let backend = if cli.demo {
         ui.set_device_note("Demo: simulated keyboard".into());
-        Backend::demo()
+        Backend::demo(cli.demo_layout)
     } else {
         Backend::Hardware {
             usb_path: cli.usb_path,
@@ -1858,7 +1880,7 @@ fn demo_profiles(profiles: &Profiles) {
         let orange = Rgb::new(0xe6, 0x30, 0x00);
         let wasd = ["KeyW", "KeyA", "KeyS", "KeyD"]
             .iter()
-            .filter_map(|code| keymap::by_code(code))
+            .filter_map(|code| keymap::by_code(code, Form::Iso))
             .map(|k| (k.led, orange))
             .collect();
         let _ = layouts.save("wasd", &wasd);

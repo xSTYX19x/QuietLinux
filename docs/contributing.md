@@ -15,9 +15,13 @@ support more versions:
    is a regional variant.
 3. For a new layout: `quietlinux calibrate --layout uk` (or the closest one)
    lights one key at a time; note every key whose legend differs.
+4. **ANSI keyboards** (US; supported experimentally): the `Layout:` line of
+   `quietlinux info` (expected: `ANSI, US`) and the end of
+   `quietlinux calibrate` (expected: 110 checked, 0 mismatches). If `info`
+   shows something else, run `quietlinux --layout us calibrate` and say so.
 
 Open an issue with the **Device report** template, titled for example
-"Device report: firmware 2.4.0, French ISO".
+"Device report: firmware 2.4.0, French ISO" or "Device report: ANSI US".
 
 ## Captures
 

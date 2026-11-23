@@ -9,6 +9,8 @@ use slint::platform::software_renderer::{MinimalSoftwareWindow, RepaintBufferTyp
 use slint::platform::{Platform, WindowAdapter};
 use slint::{ComponentHandle, PhysicalSize, Rgb8Pixel};
 
+use quietlinux_core::keymap::Layout;
+
 use crate::backend::{Backend, Request, demo_dir, layout_folder, profile_folder};
 use crate::{AppWindow, CONTROLLER, Controller, demo_profiles, set_up, with_controller};
 
@@ -23,7 +25,7 @@ impl Platform for Offscreen {
     }
 }
 
-pub fn run(path: &Path, page: i32, theme: i32) -> Result<(), Box<dyn Error>> {
+pub fn run(path: &Path, page: i32, theme: i32, layout: Layout) -> Result<(), Box<dyn Error>> {
     let window = MinimalSoftwareWindow::new(RepaintBufferType::NewBuffer);
     slint::platform::set_platform(Box::new(Offscreen(window.clone())))
         .map_err(|e| format!("{e:?}"))?;
@@ -44,7 +46,7 @@ pub fn run(path: &Path, page: i32, theme: i32) -> Result<(), Box<dyn Error>> {
         c.show_directions(ui, None);
         c.show_layouts(ui);
     });
-    let outcome = Backend::demo().handle(Request::Refresh);
+    let outcome = Backend::demo(layout).handle(Request::Refresh);
     with_controller(|c, ui| c.apply(ui, outcome));
     ui.set_theme(theme);
     // views: lighting effect, lighting per key, keys, macros, settings

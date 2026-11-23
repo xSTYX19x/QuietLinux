@@ -9,7 +9,7 @@ use std::path::PathBuf;
 use quietlinux_core::config::{self, Desired};
 use quietlinux_core::device::fake::FakeKeyboard;
 use quietlinux_core::device::{self, LightingMode, Session, Transport};
-use quietlinux_core::info::{self, Action, Binding, Colors, Macro};
+use quietlinux_core::info::{Action, Binding, Colors, Macro};
 use quietlinux_core::keymap::{self, Layout};
 use quietlinux_core::macros::{self, Changes, RepeatMode};
 use quietlinux_core::profile::{Profiles, Remembered, Target};
@@ -87,6 +87,7 @@ pub fn layout_folder(demo: bool) -> Option<state::Layouts> {
 pub struct State {
     /// Model and firmware, for the title line.
     pub title: String,
+    /// Keycap legends, and with them the form (`None`: not reported, shown as uk).
     pub legends: Option<Layout>,
     /// Effect, per key (realtime) or off, if the keyboard reported it.
     pub lighting_mode: Option<LightingMode>,
@@ -119,10 +120,17 @@ pub enum Backend {
 }
 
 impl Backend {
-    /// A simulated Light Mount with a few bindings and macros, for trying the window.
-    pub fn demo() -> Self {
+    /// A simulated Light Mount with a few bindings and macros, for trying the
+    /// window; it reports `layout` (`07:01`).
+    pub fn demo(layout: Layout) -> Self {
         let mut kb = FakeKeyboard::tested();
-        kb.answers.insert(p::GET_LAYOUT, vec![0x01, 0x01]); // ISO, German
+        let reported = match layout {
+            Layout::Uk => [0x01, 0x02], // ISO, UK
+            Layout::De => [0x01, 0x01], // ISO, German
+            Layout::Fr => [0x01, 0x03], // ISO, French
+            Layout::Us => [0x00, 0x00], // ANSI, US
+        };
+        kb.answers.insert(p::GET_LAYOUT, reported.to_vec());
         kb.game_mode_flags = 0x0f; // Shift+Tab, Alt+F4, Win, Alt+Tab
         for (key, action) in [
             (0x02, vec![0x02, 0x04]),       // M1 mic mute
@@ -159,19 +167,30 @@ impl Backend {
         }
     }
 
-    /// Per-LED colors (realtime mode, volatile); LEDs not given are off. Nothing
-    /// is read back: painting keys should feel immediate.
-    pub fn set_leds(&mut self, leds: &[Led]) -> Result<(), String> {
+    /// Per-LED colors (realtime mode, volatile); LEDs not given are off, LEDs the
+    /// keyboard lacks are left out. Nothing is read back: painting keys should feel
+    /// immediate, so the layout the window knows is passed instead of asked again.
+    pub fn set_leds(&mut self, leds: &[Led], layout: Option<Layout>) -> Result<(), String> {
+        fn set<T: Transport>(
+            session: &mut Session<T>,
+            leds: &[Led],
+            layout: Option<Layout>,
+        ) -> Result<(), String> {
+            if let Some(layout) = layout {
+                session.set_keyboard_layout(layout);
+            }
+            session.set_leds(leds).map_err(|e| e.to_string())
+        }
         match self {
             Self::Hardware { usb_path } => {
                 let (_, mut session) =
                     device::open(usb_path.as_deref(), false).map_err(|e| e.to_string())?;
                 session.open_session().map_err(|e| e.to_string())?;
-                session.set_leds(leds).map_err(|e| e.to_string())
+                set(&mut session, leds, layout)
             }
             Self::Demo(kb) => {
                 let mut session = Session::new(&mut **kb, false).map_err(|e| e.to_string())?;
-                session.set_leds(leds).map_err(|e| e.to_string())
+                set(&mut session, leds, layout)
             }
         }
     }
@@ -487,11 +506,7 @@ fn read_state<T: Transport>(session: &mut Session<T>) -> Result<State, device::E
             )
         },
     );
-    let legends = session
-        .query(p::GET_LAYOUT, &[])
-        .ok()
-        .and_then(|m| info::Layout::parse(&m.data))
-        .and_then(info::Layout::legends);
+    let legends = session.keyboard_layout();
     let (_, bindings) = session.read_bindings()?;
     let macros = session.read_macros().ok();
     let game_mode_flags = session
@@ -518,8 +533,22 @@ mod tests {
     use super::*;
 
     #[test]
+    fn ansi_demo_keyboard() {
+        let mut backend = Backend::demo(Layout::Us);
+        let state = backend.handle(Request::Refresh).unwrap().state;
+        assert_eq!(state.legends, Some(Layout::Us));
+        // an ISO key's color is left out, the ANSI backslash key is lit
+        let red = quietlinux_core::Rgb::new(255, 0, 0);
+        let leds = [Led::new(0x77, red), Led::new(0x62, red)];
+        backend.set_leds(&leds, None).unwrap();
+        if let Backend::Demo(kb) = &backend {
+            assert_eq!(kb.leds.keys().copied().collect::<Vec<_>>(), [0x62]);
+        }
+    }
+
+    #[test]
     fn demo_keyboard_changes_and_reports() {
-        let mut backend = Backend::demo();
+        let mut backend = Backend::demo(Layout::De);
         let state = backend.handle(Request::Refresh).unwrap().state;
         assert_eq!(state.title, "Light Mount · firmware 2.3.0");
         assert_eq!(state.legends, Some(Layout::De));
@@ -568,7 +597,9 @@ mod tests {
             "KeyH KeyE KeyL KeyL KeyO"
         );
         let red = quietlinux_core::Rgb::new(255, 0, 0);
-        backend.set_leds(&[Led::new(0x57, red)]).unwrap();
+        backend
+            .set_leds(&[Led::new(0x57, red)], state.legends)
+            .unwrap();
         if let Backend::Demo(kb) = &backend {
             assert_eq!(kb.mode, p::MODE_REALTIME);
             assert_eq!(kb.leds.get(&0x57), Some(&red));
@@ -582,7 +613,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("quietlinux-gui-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("backup.toml");
-        let mut backend = Backend::demo();
+        let mut backend = Backend::demo(Layout::De);
         let reply = backend
             .handle(Request::Backup {
                 path: path.clone(),

@@ -6,7 +6,7 @@ use std::str::FromStr;
 
 use crate::Rgb;
 use crate::info::Colors;
-use crate::keymap;
+use crate::keymap::{self, Form};
 use crate::protocol::MAX_GRADIENT_STOPS;
 
 fn lookup(table: &[(&str, u8)], s: &str, what: &str) -> Result<u8, String> {
@@ -209,11 +209,28 @@ impl Effect {
     }
 }
 
-/// A key `bind` may change, with its vendor key ID: any key or knob control, except Fn.
+/// A key `bind` may change: any key or knob control, except Fn. Its vendor key ID
+/// depends on the form of the keyboard ([`BindKey::key_id`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BindKey {
     pub name: &'static str,
-    pub key_id: u8,
+}
+
+impl BindKey {
+    /// The key ID on a keyboard of this form, or why it has no such key.
+    pub fn key_id(self, form: Form) -> Result<u8, String> {
+        keymap::key_id_for_code(self.name, form).ok_or_else(|| {
+            let forms: Vec<&str> = keymap::forms_with(self.name)
+                .into_iter()
+                .map(Form::name)
+                .collect();
+            format!(
+                "{}: only {} keyboards have this key, this one is {form}",
+                self.name,
+                forms.join(" and ")
+            )
+        })
+    }
 }
 
 impl FromStr for BindKey {
@@ -223,11 +240,10 @@ impl FromStr for BindKey {
         if s == "Fn" {
             return Err("the Fn key cannot be bound".to_owned());
         }
-        let key_id = keymap::key_id_for_code(s).ok_or_else(|| {
+        let name = keymap::known_code(s).ok_or_else(|| {
             format!("unknown key {s:?} (see `quietlinux keys`; knob turns: KnobLeft, KnobRight)")
         })?;
-        let name = keymap::code_for_key_id(key_id).unwrap_or("?");
-        Ok(Self { name, key_id })
+        Ok(Self { name })
     }
 }
 
@@ -443,18 +459,19 @@ mod tests {
 
     #[test]
     fn bindable_keys() {
-        assert_eq!(
-            "M3".parse(),
-            Ok(BindKey {
-                name: "M3",
-                key_id: 0x04
-            })
-        );
-        assert_eq!("KnobLeft".parse::<BindKey>().unwrap().key_id, 0x6f);
-        assert_eq!("CapsLock".parse::<BindKey>().unwrap().key_id, 0x09); // captured
-        assert_eq!("F1".parse::<BindKey>().unwrap().key_id, 0x16); // captured
+        let id = |name: &str, form| name.parse::<BindKey>().unwrap().key_id(form);
+        assert_eq!("M3".parse(), Ok(BindKey { name: "M3" }));
+        assert_eq!(id("M3", Form::Iso), Ok(0x04));
+        assert_eq!(id("KnobLeft", Form::Iso), Ok(0x6f));
+        assert_eq!(id("CapsLock", Form::Iso), Ok(0x09)); // captured
+        assert_eq!(id("F1", Form::Ansi), Ok(0x16)); // captured
         assert!("Fn".parse::<BindKey>().is_err());
         assert!("capslock".parse::<BindKey>().is_err());
+        // the backslash keys differ between the forms
+        assert_eq!(id("Backslash", Form::Iso), Ok(0x71));
+        assert_eq!(id("Backslash", Form::Ansi), Ok(0x30));
+        let err = id("IntlBackslash", Form::Ansi).unwrap_err();
+        assert!(err.contains("only ISO keyboards"), "{err}");
     }
 
     #[test]

@@ -12,7 +12,8 @@ macros and backups, with a command line tool, a graphical one and an optional
 background service.
 
 **Status: first version.** Everything below works on the reference keyboard;
-what is still open is in [docs/todo.md](docs/todo.md).
+what is still open is in [docs/todo.md](docs/todo.md). Support for **ANSI
+keyboards (US) is experimental**, see [below](#ansi-keyboards-experimental).
 
 Not affiliated with or endorsed by be quiet!. See [Safety](#safety).
 
@@ -31,6 +32,7 @@ Not affiliated with or endorsed by be quiet!. See [Safety](#safety).
 | Background service (`quietlinux-daemon`): per-key colors shown again after replugging or sleep; website and profile keys | ✅ |
 | Per-LED colors by zone (keys, top bar, knob, side strips) or by key (volatile) | ✅ |
 | Key map with layout-independent key names, legends for UK, German and French ISO | ✅ |
+| ANSI keyboards (US): key map, legends, drawing in the window, detected from the keyboard | experimental |
 | Macros stored in the keyboard: record by typing, list, show, create, edit, delete (`macro`) | ✅ |
 | Shell completions for bash, zsh and fish (`completions`); JSON output for scripts (`--json`) | ✅ |
 | Keys that open files or folders | planned |
@@ -41,6 +43,19 @@ Tested with: Light Mount Silent Linear, German ISO layout, firmware 2.3.0.
 Other firmware versions are read-only unless you pass
 `--allow-unknown-firmware`; a [device report](docs/contributing.md#device-reports)
 helps to support them.
+
+### ANSI keyboards (experimental)
+
+ANSI keyboards (US layout: flat Enter, long left Shift, `\ |` above Enter) are
+supported **experimentally** since 0.3.0. The key map comes from
+[bbossa's lightmount](https://github.com/bbossa/keyboard_bequiet_lightmount_rgb),
+where an owner of an ANSI US keyboard confirmed it key by key with
+`lightmount calibrate`; it has not been confirmed with QuietLinux yet.
+QuietLinux recognizes the form from the layout the keyboard reports and says
+so: the command line prints a note, the window shows "ANSI keyboard:
+experimental" in the title line. If your ANSI keyboard is not recognized,
+`--layout us` sets it. Please report what works and what does not in a
+[device report](docs/contributing.md#device-reports).
 
 ## Quick start
 

@@ -8,8 +8,37 @@ Status (2026-11-23): **phases 0–6 done for the reference keyboard** (CLI,
 GUI, background service, install script, docs); **0.1.0, 0.2.0 and 0.2.1
 released** on GitHub (0.2.0: profiles, IO Center import, effect preview,
 layouts, JSON, completions, fuzzing; see below). 0.2.2 prepared: a security
-update of a dependency (url, RUSTSEC-2026-0592). The AUR package waits:
+update of a dependency (url, RUSTSEC-2026-0592). 0.3.0 prepared: ANSI
+keyboards, experimental (see below). The AUR package waits:
 registering on aur.archlinux.org is not possible at the moment (2026-11-02).
+
+## 0.3.0
+
+ANSI keyboards, **experimental** (2026-11-23): GitHub issue #1 points to
+bbossa's lightmount, whose 0.3.0/0.3.1 added an ANSI US layout from an owner's
+`lightmount calibrate` run (bbossa issue #1: 0 mismatches, LED `62` is the
+backslash key; `77` and `7e` do not exist). The reporter is the owner of that
+keyboard.
+
+- [x] Core: the form (ISO/ANSI) next to the legends; one key table for both
+  forms (`Backslash` is LED `77`/key ID `71` on ISO, LED `62`/key ID `30` on
+  ANSI; no `IntlBackslash` on ANSI); LEDs per form; US legends
+- [x] Detection from `07:01` (physical `0` = ANSI), asked once per session;
+  `--layout us` replaces it; unknown: ISO, the reference keyboard
+- [x] LEDs the keyboard lacks are never sent (`set_leds` leaves them out);
+  `apply`/`profile switch` leave out bindings of keys the keyboard lacks
+- [x] CLI: note on stderr for ANSI; `keys`, `zones`, `calibrate`, `bind`,
+  `light set`, `light layout load` follow the form; `info` marks ANSI as
+  experimental; JSON `info` has `form`
+- [x] GUI: ANSI drawing (1.5 u backslash, flat Enter, long Shift), "ANSI
+  keyboard: experimental" in the title line, the reason on the Keys tab;
+  `--demo-layout us`; background service: note in its log
+- [x] Docs (README, usage-cli, usage-gui, protocol, contributing), CHANGELOG
+- [ ] Ask the reporter of issue #1 for `quietlinux info` (is `07:01` really
+  `00 00`?) and `quietlinux calibrate` (110 keys, 0 mismatches)
+- [ ] After a confirmation: drop "experimental" (`Form::experimental`), the
+  notes and the docs' warnings
+- [ ] Release 0.3.0: push, tag `v0.3.0`, publish the draft release
 
 ## 0.2.0
 
@@ -123,7 +152,7 @@ Details in [protocol.md](protocol.md).
 | Language | **English** for everything in the repository: code, comments, docs, this file, commit messages, issues. |
 | Stack | **Rust** for core, CLI and daemon; **Slint** for the GUI (reasons in 6.1) |
 | Authorship | Maintainer as Git author (GitHub noreply address), Claude as `Co-Authored-By` in commits |
-| Reference device | Light Mount **Silent Linear, German ISO** (L-shaped Enter, Ä/Ö/Ü), M1–M5, knob with push button. Other layouts are welcome through contributed key maps. |
+| Reference device | Light Mount **Silent Linear, German ISO** (L-shaped Enter, Ä/Ö/Ü), M1–M5, knob with push button. Other layouts are welcome through contributed key maps; ANSI US is supported experimentally since 0.3.0. |
 | Firmware | **No** firmware update: never sent, captured or replayed |
 | Windows captures | a real Windows PC (no VM), captured with USBPcap, files transferred to the development machine |
 | Daemon | after the basic version (core, CLI, GUI): done, `quietlinux-daemon` |
@@ -350,7 +379,7 @@ GUI: Slint) and are checked in CI (`cargo deny`).
 - [x] `--json` output for scripts (0.2.0)
 
 ### 6.4 Phase 5 – GUI
-- [x] Keyboard view (schematic ISO layout, legends of the reported layout), click a key → its bindings
+- [x] Keyboard view (schematic ISO layout, legends of the reported layout), click a key → its bindings; ANSI drawing (0.3.0, experimental)
 - [x] Tabs: lighting (effect, colors, brightness, speed, direction, on/off), key bindings (both layers), macros (list, create, edit, delete)
 - [x] Demo mode (`--demo`) with the simulated keyboard; offscreen screenshots for the docs (`--screenshot`)
 - [x] Backup and apply in the window (a file name field; check before apply)
@@ -396,7 +425,7 @@ GUI: Slint) and are checked in CI (`cargo deny`).
 - [ ] Release 0.2.2 (url 2.5.9 through Slint, RUSTSEC-2026-0592; not reachable from QuietLinux, as nothing asks a `blob:` address for its origin): push, tag `v0.2.2`, publish the draft release
 - [ ] Slint 1.19 (needs Rust 1.95, the MSRV is 1.85): check whether it drops chrono (RUSTSEC-2026-0543, unmaintained) and spin_on/pin-utils (RUSTSEC-2026-0441), then remove their `deny.toml` exceptions
 - [ ] Try the .deb and .rpm (e.g. in an Ubuntu and a Fedora VM or container)
-- [ ] Publish the AUR package (registration on aur.archlinux.org closed as of 2026-11-02; the PKGBUILD is ready for 0.2.2)
+- [ ] Publish the AUR package (registration on aur.archlinux.org closed as of 2026-11-02; the PKGBUILD is ready for 0.3.0)
 - Not planned: AppImage, Flatpak (the udev rule and the background service need the host system)
 
 ## 7. Safety rules (apply to the whole project)

@@ -93,8 +93,15 @@ fn show_again(usb_path: Option<&str>) -> Result<String, Box<dyn std::error::Erro
             let (_, mut session) = device::open(usb_path, false)?;
             session.open_session()?;
             session.set_leds(&lighting.led_list())?;
+            // the LEDs depend on the form: say when it is experimental
+            let form = session.form();
+            let experimental = if form.experimental() {
+                format!(" ({form} keyboard: support is experimental)")
+            } else {
+                String::new()
+            };
             Ok(format!(
-                "per-key: {} LED color(s) shown again",
+                "per-key: {} LED color(s) shown again{experimental}",
                 lighting.leds.len()
             ))
         }

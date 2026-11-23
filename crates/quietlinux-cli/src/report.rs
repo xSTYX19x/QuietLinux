@@ -113,10 +113,18 @@ fn device_lines<T: Transport>(session: &mut Session<T>, out: &mut Vec<String>) {
     match session.query(p::GET_LAYOUT, &[]) {
         Ok(m) => {
             let layout = Layout::parse(&m.data).map(|l| {
+                let experimental = l
+                    .legends()
+                    .is_some_and(|legends| legends.form().experimental());
                 format!(
-                    "{}, {}",
+                    "{}, {}{}",
                     l.physical_name().unwrap_or("unknown"),
-                    l.visual_name().unwrap_or("unknown")
+                    l.visual_name().unwrap_or("unknown"),
+                    if experimental {
+                        " (experimental in QuietLinux)"
+                    } else {
+                        ""
+                    }
                 )
             });
             push(out, "Layout:", decoded(layout, &m.data));
@@ -297,12 +305,6 @@ fn keyboard_lines<T: Transport>(session: &mut Session<T>, out: &mut Vec<String>)
         ),
         Err(e) => push(out, "Macros:", unavailable(&e)),
     }
-}
-
-/// Keycap legends of the layout the keyboard reports (`07:01`), if QuietLinux has them.
-pub fn device_legends<T: Transport>(session: &mut Session<T>) -> Option<keymap::Layout> {
-    let reply = session.query(p::GET_LAYOUT, &[]).ok()?;
-    Layout::parse(&reply.data)?.legends()
 }
 
 /// Describe a notification: key presses decoded, anything else as hex.

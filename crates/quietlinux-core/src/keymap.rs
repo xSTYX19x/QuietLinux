@@ -10,9 +10,62 @@
 //! matched row by row with the vendor indexes, confirmed key by key on the
 //! keyboard. French and German ISO keyboards share the same physical layout, only
 //! the legends differ ([`Layout`]).
+//!
+//! ANSI keyboards (**experimental**) use the same numbering, with three keys
+//! changed ([`Form`]): no `IntlBackslash` (LED 7e), and `Backslash` is the key
+//! above Enter (LED 62, key ID 30) instead of the ISO key left of Enter (LED 77,
+//! key ID 71). From `lightmount calibrate --layout ansi-us`, run by an owner of
+//! an ANSI US keyboard for bbossa (0 mismatches); not yet confirmed with QuietLinux.
+//! W3C names both backslash keys `Backslash`, so finding a key by its name needs
+//! the form.
 
 use std::fmt;
 use std::str::FromStr;
+
+/// Physical form of the keyboard: which keys it has.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum Form {
+    /// ISO, the reference keyboard: L-shaped Enter, `Backslash` left of it and
+    /// `IntlBackslash` right of the short left Shift.
+    #[default]
+    Iso,
+    /// ANSI, experimental: flat Enter, long left Shift, `Backslash` above Enter.
+    Ansi,
+}
+
+impl Form {
+    pub const ALL: [Form; 2] = [Form::Iso, Form::Ansi];
+
+    pub const fn name(self) -> &'static str {
+        match self {
+            Form::Iso => "ISO",
+            Form::Ansi => "ANSI",
+        }
+    }
+
+    /// True while QuietLinux has not been confirmed on a keyboard of this form.
+    pub const fn experimental(self) -> bool {
+        matches!(self, Form::Ansi)
+    }
+
+    /// What to tell the user about an experimental form, `None` for the others.
+    pub const fn note(self) -> Option<&'static str> {
+        match self {
+            Form::Iso => None,
+            Form::Ansi => Some(
+                "ANSI keyboards are supported experimentally: the key map comes from one \
+                 owner's calibration and is not yet confirmed with QuietLinux. Please report \
+                 what works and what does not: https://github.com/xSTYX19x/QuietLinux/issues",
+            ),
+        }
+    }
+}
+
+impl fmt::Display for Form {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.name())
+    }
+}
 
 /// A physical key (or the knob) with its LED.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -26,6 +79,15 @@ pub struct Key {
     /// Key center in mm from the top left corner of the keyboard.
     pub x: f32,
     pub y: f32,
+    /// The only form with this key; `None`: every form has it.
+    pub only: Option<Form>,
+}
+
+impl Key {
+    /// True if a keyboard of this form has the key.
+    pub fn on(&self, form: Form) -> bool {
+        self.only.is_none_or(|only| only == form)
+    }
 }
 
 const fn key(led: u8, code: &'static str, key_id: u8, x: f32, y: f32) -> Key {
@@ -35,11 +97,20 @@ const fn key(led: u8, code: &'static str, key_id: u8, x: f32, y: f32) -> Key {
         key_id,
         x,
         y,
+        only: None,
     }
 }
 
-/// The knob and every key with an LED, in LED order.
-pub const KEYS: [Key; 111] = [
+/// A key only one form has.
+const fn only(form: Form, led: u8, code: &'static str, key_id: u8, x: f32, y: f32) -> Key {
+    Key {
+        only: Some(form),
+        ..key(led, code, key_id, x, y)
+    }
+}
+
+/// The knob and every key with an LED, of both forms, in LED order.
+const TABLE: [Key; 112] = [
     key(0x2d, "Knob", 0x70, 8.0, 17.4),
     // row 0
     key(0x2e, "Escape", 0x01, 19.0, 17.4),
@@ -81,7 +152,7 @@ pub const KEYS: [Key; 111] = [
     key(0x51, "NumpadDivide", 0x63, 393.8, 42.7),
     key(0x52, "NumpadMultiply", 0x67, 412.8, 42.7),
     key(0x53, "NumpadSubtract", 0x6c, 431.8, 42.7),
-    // row 2 (0x62 is the ANSI backslash slot: no LED on ISO)
+    // row 2
     key(0x54, "M2", 0x03, 8.0, 61.7),
     key(0x55, "Tab", 0x08, 23.7, 61.7),
     key(0x56, "KeyQ", 0x0d, 47.5, 61.7),
@@ -96,6 +167,8 @@ pub const KEYS: [Key; 111] = [
     key(0x5f, "KeyP", 0x3d, 218.5, 61.7),
     key(0x60, "BracketLeft", 0x42, 237.5, 61.7),
     key(0x61, "BracketRight", 0x47, 256.5, 61.7),
+    // ANSI 1.5 u key; position from the ANSI key sizes, not measured
+    only(Form::Ansi, 0x62, "Backslash", 0x30, 280.2, 61.7),
     key(0x63, "Delete", 0x52, 310.9, 61.7),
     key(0x64, "End", 0x56, 329.9, 61.7),
     key(0x65, "PageDown", 0x5a, 348.9, 61.7),
@@ -103,7 +176,7 @@ pub const KEYS: [Key; 111] = [
     key(0x67, "Numpad8", 0x64, 393.8, 61.7),
     key(0x68, "Numpad9", 0x68, 412.8, 61.7),
     key(0x69, "NumpadAdd", 0x6d, 431.8, 61.7),
-    // row 3 (the ISO Enter LED sits on this row)
+    // row 3 (the Enter LED sits on this row)
     key(0x6a, "M3", 0x04, 8.0, 80.7),
     key(0x6b, "CapsLock", 0x09, 26.1, 80.7),
     key(0x6c, "KeyA", 0x0e, 52.2, 80.7),
@@ -117,7 +190,7 @@ pub const KEYS: [Key; 111] = [
     key(0x74, "KeyL", 0x39, 204.2, 80.7),
     key(0x75, "Semicolon", 0x3e, 223.2, 80.7),
     key(0x76, "Quote", 0x43, 242.2, 80.7),
-    key(0x77, "Backslash", 0x71, 263.1, 80.7),
+    only(Form::Iso, 0x77, "Backslash", 0x71, 263.1, 80.7),
     key(0x78, "Enter", 0x0a, 273.1, 80.7),
     key(0x79, "Numpad4", 0x60, 374.8, 80.7),
     key(0x7a, "Numpad5", 0x65, 393.8, 80.7),
@@ -125,7 +198,7 @@ pub const KEYS: [Key; 111] = [
     // row 4 (0x89 is never written by IO Center)
     key(0x7c, "M4", 0x05, 8.0, 99.7),
     key(0x7d, "ShiftLeft", 0x1b, 30.9, 99.7),
-    key(0x7e, "IntlBackslash", 0x72, 45.9, 99.7),
+    only(Form::Iso, 0x7e, "IntlBackslash", 0x72, 45.9, 99.7),
     key(0x7f, "KeyZ", 0x0f, 61.7, 99.7),
     key(0x80, "KeyX", 0x14, 80.7, 99.7),
     key(0x81, "KeyC", 0x1a, 99.7, 99.7),
@@ -159,12 +232,19 @@ pub const KEYS: [Key; 111] = [
     key(0x9d, "NumpadDecimal", 0x6b, 412.8, 118.7),
 ];
 
+/// The knob and the keys of a keyboard of this form, in LED order (ISO 111, ANSI 110).
+pub fn keys(form: Form) -> impl Iterator<Item = &'static Key> {
+    TABLE.iter().filter(move |k| k.on(form))
+}
+
 /// Controls without an LED, with their key IDs: the knob's turns.
 pub const KNOB_TURNS: [(&str, u8); 2] = [("KnobLeft", 0x6f), ("KnobRight", 0x6e)];
 
-/// Name of a key or control (`KnobLeft`, `KnobRight`) by its vendor key ID.
+/// Name of a key or control (`KnobLeft`, `KnobRight`) by its vendor key ID. The
+/// IDs differ between the forms' keys, so this needs no form.
 pub fn code_for_key_id(key_id: u8) -> Option<&'static str> {
-    KEYS.iter()
+    TABLE
+        .iter()
         .find(|k| k.key_id == key_id)
         .map(|k| k.code)
         .or_else(|| {
@@ -175,14 +255,33 @@ pub fn code_for_key_id(key_id: u8) -> Option<&'static str> {
         })
 }
 
-/// Vendor key ID of a key or control by its name.
-pub fn key_id_for_code(code: &str) -> Option<u8> {
-    by_code(code).map(|k| k.key_id).or_else(|| {
+/// Vendor key ID of a key or control by its name, on a keyboard of this form.
+pub fn key_id_for_code(code: &str, form: Form) -> Option<u8> {
+    by_code(code, form).map(|k| k.key_id).or_else(|| {
         KNOB_TURNS
             .iter()
             .find(|(c, _)| *c == code)
             .map(|(_, id)| *id)
     })
+}
+
+/// The name as `&'static str` if a keyboard of some form has this key or
+/// control (case-sensitive): names in files are checked with this before the
+/// keyboard is known.
+pub fn known_code(code: &str) -> Option<&'static str> {
+    TABLE
+        .iter()
+        .map(|k| k.code)
+        .chain(KNOB_TURNS.iter().map(|(c, _)| *c))
+        .find(|c| *c == code)
+}
+
+/// The forms with this key, for messages ("only on ISO keyboards").
+pub fn forms_with(code: &str) -> Vec<Form> {
+    Form::ALL
+        .into_iter()
+        .filter(|&form| key_id_for_code(code, form).is_some())
+        .collect()
 }
 
 /// HID keyboard usage a key sends, by its name (W3C names, plus `F13`–`F24`, which
@@ -269,7 +368,8 @@ pub fn code_for_hid_usage(usage: u8) -> Option<&'static str> {
     const EXTRA: [&str; 12] = [
         "F13", "F14", "F15", "F16", "F17", "F18", "F19", "F20", "F21", "F22", "F23", "F24",
     ];
-    KEYS.iter()
+    TABLE
+        .iter()
         .map(|k| k.code)
         .chain(EXTRA)
         .find(|code| hid_usage(code) == Some(usage))
@@ -290,17 +390,18 @@ pub fn modifier_bit(code: &str) -> Option<u8> {
     MODIFIERS.iter().position(|m| *m == code).map(|i| 1 << i)
 }
 
-/// The key with this layout-independent name (case-sensitive, like the W3C names).
-pub fn by_code(code: &str) -> Option<&'static Key> {
-    KEYS.iter().find(|k| k.code == code)
+/// The key with this layout-independent name (case-sensitive, like the W3C names)
+/// on a keyboard of this form.
+pub fn by_code(code: &str, form: Form) -> Option<&'static Key> {
+    keys(form).find(|k| k.code == code)
 }
 
-/// The key lit by this LED index.
-pub fn by_led(led: u8) -> Option<&'static Key> {
-    KEYS.iter().find(|k| k.led == led)
+/// The key lit by this LED index on a keyboard of this form.
+pub fn by_led(led: u8, form: Form) -> Option<&'static Key> {
+    keys(form).find(|k| k.led == led)
 }
 
-/// Legends printed on the keycaps.
+/// Legends printed on the keycaps, and with them the form of the keyboard.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum Layout {
     /// English (UK) ISO.
@@ -310,16 +411,27 @@ pub enum Layout {
     De,
     /// French ISO (AZERTY).
     Fr,
+    /// English (US) ANSI, experimental.
+    Us,
 }
 
 impl Layout {
-    pub const ALL: [Layout; 3] = [Layout::Uk, Layout::De, Layout::Fr];
+    pub const ALL: [Layout; 4] = [Layout::Uk, Layout::De, Layout::Fr, Layout::Us];
 
     pub const fn name(self) -> &'static str {
         match self {
             Layout::Uk => "uk",
             Layout::De => "de",
             Layout::Fr => "fr",
+            Layout::Us => "us",
+        }
+    }
+
+    /// Form of the keyboards with these legends.
+    pub const fn form(self) -> Form {
+        match self {
+            Layout::Uk | Layout::De | Layout::Fr => Form::Iso,
+            Layout::Us => Form::Ansi,
         }
     }
 
@@ -332,7 +444,7 @@ impl Layout {
 
     /// Legends of the character keys, which differ between layouts.
     // One table per layout reads better than arms merged across layouts.
-    #[allow(clippy::match_same_arms)]
+    #[allow(clippy::match_same_arms, clippy::too_many_lines)]
     fn own_legend(self, code: &str) -> Option<&'static str> {
         let legend = match (self, code) {
             (Layout::Uk, "Backquote") => "` ¬ ¦",
@@ -417,6 +529,31 @@ impl Layout {
             (Layout::Fr, "Period") => "/ :",
             (Layout::Fr, "Slash") => "§ !",
             (Layout::Fr, "NumpadDecimal") => ",",
+
+            // ANSI US: the legends `lightmount calibrate` confirmed on an ANSI US
+            // keyboard for bbossa, AltRight as US keycaps print it
+            (Layout::Us, "Backquote") => "` ~",
+            (Layout::Us, "Digit1") => "1 !",
+            (Layout::Us, "Digit2") => "2 @",
+            (Layout::Us, "Digit3") => "3 #",
+            (Layout::Us, "Digit4") => "4 $",
+            (Layout::Us, "Digit5") => "5 %",
+            (Layout::Us, "Digit6") => "6 ^",
+            (Layout::Us, "Digit7") => "7 &",
+            (Layout::Us, "Digit8") => "8 *",
+            (Layout::Us, "Digit9") => "9 (",
+            (Layout::Us, "Digit0") => "0 )",
+            (Layout::Us, "Minus") => "- _",
+            (Layout::Us, "Equal") => "= +",
+            (Layout::Us, "BracketLeft") => "[ {",
+            (Layout::Us, "BracketRight") => "] }",
+            (Layout::Us, "Backslash") => "\\ |",
+            (Layout::Us, "Semicolon") => "; :",
+            (Layout::Us, "Quote") => "' \"",
+            (Layout::Us, "Comma") => ", <",
+            (Layout::Us, "Period") => ". >",
+            (Layout::Us, "Slash") => "/ ?",
+            (Layout::Us, "AltRight") => "Alt",
             _ => return None,
         };
         Some(legend)
@@ -475,7 +612,7 @@ impl FromStr for Layout {
         Layout::ALL
             .into_iter()
             .find(|l| l.name() == s)
-            .ok_or_else(|| format!("unknown layout {s:?} (known: uk, de, fr)"))
+            .ok_or_else(|| format!("unknown layout {s:?} (known: uk, de, fr, us)"))
     }
 }
 
@@ -486,41 +623,73 @@ mod tests {
 
     #[test]
     fn keys_cover_knob_and_key_zone() {
-        let mut leds: Vec<u8> = KEYS.iter().map(|k| k.led).collect();
-        let expected: Vec<u8> = Zone::Knob.leds().chain(Zone::Keys.leds()).collect();
-        assert_eq!(leds, expected, "KEYS must be in LED order");
-        leds.dedup();
-        assert_eq!(leds.len(), KEYS.len());
+        for form in Form::ALL {
+            let mut leds: Vec<u8> = keys(form).map(|k| k.led).collect();
+            let expected: Vec<u8> = Zone::Knob.leds(form).chain(Zone::Keys.leds(form)).collect();
+            assert_eq!(leds, expected, "{form}: keys must be in LED order");
+            leds.dedup();
+            assert_eq!(leds.len(), keys(form).count());
+        }
+        assert_eq!(keys(Form::Iso).count(), 111);
+        assert_eq!(keys(Form::Ansi).count(), 110);
     }
 
     #[test]
-    fn codes_are_unique() {
-        for key in &KEYS {
-            assert_eq!(by_code(key.code).unwrap().led, key.led, "{}", key.code);
+    fn codes_are_unique_per_form() {
+        for form in Form::ALL {
+            for key in keys(form) {
+                assert_eq!(
+                    by_code(key.code, form).unwrap().led,
+                    key.led,
+                    "{}",
+                    key.code
+                );
+            }
         }
     }
 
     #[test]
     fn key_ids_are_unique() {
-        let mut ids: Vec<u8> = KEYS
+        let mut ids: Vec<u8> = TABLE
             .iter()
             .map(|k| k.key_id)
             .chain(KNOB_TURNS.iter().map(|t| t.1))
             .collect();
         ids.sort_unstable();
         ids.dedup();
-        assert_eq!(ids.len(), KEYS.len() + KNOB_TURNS.len());
+        assert_eq!(ids.len(), TABLE.len() + KNOB_TURNS.len());
+    }
+
+    #[test]
+    fn ansi_differs_in_three_keys() {
+        // the backslash key: above Enter on ANSI (key ID BSL), left of Enter on ISO
+        assert_eq!(by_code("Backslash", Form::Ansi).unwrap().led, 0x62);
+        assert_eq!(by_code("Backslash", Form::Iso).unwrap().led, 0x77);
+        assert_eq!(key_id_for_code("Backslash", Form::Ansi), Some(0x30));
+        assert_eq!(key_id_for_code("Backslash", Form::Iso), Some(0x71));
+        assert_eq!(key_id_for_code("IntlBackslash", Form::Ansi), None);
+        assert_eq!(forms_with("IntlBackslash"), [Form::Iso]);
+        assert_eq!(forms_with("KeyA"), Form::ALL);
+        assert_eq!(known_code("IntlBackslash"), Some("IntlBackslash"));
+        assert_eq!(known_code("KnobLeft"), Some("KnobLeft"));
+        assert_eq!(known_code("backslash"), None);
+        // every other key is the same on both forms
+        let iso: Vec<&Key> = keys(Form::Iso).filter(|k| k.only.is_none()).collect();
+        let ansi: Vec<&Key> = keys(Form::Ansi).filter(|k| k.only.is_none()).collect();
+        assert_eq!(iso, ansi);
+        assert_eq!(iso.len(), 109);
     }
 
     #[test]
     fn key_ids_match_captured_key_events() {
         // key events captured by bbossa: ← 53, → 5c, Fn 4b
-        assert_eq!(key_id_for_code("ArrowLeft"), Some(0x53));
-        assert_eq!(key_id_for_code("ArrowRight"), Some(0x5c));
-        assert_eq!(key_id_for_code("Fn"), Some(0x4b));
+        assert_eq!(key_id_for_code("ArrowLeft", Form::Iso), Some(0x53));
+        assert_eq!(key_id_for_code("ArrowRight", Form::Ansi), Some(0x5c));
+        assert_eq!(key_id_for_code("Fn", Form::Iso), Some(0x4b));
         assert_eq!(code_for_key_id(0x02), Some("M1"));
         assert_eq!(code_for_key_id(0x6e), Some("KnobRight"));
-        assert_eq!(code_for_key_id(0x30), None); // ANSI backslash: not on ISO
+        assert_eq!(code_for_key_id(0x30), Some("Backslash")); // ANSI backslash (BSL)
+        assert_eq!(code_for_key_id(0x71), Some("Backslash")); // ISO key left of Enter
     }
 
     #[test]
@@ -545,11 +714,12 @@ mod tests {
             }
         }
         assert_eq!(code_for_hid_usage(0x68), Some("F13"));
-        assert_eq!(code_for_hid_usage(0x31), None); // ANSI backslash: no such key
+        // Backslash sends 32 on both forms (Linux and Windows read 31 and 32 as the
+        // same key), so 31 stays without a name
+        assert_eq!(code_for_hid_usage(0x31), None);
         assert_eq!(modifier_bit("MetaRight"), Some(0x80));
         // every key with a usage that the keyboard has, except modifiers and specials
-        let without: Vec<&str> = KEYS
-            .iter()
+        let without: Vec<&str> = keys(Form::Iso)
             .map(|k| k.code)
             .filter(|c| hid_usage(c).is_none() && modifier_bit(c).is_none())
             .collect();
@@ -558,10 +728,13 @@ mod tests {
 
     #[test]
     fn lookups() {
-        assert_eq!(by_code("Escape").unwrap().led, 0x2e);
-        assert_eq!(by_led(0x7e).unwrap().code, "IntlBackslash");
-        assert!(by_code("escape").is_none());
-        assert!(by_led(0x62).is_none());
+        assert_eq!(by_code("Escape", Form::Iso).unwrap().led, 0x2e);
+        assert_eq!(by_led(0x7e, Form::Iso).unwrap().code, "IntlBackslash");
+        assert!(by_code("escape", Form::Iso).is_none());
+        assert!(by_led(0x62, Form::Iso).is_none());
+        assert_eq!(by_led(0x62, Form::Ansi).unwrap().code, "Backslash");
+        assert!(by_led(0x7e, Form::Ansi).is_none());
+        assert!(by_led(0x77, Form::Ansi).is_none());
     }
 
     #[test]
@@ -574,6 +747,22 @@ mod tests {
         assert_eq!(Layout::Uk.legend("NumpadAdd"), "+");
         assert_eq!(Layout::De.legend("Escape"), "Esc");
         assert_eq!(Layout::De.legend("M3"), "M3");
+        assert_eq!(Layout::Us.legend("Backslash"), "\\ |");
+        assert_eq!(Layout::Us.legend("Quote"), "' \"");
+        assert_eq!(Layout::Us.legend("BracketLeft"), "[ {");
+        assert_eq!(Layout::Us.legend("AltRight"), "Alt");
+        assert_eq!(Layout::Uk.legend("AltRight"), "Alt Gr");
+    }
+
+    #[test]
+    fn layouts_and_forms() {
+        assert_eq!(Layout::Us.form(), Form::Ansi);
+        for layout in [Layout::Uk, Layout::De, Layout::Fr] {
+            assert_eq!(layout.form(), Form::Iso);
+        }
+        assert_eq!("us".parse(), Ok(Layout::Us));
+        assert!(Form::Ansi.experimental() && Form::Ansi.note().is_some());
+        assert!(!Form::Iso.experimental() && Form::Iso.note().is_none());
     }
 
     #[test]
@@ -608,7 +797,7 @@ mod tests {
             "End",
         ];
         for layout in Layout::ALL {
-            for key in &KEYS {
+            for key in keys(layout.form()) {
                 let legend = layout.legend(key.code);
                 assert!(
                     legend != key.code || unnamed.contains(&key.code),

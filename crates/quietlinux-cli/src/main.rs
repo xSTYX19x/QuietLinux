@@ -13,7 +13,7 @@ use clap::{CommandFactory as _, Parser, Subcommand};
 use quietlinux_core::Rgb;
 use quietlinux_core::device::{self, fmt_version};
 use quietlinux_core::info::{Action, Colors};
-use quietlinux_core::keymap::{self, KEYS, Key, Layout};
+use quietlinux_core::keymap::{self, Form, Key, Layout};
 use quietlinux_core::layout::{self, Zone};
 use quietlinux_core::profile::{self, Profiles};
 use quietlinux_core::protocol::Led;
@@ -36,7 +36,8 @@ struct Cli {
     #[arg(long, global = true)]
     allow_unknown_firmware: bool,
 
-    /// Keycap legends to show: uk, de or fr (default: the layout the keyboard reports, else uk)
+    /// Keycap legends, and with them which keys there are: uk, de, fr (ISO) or us
+    /// (ANSI, experimental). Default: the layout the keyboard reports, else uk
     #[arg(long, global = true)]
     layout: Option<Layout>,
 
@@ -568,16 +569,16 @@ fn parse_hex_u8(s: &str) -> Result<u8, String> {
 enum Target {
     All,
     Zone(Zone),
-    /// A single LED, by key name.
-    Led(u8),
+    /// A single key's LED, by key name; the LED depends on the form.
+    Key(&'static str),
 }
 
 impl Target {
-    fn contains(self, index: u8) -> bool {
+    fn contains(self, index: u8, form: Form) -> bool {
         match self {
             Target::All => true,
-            Target::Zone(zone) => zone.leds().any(|i| i == index),
-            Target::Led(led) => led == index,
+            Target::Zone(zone) => zone.leds(form).any(|i| i == index),
+            Target::Key(code) => keymap::by_code(code, form).is_some_and(|k| k.led == index),
         }
     }
 }
@@ -592,8 +593,14 @@ impl FromStr for Target {
         if let Ok(zone) = s.parse() {
             return Ok(Target::Zone(zone));
         }
-        keymap::by_code(s)
-            .map(|k| Target::Led(k.led))
+        // a key with an LED on some form; leds_for checks it is on this keyboard
+        keymap::known_code(s)
+            .filter(|code| {
+                Form::ALL
+                    .iter()
+                    .any(|&f| keymap::by_code(code, f).is_some())
+            })
+            .map(Target::Key)
             .ok_or_else(|| {
                 format!(
                     "unknown target {s:?}: use a zone (all, top, knob, keys, left, right) \
@@ -623,18 +630,71 @@ impl FromStr for Assignment {
     }
 }
 
-/// One color per LED; later assignments win, LEDs not assigned are off.
-fn leds_for(assignments: &[Assignment], dim: f32) -> Vec<Led> {
-    layout::all_leds()
+/// One color per LED of a keyboard of this form; later assignments win, LEDs
+/// not assigned are off. An error for a key the keyboard does not have.
+fn leds_for(assignments: &[Assignment], dim: f32, form: Form) -> Result<Vec<Led>, String> {
+    for a in assignments {
+        if let Target::Key(code) = a.target {
+            settings::BindKey { name: code }.key_id(form)?;
+        }
+    }
+    Ok(layout::all_leds(form)
         .map(|index| {
             let color = assignments
                 .iter()
                 .rev()
-                .find(|a| a.target.contains(index))
+                .find(|a| a.target.contains(index, form))
                 .map_or(Rgb::BLACK, |a| a.color.scaled(dim));
             Led::new(index, color)
         })
-        .collect()
+        .collect())
+}
+
+/// How to reach the keyboard: the global options.
+#[derive(Debug, Clone, Copy)]
+struct Connection<'a> {
+    usb_path: Option<&'a str>,
+    allow_unknown_firmware: bool,
+    /// `--layout`: used instead of the layout the keyboard reports.
+    layout: Option<Layout>,
+}
+
+impl Connection<'_> {
+    /// An identified session (`03:01`), with `--layout` applied.
+    fn open(&self) -> Result<(device::Keyboard, device::Session<device::Hidraw>), device::Error> {
+        let (keyboard, mut session) = device::open(self.usb_path, self.allow_unknown_firmware)?;
+        if let Some(layout) = self.layout {
+            session.set_keyboard_layout(layout);
+        }
+        Ok((keyboard, session))
+    }
+
+    /// Like [`Self::open`], with a session opened like IO Center Web (`01:01`).
+    fn open_session(&self) -> Result<device::Session<device::Hidraw>, device::Error> {
+        let (_, mut session) = self.open()?;
+        session.open_session()?;
+        Ok(session)
+    }
+}
+
+/// Tell the user (on stderr) when the keyboard's form is supported experimentally.
+fn note_experimental(form: Form) {
+    if let Some(note) = form.note() {
+        eprintln!("note: {note}");
+    }
+}
+
+/// The keyboard's legends (the reported ones, `--layout`, else uk), with the
+/// note for an experimental form.
+fn legends_of<T: device::Transport>(session: &mut device::Session<T>) -> Layout {
+    let layout = session.keyboard_layout().unwrap_or_default();
+    note_experimental(layout.form());
+    layout
+}
+
+/// The keyboard's form, with the note for an experimental one.
+fn form_of<T: device::Transport>(session: &mut device::Session<T>) -> Form {
+    legends_of(session).form()
 }
 
 /// Ask on the terminal about one lit key.
@@ -674,8 +734,14 @@ fn json_supported(command: &Command) -> bool {
 // One arm per command: splitting the dispatch would not make it clearer.
 #[allow(clippy::too_many_lines)]
 fn run(cli: Cli) -> Result<ExitCode, Box<dyn std::error::Error>> {
-    let usb_path = cli.usb_path.as_deref();
+    let conn = Connection {
+        usb_path: cli.usb_path.as_deref(),
+        allow_unknown_firmware: cli.allow_unknown_firmware,
+        layout: cli.layout,
+    };
     let as_json = cli.json;
+    // the legends of commands that do not touch the keyboard
+    let offline_layout = cli.layout.unwrap_or_default();
     if as_json && !json_supported(&cli.command) {
         return Err(
             "--json works with status, info, keys, zones, macro list, macro show, \
@@ -684,10 +750,16 @@ fn run(cli: Cli) -> Result<ExitCode, Box<dyn std::error::Error>> {
         );
     }
     match cli.command {
-        Command::Zones if as_json => json::print(&json::zones()),
-        Command::Keys if as_json => json::print(&json::keys(cli.layout.unwrap_or_default())),
+        Command::Zones if as_json => {
+            note_experimental(offline_layout.form());
+            json::print(&json::zones(offline_layout.form()));
+        }
+        Command::Keys if as_json => {
+            note_experimental(offline_layout.form());
+            json::print(&json::keys(offline_layout));
+        }
         Command::Status if as_json => {
-            let (keyboard, mut session) = device::open(usb_path, cli.allow_unknown_firmware)?;
+            let (keyboard, mut session) = conn.open()?;
             let mode = session.lighting_mode()?;
             json::print(&json::status(
                 &keyboard.usb_path,
@@ -697,15 +769,15 @@ fn run(cli: Cli) -> Result<ExitCode, Box<dyn std::error::Error>> {
             ));
         }
         Command::Info if as_json => {
-            let mut session = open_session(usb_path, cli.allow_unknown_firmware)?;
+            let mut session = conn.open_session()?;
             json::print(&json::snapshot(&config::read_snapshot(&mut session)?));
         }
         Command::Macro(MacroCommand::List) if as_json => {
-            let mut session = open_session(usb_path, cli.allow_unknown_firmware)?;
+            let mut session = conn.open_session()?;
             json::print(&json::macro_list(&session.read_macros()?));
         }
         Command::Macro(MacroCommand::Show { id }) if as_json => {
-            let mut session = open_session(usb_path, cli.allow_unknown_firmware)?;
+            let mut session = conn.open_session()?;
             let ids = session.macro_ids()?;
             if !ids.contains(&id) {
                 return Err(format!("the keyboard has no macro {id} (macros: {ids:?})").into());
@@ -721,8 +793,11 @@ fn run(cli: Cli) -> Result<ExitCode, Box<dyn std::error::Error>> {
             json::print(&json::layouts(&layouts));
         }
         Command::Zones => {
+            let form = offline_layout.form();
+            note_experimental(form);
+            println!("Zones of {form} keyboards:");
             for zone in Zone::ALL {
-                let leds: Vec<u8> = zone.leds().collect();
+                let leds: Vec<u8> = zone.leds(form).collect();
                 let (first, last) = (leds[0], leds[leds.len() - 1]);
                 println!(
                     "{:<6} {:3} LEDs  {first:02x}-{last:02x}",
@@ -732,9 +807,14 @@ fn run(cli: Cli) -> Result<ExitCode, Box<dyn std::error::Error>> {
             }
         }
         Command::Keys => {
-            let layout = cli.layout.unwrap_or_default();
-            println!("LED  {:<15} LEGEND ({layout})", "NAME");
-            for key in &KEYS {
+            let layout = offline_layout;
+            note_experimental(layout.form());
+            println!(
+                "LED  {:<15} LEGEND ({layout}, {} keyboard)",
+                "NAME",
+                layout.form()
+            );
+            for key in keymap::keys(layout.form()) {
                 println!(
                     "{:02x}   {:<15} {}",
                     key.led,
@@ -744,7 +824,7 @@ fn run(cli: Cli) -> Result<ExitCode, Box<dyn std::error::Error>> {
             }
         }
         Command::Status => {
-            let (keyboard, mut session) = device::open(usb_path, cli.allow_unknown_firmware)?;
+            let (keyboard, mut session) = conn.open()?;
             let identity = session.identity().clone();
             println!(
                 "Light Mount at USB {} ({})",
@@ -763,7 +843,7 @@ fn run(cli: Cli) -> Result<ExitCode, Box<dyn std::error::Error>> {
             println!("Lighting mode:    {}", session.lighting_mode()?);
         }
         Command::Info => {
-            let (keyboard, mut session) = device::open(usb_path, cli.allow_unknown_firmware)?;
+            let (keyboard, mut session) = conn.open()?;
             println!(
                 "{:<15} USB {} ({})",
                 "Light Mount:",
@@ -775,18 +855,15 @@ fn run(cli: Cli) -> Result<ExitCode, Box<dyn std::error::Error>> {
             }
         }
         Command::Events { count } => {
-            let (_, mut session) = device::open(usb_path, cli.allow_unknown_firmware)?;
-            let layout = cli
-                .layout
-                .or_else(|| report::device_legends(&mut session))
-                .unwrap_or_default();
+            let (_, mut session) = conn.open()?;
+            let layout = legends_of(&mut session);
             eprintln!(
                 "Press keys on the Light Mount (Ctrl+C to stop). Only keys the keyboard reports appear."
             );
             report::watch(&mut session, count, layout, |line| println!("{line}"))?;
         }
         Command::Light(Light::Static { color, brightness }) => {
-            let (_, mut session) = device::open(usb_path, cli.allow_unknown_firmware)?;
+            let (_, mut session) = conn.open()?;
             session.set_static(color, brightness)?;
             remember_effect(&config::EffectSetting {
                 effect: settings::Effect::STATIC,
@@ -821,7 +898,7 @@ fn run(cli: Cli) -> Result<ExitCode, Box<dyn std::error::Error>> {
                 return Err(format!("{effect} has no speed: leave out --speed").into());
             }
             let speed = speed.unwrap_or(quietlinux_core::protocol::SPEED_DEFAULT);
-            let mut session = open_session(usb_path, cli.allow_unknown_firmware)?;
+            let mut session = conn.open_session()?;
             session.set_effect(effect.0, direction.0, brightness, speed, &colors)?;
             remember_effect(&config::EffectSetting {
                 effect,
@@ -843,7 +920,7 @@ fn run(cli: Cli) -> Result<ExitCode, Box<dyn std::error::Error>> {
                         .to_owned(),
                 )));
             }
-            let mut session = open_session(usb_path, cli.allow_unknown_firmware)?;
+            let mut session = conn.open_session()?;
             if let BindAction::Macro { id } = action {
                 let ids = session.macro_ids()?;
                 if !ids.contains(&id) {
@@ -860,12 +937,13 @@ fn run(cli: Cli) -> Result<ExitCode, Box<dyn std::error::Error>> {
                     );
                 }
             }
+            let key_id = key.key_id(form_of(&mut session))?;
             let prefix = if fn_layer { "Fn+" } else { "" };
             if let Some(action) = action.action() {
-                session.set_binding(key.key_id, fn_layer, &action)?;
+                session.set_binding(key_id, fn_layer, &action)?;
                 println!("{prefix}{}: {action}", key.name);
             } else {
-                session.clear_binding(key.key_id, fn_layer)?;
+                session.clear_binding(key_id, fn_layer)?;
                 println!("{prefix}{}: factory binding", key.name);
             }
         }
@@ -876,7 +954,7 @@ fn run(cli: Cli) -> Result<ExitCode, Box<dyn std::error::Error>> {
                     format!("{} exists: add --force to overwrite it", file.display()).into(),
                 );
             }
-            let mut session = open_session(usb_path, cli.allow_unknown_firmware)?;
+            let mut session = conn.open_session()?;
             let snapshot = config::read_snapshot(&mut session)?;
             let text = config::backup_text(&snapshot);
             if to_stdout {
@@ -906,7 +984,8 @@ fn run(cli: Cli) -> Result<ExitCode, Box<dyn std::error::Error>> {
             let text =
                 std::fs::read_to_string(&file).map_err(|e| format!("{}: {e}", file.display()))?;
             let settings = config::parse(&text).map_err(|e| format!("{}: {e}", file.display()))?;
-            let mut session = open_session(usb_path, cli.allow_unknown_firmware)?;
+            let mut session = conn.open_session()?;
+            form_of(&mut session);
             let current = config::read_snapshot(&mut session)?;
             let plan = config::plan(&settings, &current);
             for note in &plan.notes {
@@ -930,7 +1009,7 @@ fn run(cli: Cli) -> Result<ExitCode, Box<dyn std::error::Error>> {
             }
         }
         Command::GameMode { block } => {
-            let mut session = open_session(usb_path, cli.allow_unknown_firmware)?;
+            let mut session = conn.open_session()?;
             session.set_game_mode_blocks(block.0)?;
             let blocked = quietlinux_core::info::game_mode_blocks(block.0);
             println!(
@@ -943,21 +1022,21 @@ fn run(cli: Cli) -> Result<ExitCode, Box<dyn std::error::Error>> {
             );
         }
         Command::Light(Light::Stored) => {
-            let (_, mut session) = device::open(usb_path, cli.allow_unknown_firmware)?;
+            let (_, mut session) = conn.open()?;
             session.show_stored_effect()?;
             remember_mode(state::Mode::Effect);
         }
         Command::Light(Light::Off) => {
-            let (_, mut session) = device::open(usb_path, cli.allow_unknown_firmware)?;
+            let (_, mut session) = conn.open()?;
             session.set_lighting_mode(device::LightingMode::Off)?;
             remember_mode(state::Mode::Off);
         }
         Command::Macro(command) => {
-            let mut session = open_session(usb_path, cli.allow_unknown_firmware)?;
+            let mut session = conn.open_session()?;
             run_macro(&mut session, command)?;
         }
         Command::Profile(command) => {
-            run_profile(command, usb_path, cli.allow_unknown_firmware)?;
+            run_profile(command, conn)?;
         }
         Command::Completions { shell } => {
             let shell = match shell {
@@ -971,11 +1050,11 @@ fn run(cli: Cli) -> Result<ExitCode, Box<dyn std::error::Error>> {
             io::stdout().write_all(&script)?;
         }
         Command::Light(Light::Layout(command)) => {
-            run_layout(command, usb_path, cli.allow_unknown_firmware)?;
+            run_layout(command, conn)?;
         }
         Command::Light(Light::Set { assignments, dim }) => {
-            let (_, mut session) = device::open(usb_path, cli.allow_unknown_firmware)?;
-            let leds = leds_for(&assignments, dim);
+            let (_, mut session) = conn.open()?;
+            let leds = leds_for(&assignments, dim, form_of(&mut session))?;
             session.set_leds(&leds)?;
             let lighting = state::Lighting {
                 mode: state::Mode::PerKey,
@@ -986,20 +1065,16 @@ fn run(cli: Cli) -> Result<ExitCode, Box<dyn std::error::Error>> {
             }
         }
         Command::Calibrate { start } => {
-            let keys: Vec<&Key> = KEYS
-                .iter()
+            let (_, mut session) = conn.open()?;
+            let layout = legends_of(&mut session);
+            let keys: Vec<&Key> = keymap::keys(layout.form())
                 .filter(|k| k.led >= start.unwrap_or(0))
                 .collect();
-            let (_, mut session) = device::open(usb_path, cli.allow_unknown_firmware)?;
-            let layout = cli
-                .layout
-                .or_else(|| report::device_legends(&mut session))
-                .unwrap_or_default();
             println!(
-                "{} keys, one at a time ({} legends). Enter = the lit key is the one shown, \
-                 otherwise type what is lit; q = stop.",
+                "{} keys of an {} keyboard, one at a time ({layout} legends). Enter = the lit \
+                 key is the one shown, otherwise type what is lit; q = stop.",
                 keys.len(),
-                layout
+                layout.form()
             );
             let report =
                 calibrate::calibrate(&mut session, &keys, |key| ask_terminal(key, layout))?;
@@ -1037,8 +1112,7 @@ fn profiles() -> Result<Profiles, &'static str> {
 
 fn run_profile(
     command: ProfileCommand,
-    usb_path: Option<&str>,
-    allow_unknown_firmware: bool,
+    conn: Connection,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let profiles = profiles()?;
     match command {
@@ -1066,7 +1140,7 @@ fn run_profile(
                 )
                 .into());
             }
-            let mut session = open_session(usb_path, allow_unknown_firmware)?;
+            let mut session = conn.open_session()?;
             let snapshot = profiles.save(&mut session, &name, &profile::Remembered::load())?;
             println!(
                 "Profile {name:?} saved ({} binding(s), {}, effect and lighting) and active.",
@@ -1080,7 +1154,8 @@ fn run_profile(
         ProfileCommand::Switch { target, dry_run } => {
             // checked before the keyboard is opened
             profiles.load(&profiles.resolve(&target)?)?;
-            let mut session = open_session(usb_path, allow_unknown_firmware)?;
+            let mut session = conn.open_session()?;
+            form_of(&mut session);
             let switch = profiles.switch(&mut session, &target, true, dry_run)?;
             if let Some(saved) = &switch.saved {
                 println!("Settings saved to profile {saved:?}.");
@@ -1119,11 +1194,7 @@ fn run_profile(
     Ok(())
 }
 
-fn run_layout(
-    command: LayoutCommand,
-    usb_path: Option<&str>,
-    allow_unknown_firmware: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
+fn run_layout(command: LayoutCommand, conn: Connection) -> Result<(), Box<dyn std::error::Error>> {
     let layouts =
         state::Layouts::standard().ok_or("no home folder: set HOME or XDG_CONFIG_HOME")?;
     match command {
@@ -1157,11 +1228,11 @@ fn run_layout(
         }
         LayoutCommand::Load { name } => {
             let colors = layouts.load(&name)?;
+            let (_, mut session) = conn.open()?;
             // every LED: those not in the layout are switched off
-            let leds: Vec<Led> = layout::all_leds()
+            let leds: Vec<Led> = layout::all_leds(form_of(&mut session))
                 .map(|i| Led::new(i, colors.get(&i).copied().unwrap_or(Rgb::BLACK)))
                 .collect();
-            let (_, mut session) = device::open(usb_path, allow_unknown_firmware)?;
             session.set_leds(&leds)?;
             let lighting = state::Lighting {
                 mode: state::Mode::PerKey,
@@ -1260,16 +1331,6 @@ fn remember_mode(mode: state::Mode) {
     }
 }
 
-/// Open the keyboard and a session, as IO Center does before changing settings.
-fn open_session(
-    usb_path: Option<&str>,
-    allow_unknown_firmware: bool,
-) -> Result<device::Session<device::Hidraw>, device::Error> {
-    let (_, mut session) = device::open(usb_path, allow_unknown_firmware)?;
-    session.open_session()?;
-    Ok(session)
-}
-
 fn main() -> ExitCode {
     match run(Cli::parse()) {
         Ok(code) => code,
@@ -1366,8 +1427,11 @@ mod tests {
         );
         assert_eq!(
             "Escape=000000".parse::<Assignment>().unwrap().target,
-            Target::Led(0x2e)
+            Target::Key("Escape")
         );
+        // keys of either form; knob turns have no LED
+        assert!("IntlBackslash=000000".parse::<Assignment>().is_ok());
+        assert!("KnobLeft=000000".parse::<Assignment>().is_err());
         assert!("keys".parse::<Assignment>().is_err());
         assert!("wheel=ff0000".parse::<Assignment>().is_err());
         assert!("escape=ff0000".parse::<Assignment>().is_err());
@@ -1388,7 +1452,7 @@ mod tests {
             "knob=ff0000".parse().unwrap(),
             "KeyW=00ff00".parse().unwrap(),
         ];
-        let leds = leds_for(&assignments, 1.0);
+        let leds = leds_for(&assignments, 1.0, Form::Iso).unwrap();
         assert_eq!(leds.len(), 166);
         for led in leds {
             let expected = match led.index {
@@ -1402,12 +1466,31 @@ mod tests {
 
     #[test]
     fn unassigned_leds_are_off() {
-        let leds = leds_for(&["knob=ff0000".parse().unwrap()], 0.5);
+        let leds = leds_for(&["knob=ff0000".parse().unwrap()], 0.5, Form::Iso).unwrap();
         assert!(leds.iter().all(|l| l.color
             == if l.index == 0x2d {
                 Rgb::new(0x80, 0, 0)
             } else {
                 Rgb::BLACK
             }));
+    }
+
+    #[test]
+    fn keys_follow_the_form() {
+        let backslash = ["Backslash=00ff00".parse().unwrap()];
+        let lit = |form| -> Vec<u8> {
+            leds_for(&backslash, 1.0, form)
+                .unwrap()
+                .into_iter()
+                .filter(|l| l.color != Rgb::BLACK)
+                .map(|l| l.index)
+                .collect()
+        };
+        assert_eq!(lit(Form::Iso), [0x77]);
+        assert_eq!(lit(Form::Ansi), [0x62]);
+        assert_eq!(leds_for(&backslash, 1.0, Form::Ansi).unwrap().len(), 165);
+        let err =
+            leds_for(&["IntlBackslash=ff0000".parse().unwrap()], 1.0, Form::Ansi).unwrap_err();
+        assert!(err.contains("only ISO keyboards"), "{err}");
     }
 }

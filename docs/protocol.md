@@ -218,7 +218,7 @@ IO Center stores a settings file there: a u32 length at offset 0, then text.
 
 | Command | Name | Payload | Reply |
 |---|---|---|---|
-| `07:01` | GetLayout | | `[physical: 0 ANSI, 1 ISO, 2 JIS][visual: 0 US, 1 DE, 2 UK, 3 FR, 4 NO]` |
+| `07:01` | GetLayout | | `[physical: 0 ANSI, 1 ISO, 2 JIS][visual: 0 US, 1 DE, 2 UK, 3 FR, 4 NO]` (German ISO keyboard: `01 01` [cap]; ANSI US expected `00 00`, not yet seen) |
 | `07:02` | GetConfig | | `[game mode flags]` |
 | `07:03` | SetConfig | `[game mode flags]` [cap] | (empty) |
 | `07:04` | GetState | | `[state]` (0 inactive, 1 active; presumably game mode on/off) |
@@ -318,7 +318,7 @@ LED indexes [cap]:
 |---|---|
 | `00`–`2c` | top light bar (45) |
 | `2d` | knob |
-| `2e`–`9d` | keys, row by row, left to right (`62` and `89` do not exist) |
+| `2e`–`9d` | keys, row by row, left to right (ISO: `62` and `89` do not exist; ANSI: `77`, `7e` and `89`) |
 | `9e`–`a2` | left side strip |
 | `a3`–`a7` | right side strip |
 
@@ -326,7 +326,12 @@ Which key each LED belongs to is in `crates/quietlinux-core/src/keymap.rs`
 [cap]: the key LEDs are numbered row by row like the LampArray lamps. French and
 German ISO keyboards share the same physical layout, so the mapping holds for
 both; `quietlinux calibrate` checks it on a keyboard (German ISO: 111 of 111
-keys confirmed).
+keys confirmed). ANSI keyboards use the same numbering with three keys
+changed: `62` is the backslash key above Enter (key ID `30`), `77` and `7e`
+(the ISO keys left of Enter and right of the short left Shift) do not exist.
+This comes from `lightmount calibrate --layout ansi-us`, run on an ANSI US
+keyboard for bbossa's lightmount (0 mismatches); QuietLinux supports ANSI
+experimentally until it is confirmed with `quietlinux calibrate`.
 
 **Color calibration** (`10:0f` reply, 14 bytes): `[version][red f32][green f32][blue f32][enabled: bit 0]`,
 the factors as fractions of 1. IO Center's default is red 1.00, green 0.59,
@@ -535,7 +540,7 @@ confirmed with `quietlinux events` on the German keyboard: K42 is `#`, K45 is `<
 | `2d` | `U` | KeyU |
 | `2e` | `J` | KeyJ |
 | `2f` | `M` | KeyM |
-| `30` | `BSL` | (ANSI backslash, not on ISO) |
+| `30` | `BSL` | Backslash (ANSI key above Enter, LED `62`; not on ISO) |
 | `31` | `F5` | F5 |
 | `32` | `8` | Digit8 |
 | `33` | `I` | KeyI |
@@ -616,6 +621,7 @@ background service switches them when a profile key is pressed.
 
 ## Unknown so far
 
+- What an ANSI keyboard reports for `07:01` (expected `00 00`), and its key map with `quietlinux calibrate`: ANSI is supported experimentally from bbossa's calibration.
 - Payload layouts of `10:07`/`10:08` (layer masks), `10:0b`/`10:0c` (playback), `11:04`/`11:05`, `11:06`, the `31` CONTROLS feature.
 - The `02 00 00` bytes of a macro's config; the purpose of `12:09` StartRecording when IO Center starts; whether a recording ends with the session.
 - Whether the `11:02` event of a website or "select profile" key carries the address or the profile ID (QuietLinux's background service reads the binding if not).

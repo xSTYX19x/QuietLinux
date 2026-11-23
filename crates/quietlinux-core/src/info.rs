@@ -225,12 +225,16 @@ impl Layout {
             .copied()
     }
 
-    /// Keycap legends QuietLinux has for this layout.
+    /// Keycap legends (and with them the form) QuietLinux has for this layout.
+    /// ANSI keyboards get the US legends whatever their visual layout says: which
+    /// keys exist matters more than what they read. Values from IO Center Web;
+    /// `1 1` (ISO, German) is confirmed on the reference keyboard, ANSI not yet.
     pub fn legends(self) -> Option<keymap::Layout> {
-        match self.visual {
-            1 => Some(keymap::Layout::De),
-            2 => Some(keymap::Layout::Uk),
-            3 => Some(keymap::Layout::Fr),
+        match (self.physical, self.visual) {
+            (0, _) => Some(keymap::Layout::Us),
+            (1, 1) => Some(keymap::Layout::De),
+            (1, 2) => Some(keymap::Layout::Uk),
+            (1, 3) => Some(keymap::Layout::Fr),
             _ => None,
         }
     }
@@ -932,6 +936,19 @@ mod tests {
             ),
             (Some("ISO"), Some("German"), Some(keymap::Layout::De))
         );
+        let ansi = Layout::parse(&[0, 0]).unwrap();
+        assert_eq!(
+            (ansi.physical_name(), ansi.visual_name(), ansi.legends()),
+            (Some("ANSI"), Some("US"), Some(keymap::Layout::Us))
+        );
+        // the form wins over the legends; unknown combinations get none
+        assert_eq!(
+            Layout::parse(&[0, 1]).unwrap().legends(),
+            Some(keymap::Layout::Us)
+        );
+        assert_eq!(Layout::parse(&[1, 0]).unwrap().legends(), None);
+        assert_eq!(Layout::parse(&[1, 4]).unwrap().legends(), None);
+        assert_eq!(Layout::parse(&[2, 1]).unwrap().legends(), None);
         let pairs = parse_snap_tap(&[1, 0x1e, 0, 0x20, 0, 0]).unwrap();
         assert_eq!(
             pairs,

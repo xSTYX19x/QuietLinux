@@ -44,7 +44,8 @@ pub fn calibrate<T: Transport>(
     mut ask: impl FnMut(&Key) -> Answer,
 ) -> Result<Report, Error> {
     let previous = session.lighting_mode()?;
-    let all_off: Vec<Led> = layout::all_leds().map(|i| Led::new(i, OFF)).collect();
+    let form = session.form();
+    let all_off: Vec<Led> = layout::all_leds(form).map(|i| Led::new(i, OFF)).collect();
     session.set_leds(&all_off)?;
 
     let mut report = Report {
@@ -80,7 +81,7 @@ pub fn calibrate<T: Transport>(
 #[cfg(test)]
 mod tests {
     use quietlinux_core::device::fake::FakeKeyboard;
-    use quietlinux_core::keymap::{self, KEYS};
+    use quietlinux_core::keymap::{self, Form};
     use quietlinux_core::protocol::{self as p, Packet};
 
     use super::*;
@@ -106,7 +107,7 @@ mod tests {
         let mut kb = FakeKeyboard::tested();
         let keys: Vec<&Key> = ["Escape", "KeyQ", "Knob"]
             .iter()
-            .map(|c| keymap::by_code(c).unwrap())
+            .map(|c| keymap::by_code(c, Form::Iso).unwrap())
             .collect();
         let mut answers = vec![Answer::Match, Answer::Lit("A".into()), Answer::Match].into_iter();
         let mut session = Session::new(&mut kb, false).unwrap();
@@ -136,13 +137,34 @@ mod tests {
     #[test]
     fn stop() {
         let mut kb = FakeKeyboard::tested();
-        let keys: Vec<&Key> = KEYS.iter().collect();
+        let keys: Vec<&Key> = keymap::keys(Form::Iso).collect();
         let mut answers = vec![Answer::Match, Answer::Stop].into_iter();
         let mut session = Session::new(&mut kb, false).unwrap();
         let report = calibrate(&mut session, &keys, |_| answers.next().unwrap()).unwrap();
         assert_eq!(report.checked, 1);
         assert_eq!(report.mismatches.len(), 0);
         assert!(kb.leds.values().all(|&c| c == OFF));
+    }
+
+    #[test]
+    fn ansi_lights_its_backslash_key_and_not_the_iso_keys() {
+        let mut kb = FakeKeyboard::tested();
+        kb.answers.insert(p::GET_LAYOUT, vec![0, 0]); // ANSI, US
+        let keys: Vec<&Key> = ["BracketRight", "Backslash", "Enter"]
+            .iter()
+            .map(|c| keymap::by_code(c, Form::Ansi).unwrap())
+            .collect();
+        let mut session = Session::new(&mut kb, false).unwrap();
+        let report = calibrate(&mut session, &keys, |_| Answer::Match).unwrap();
+        assert_eq!(report.checked, 3);
+        let lit: Vec<Vec<u8>> = lit_sequence(&kb.received)
+            .into_iter()
+            .filter(|l| !l.is_empty())
+            .collect();
+        assert_eq!(lit, [vec![0x61], vec![0x62], vec![0x78]]);
+        // all LEDs off at the start: the ANSI ones, without the ISO keys
+        assert_eq!(kb.leds.len(), 165);
+        assert!(!kb.leds.contains_key(&0x77) && !kb.leds.contains_key(&0x7e));
     }
 
     #[test]

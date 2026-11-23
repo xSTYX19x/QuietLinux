@@ -6,7 +6,7 @@
 use quietlinux_core::config::{self, Snapshot};
 use quietlinux_core::device::{Identity, LightingMode, fmt_version};
 use quietlinux_core::info::Macro;
-use quietlinux_core::keymap::{self, KEYS, Layout};
+use quietlinux_core::keymap::{self, Form, Layout};
 use quietlinux_core::layout::Zone;
 use quietlinux_core::macros::{self, RepeatMode};
 use quietlinux_core::profile::Profiles;
@@ -55,6 +55,8 @@ pub fn snapshot(s: &Snapshot) -> Value {
         "model": s.model,
         "firmware": s.firmware,
         "layout": s.layout,
+        // which keys the keyboard has: "ISO", or "ANSI" (experimental)
+        "form": s.form.name(),
         "polling_rate": s.polling_rate,
         "lighting_mode": s.lighting_mode.to_string(),
         "game_mode": {
@@ -98,8 +100,9 @@ pub fn macro_detail(m: &Macro) -> Value {
     })
 }
 
+/// The keys of the form of `layout`.
 pub fn keys(layout: Layout) -> Value {
-    KEYS.iter()
+    keymap::keys(layout.form())
         .map(|k| {
             json!({
                 "led": format!("{:02x}", k.led),
@@ -110,11 +113,11 @@ pub fn keys(layout: Layout) -> Value {
         .collect()
 }
 
-pub fn zones() -> Value {
+pub fn zones(form: Form) -> Value {
     Zone::ALL
         .iter()
         .map(|z| {
-            let leds: Vec<String> = z.leds().map(|l| format!("{l:02x}")).collect();
+            let leds: Vec<String> = z.leds(form).map(|l| format!("{l:02x}")).collect();
             json!({ "name": z.name(), "leds": leds })
         })
         .collect()
@@ -147,6 +150,7 @@ mod tests {
             model: Some("Light Mount"),
             firmware: Some("2.3.0".to_owned()),
             layout: None,
+            form: Form::Iso,
             polling_rate: Some(1000),
             lighting_mode: LightingMode::General,
             game_mode_flags: 0x04,
@@ -170,7 +174,18 @@ mod tests {
         assert_eq!(v["game_mode"]["blocks"], json!(["win"]));
         assert_eq!(v["macros"][0]["repeat"], "once");
         assert_eq!(v["layout"], Value::Null);
+        assert_eq!(v["form"], "ISO");
         assert_eq!(keys(Layout::De)[0]["led"], "2d");
-        assert_eq!(zones()[0]["name"], "top");
+        assert_eq!(keys(Layout::De).as_array().unwrap().len(), 111);
+        let ansi = keys(Layout::Us);
+        assert_eq!(ansi.as_array().unwrap().len(), 110);
+        assert!(
+            ansi.as_array()
+                .unwrap()
+                .iter()
+                .any(|k| k["led"] == "62" && k["name"] == "Backslash" && k["legend"] == "\\ |")
+        );
+        assert_eq!(zones(Form::Iso)[0]["name"], "top");
+        assert_eq!(zones(Form::Ansi)[2]["leds"].as_array().unwrap().len(), 109);
     }
 }

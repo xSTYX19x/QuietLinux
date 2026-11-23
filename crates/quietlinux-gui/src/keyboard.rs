@@ -1,9 +1,12 @@
-//! Where each key is drawn: a schematic ISO layout in key units (1 u = 19 mm).
+//! Where each key is drawn: a schematic ISO or ANSI layout in key units (1 u = 19 mm).
 //!
 //! The positions in `keymap` are those of the LEDs, not always the key centers,
-//! so the rectangles are laid out row by row like a full-size ISO keyboard: the
+//! so the rectangles are laid out row by row like a full-size keyboard: the
 //! macro keys and the knob on the left, then the main block, the navigation keys
-//! and the number pad.
+//! and the number pad. ISO and ANSI differ in three rows of the main block; the
+//! ANSI sizes are the standard ones, not measured on a Light Mount.
+
+use quietlinux_core::keymap::Form;
 
 /// A key's rectangle in key units, from the top left corner.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -44,96 +47,168 @@ fn row_y(row: usize) -> f32 {
 /// Keys of one row of a block: (code, width in u); `None` leaves a gap.
 type Row = &'static [(Option<&'static str>, f32)];
 
-const MAIN: [Row; 6] = [
-    &[
-        (Some("Escape"), 1.0),
-        (None, 1.0),
-        (Some("F1"), 1.0),
-        (Some("F2"), 1.0),
-        (Some("F3"), 1.0),
-        (Some("F4"), 1.0),
-        (None, 0.5),
-        (Some("F5"), 1.0),
-        (Some("F6"), 1.0),
-        (Some("F7"), 1.0),
-        (Some("F8"), 1.0),
-        (None, 0.5),
-        (Some("F9"), 1.0),
-        (Some("F10"), 1.0),
-        (Some("F11"), 1.0),
-        (Some("F12"), 1.0),
-    ],
-    &[
-        (Some("Backquote"), 1.0),
-        (Some("Digit1"), 1.0),
-        (Some("Digit2"), 1.0),
-        (Some("Digit3"), 1.0),
-        (Some("Digit4"), 1.0),
-        (Some("Digit5"), 1.0),
-        (Some("Digit6"), 1.0),
-        (Some("Digit7"), 1.0),
-        (Some("Digit8"), 1.0),
-        (Some("Digit9"), 1.0),
-        (Some("Digit0"), 1.0),
-        (Some("Minus"), 1.0),
-        (Some("Equal"), 1.0),
-        (Some("Backspace"), 2.0),
-    ],
-    &[
-        (Some("Tab"), 1.5),
-        (Some("KeyQ"), 1.0),
-        (Some("KeyW"), 1.0),
-        (Some("KeyE"), 1.0),
-        (Some("KeyR"), 1.0),
-        (Some("KeyT"), 1.0),
-        (Some("KeyY"), 1.0),
-        (Some("KeyU"), 1.0),
-        (Some("KeyI"), 1.0),
-        (Some("KeyO"), 1.0),
-        (Some("KeyP"), 1.0),
-        (Some("BracketLeft"), 1.0),
-        (Some("BracketRight"), 1.0),
-    ],
-    &[
-        (Some("CapsLock"), 1.75),
-        (Some("KeyA"), 1.0),
-        (Some("KeyS"), 1.0),
-        (Some("KeyD"), 1.0),
-        (Some("KeyF"), 1.0),
-        (Some("KeyG"), 1.0),
-        (Some("KeyH"), 1.0),
-        (Some("KeyJ"), 1.0),
-        (Some("KeyK"), 1.0),
-        (Some("KeyL"), 1.0),
-        (Some("Semicolon"), 1.0),
-        (Some("Quote"), 1.0),
-        (Some("Backslash"), 1.0),
-    ],
-    &[
-        (Some("ShiftLeft"), 1.25),
-        (Some("IntlBackslash"), 1.0),
-        (Some("KeyZ"), 1.0),
-        (Some("KeyX"), 1.0),
-        (Some("KeyC"), 1.0),
-        (Some("KeyV"), 1.0),
-        (Some("KeyB"), 1.0),
-        (Some("KeyN"), 1.0),
-        (Some("KeyM"), 1.0),
-        (Some("Comma"), 1.0),
-        (Some("Period"), 1.0),
-        (Some("Slash"), 1.0),
-        (Some("ShiftRight"), 2.75),
-    ],
-    &[
-        (Some("ControlLeft"), 1.25),
-        (Some("MetaLeft"), 1.25),
-        (Some("AltLeft"), 1.25),
-        (Some("Space"), 6.25),
-        (Some("AltRight"), 1.25),
-        (Some("MetaRight"), 1.25),
-        (Some("Fn"), 1.25),
-        (Some("ControlRight"), 1.25),
-    ],
+const F_ROW: Row = &[
+    (Some("Escape"), 1.0),
+    (None, 1.0),
+    (Some("F1"), 1.0),
+    (Some("F2"), 1.0),
+    (Some("F3"), 1.0),
+    (Some("F4"), 1.0),
+    (None, 0.5),
+    (Some("F5"), 1.0),
+    (Some("F6"), 1.0),
+    (Some("F7"), 1.0),
+    (Some("F8"), 1.0),
+    (None, 0.5),
+    (Some("F9"), 1.0),
+    (Some("F10"), 1.0),
+    (Some("F11"), 1.0),
+    (Some("F12"), 1.0),
+];
+
+const DIGIT_ROW: Row = &[
+    (Some("Backquote"), 1.0),
+    (Some("Digit1"), 1.0),
+    (Some("Digit2"), 1.0),
+    (Some("Digit3"), 1.0),
+    (Some("Digit4"), 1.0),
+    (Some("Digit5"), 1.0),
+    (Some("Digit6"), 1.0),
+    (Some("Digit7"), 1.0),
+    (Some("Digit8"), 1.0),
+    (Some("Digit9"), 1.0),
+    (Some("Digit0"), 1.0),
+    (Some("Minus"), 1.0),
+    (Some("Equal"), 1.0),
+    (Some("Backspace"), 2.0),
+];
+
+const TAB_ROW_ISO: Row = &[
+    (Some("Tab"), 1.5),
+    (Some("KeyQ"), 1.0),
+    (Some("KeyW"), 1.0),
+    (Some("KeyE"), 1.0),
+    (Some("KeyR"), 1.0),
+    (Some("KeyT"), 1.0),
+    (Some("KeyY"), 1.0),
+    (Some("KeyU"), 1.0),
+    (Some("KeyI"), 1.0),
+    (Some("KeyO"), 1.0),
+    (Some("KeyP"), 1.0),
+    (Some("BracketLeft"), 1.0),
+    (Some("BracketRight"), 1.0),
+];
+
+const CAPS_ROW_ISO: Row = &[
+    (Some("CapsLock"), 1.75),
+    (Some("KeyA"), 1.0),
+    (Some("KeyS"), 1.0),
+    (Some("KeyD"), 1.0),
+    (Some("KeyF"), 1.0),
+    (Some("KeyG"), 1.0),
+    (Some("KeyH"), 1.0),
+    (Some("KeyJ"), 1.0),
+    (Some("KeyK"), 1.0),
+    (Some("KeyL"), 1.0),
+    (Some("Semicolon"), 1.0),
+    (Some("Quote"), 1.0),
+    (Some("Backslash"), 1.0),
+];
+
+const SHIFT_ROW_ISO: Row = &[
+    (Some("ShiftLeft"), 1.25),
+    (Some("IntlBackslash"), 1.0),
+    (Some("KeyZ"), 1.0),
+    (Some("KeyX"), 1.0),
+    (Some("KeyC"), 1.0),
+    (Some("KeyV"), 1.0),
+    (Some("KeyB"), 1.0),
+    (Some("KeyN"), 1.0),
+    (Some("KeyM"), 1.0),
+    (Some("Comma"), 1.0),
+    (Some("Period"), 1.0),
+    (Some("Slash"), 1.0),
+    (Some("ShiftRight"), 2.75),
+];
+
+const BOTTOM_ROW: Row = &[
+    (Some("ControlLeft"), 1.25),
+    (Some("MetaLeft"), 1.25),
+    (Some("AltLeft"), 1.25),
+    (Some("Space"), 6.25),
+    (Some("AltRight"), 1.25),
+    (Some("MetaRight"), 1.25),
+    (Some("Fn"), 1.25),
+    (Some("ControlRight"), 1.25),
+];
+
+/// ANSI: the backslash key (1.5 u) after the brackets.
+const TAB_ROW_ANSI: Row = &[
+    (Some("Tab"), 1.5),
+    (Some("KeyQ"), 1.0),
+    (Some("KeyW"), 1.0),
+    (Some("KeyE"), 1.0),
+    (Some("KeyR"), 1.0),
+    (Some("KeyT"), 1.0),
+    (Some("KeyY"), 1.0),
+    (Some("KeyU"), 1.0),
+    (Some("KeyI"), 1.0),
+    (Some("KeyO"), 1.0),
+    (Some("KeyP"), 1.0),
+    (Some("BracketLeft"), 1.0),
+    (Some("BracketRight"), 1.0),
+    (Some("Backslash"), 1.5),
+];
+
+/// ANSI: a flat Enter (2.25 u).
+const CAPS_ROW_ANSI: Row = &[
+    (Some("CapsLock"), 1.75),
+    (Some("KeyA"), 1.0),
+    (Some("KeyS"), 1.0),
+    (Some("KeyD"), 1.0),
+    (Some("KeyF"), 1.0),
+    (Some("KeyG"), 1.0),
+    (Some("KeyH"), 1.0),
+    (Some("KeyJ"), 1.0),
+    (Some("KeyK"), 1.0),
+    (Some("KeyL"), 1.0),
+    (Some("Semicolon"), 1.0),
+    (Some("Quote"), 1.0),
+    (Some("Enter"), 2.25),
+];
+
+/// ANSI: a long left Shift (2.25 u), no key right of it.
+const SHIFT_ROW_ANSI: Row = &[
+    (Some("ShiftLeft"), 2.25),
+    (Some("KeyZ"), 1.0),
+    (Some("KeyX"), 1.0),
+    (Some("KeyC"), 1.0),
+    (Some("KeyV"), 1.0),
+    (Some("KeyB"), 1.0),
+    (Some("KeyN"), 1.0),
+    (Some("KeyM"), 1.0),
+    (Some("Comma"), 1.0),
+    (Some("Period"), 1.0),
+    (Some("Slash"), 1.0),
+    (Some("ShiftRight"), 2.75),
+];
+
+const MAIN_ISO: [Row; 6] = [
+    F_ROW,
+    DIGIT_ROW,
+    TAB_ROW_ISO,
+    CAPS_ROW_ISO,
+    SHIFT_ROW_ISO,
+    BOTTOM_ROW,
+];
+
+const MAIN_ANSI: [Row; 6] = [
+    F_ROW,
+    DIGIT_ROW,
+    TAB_ROW_ANSI,
+    CAPS_ROW_ANSI,
+    SHIFT_ROW_ANSI,
+    BOTTOM_ROW,
 ];
 
 const NAV: [Row; 6] = [
@@ -212,8 +287,8 @@ fn block(out: &mut Vec<Cap>, rows: &[Row; 6], left: f32) {
     }
 }
 
-/// All keys and the knob.
-pub fn caps() -> Vec<Cap> {
+/// All keys and the knob of a keyboard of this form.
+pub fn caps(form: Form) -> Vec<Cap> {
     let mut out = vec![Cap {
         code: "Knob",
         x: MACRO_X,
@@ -232,16 +307,22 @@ pub fn caps() -> Vec<Cap> {
             round: false,
         });
     }
-    block(&mut out, &MAIN, MAIN_X);
-    // ISO Enter: right of `]` in the row of Tab, reaching into the row below
-    out.push(Cap {
-        code: "Enter",
-        x: MAIN_X + 13.75,
-        y: row_y(2),
-        w: 1.25,
-        h: 2.0,
-        round: false,
-    });
+    match form {
+        Form::Iso => {
+            block(&mut out, &MAIN_ISO, MAIN_X);
+            // ISO Enter: right of `]` in the row of Tab, reaching into the row below
+            out.push(Cap {
+                code: "Enter",
+                x: MAIN_X + 13.75,
+                y: row_y(2),
+                w: 1.25,
+                h: 2.0,
+                round: false,
+            });
+        }
+        // the ANSI Enter is in its row
+        Form::Ansi => block(&mut out, &MAIN_ANSI, MAIN_X),
+    }
     block(&mut out, &NAV, NAV_X);
     block(&mut out, &PAD, PAD_X);
     out
@@ -249,24 +330,46 @@ pub fn caps() -> Vec<Cap> {
 
 #[cfg(test)]
 mod tests {
-    use quietlinux_core::keymap::KEYS;
+    use quietlinux_core::keymap;
 
     use super::*;
 
     #[test]
     fn every_key_is_drawn_once() {
-        let caps = caps();
-        let mut drawn: Vec<&str> = caps.iter().map(|c| c.code).collect();
-        drawn.sort_unstable();
-        let mut keys: Vec<&str> = KEYS.iter().map(|k| k.code).collect();
-        keys.sort_unstable();
-        assert_eq!(drawn, keys);
+        for form in Form::ALL {
+            let caps = caps(form);
+            let mut drawn: Vec<&str> = caps.iter().map(|c| c.code).collect();
+            drawn.sort_unstable();
+            let mut keys: Vec<&str> = keymap::keys(form).map(|k| k.code).collect();
+            keys.sort_unstable();
+            assert_eq!(drawn, keys, "{form}");
+        }
+    }
+
+    #[test]
+    fn main_rows_are_as_wide_on_both_forms() {
+        let row_end = |form, code| {
+            let c = caps(form).into_iter().find(|c| c.code == code).unwrap();
+            c.x + c.w
+        };
+        for code in ["Backspace", "ShiftRight", "ControlRight"] {
+            assert!((row_end(Form::Iso, code) - row_end(Form::Ansi, code)).abs() < 1e-3);
+        }
+        // the ANSI backslash and Enter end where the ISO Enter does
+        let iso_enter = row_end(Form::Iso, "Enter");
+        assert!((row_end(Form::Ansi, "Backslash") - iso_enter).abs() < 1e-3);
+        assert!((row_end(Form::Ansi, "Enter") - iso_enter).abs() < 1e-3);
     }
 
     #[test]
     fn keys_stay_inside_and_do_not_overlap() {
-        let caps = caps();
-        for c in &caps {
+        for form in Form::ALL {
+            check_inside_and_apart(&caps(form));
+        }
+    }
+
+    fn check_inside_and_apart(caps: &[Cap]) {
+        for c in caps {
             assert!(c.x >= 0.0 && c.x + c.w <= WIDTH, "{}", c.code);
             assert!(c.y >= 0.0 && c.y + c.h <= HEIGHT, "{}", c.code);
         }

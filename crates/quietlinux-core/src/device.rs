@@ -22,6 +22,7 @@ use rustix::event::{PollFd, PollFlags, Timespec, poll};
 use crate::Rgb;
 use crate::hid_descriptor::{Usage, top_level_usage};
 use crate::info::Macro;
+use crate::keymap;
 
 /// Most `11:01` requests to read all bindings (each returns as many as fit).
 const MAX_BINDING_REQUESTS: usize = 32;
@@ -447,6 +448,12 @@ pub struct Session<T> {
     allow_unknown_firmware: bool,
     /// Notifications that arrived while waiting for a reply.
     notifications: VecDeque<Message>,
+    /// `07:01` asked yet.
+    layout_asked: bool,
+    /// `07:01` reply, if it gave one.
+    reported_layout: Option<crate::info::Layout>,
+    /// Keycap layout set by the user, used instead of the reported one.
+    layout_override: Option<keymap::Layout>,
 }
 
 /// Most notifications kept while waiting for replies.
@@ -480,6 +487,9 @@ impl<T: Transport> Session<T> {
             },
             allow_unknown_firmware,
             notifications: VecDeque::new(),
+            layout_asked: false,
+            reported_layout: None,
+            layout_override: None,
         };
         let id = session.next_request_id();
         session.identity.version = session.request(&p::get_device_info(id))?.data;
@@ -636,6 +646,36 @@ impl<T: Transport> Session<T> {
                 }
             }
         }
+    }
+
+    /// The layout the keyboard reports (`07:01`, asked once per session).
+    pub fn reported_layout(&mut self) -> Option<crate::info::Layout> {
+        if !self.layout_asked {
+            self.layout_asked = true;
+            self.reported_layout = self
+                .query(p::GET_LAYOUT, &[])
+                .ok()
+                .and_then(|m| crate::info::Layout::parse(&m.data));
+        }
+        self.reported_layout
+    }
+
+    /// Keycap legends of the keyboard: the ones set with [`Self::set_keyboard_layout`],
+    /// else those of the reported layout; `None` if QuietLinux has none for it.
+    pub fn keyboard_layout(&mut self) -> Option<keymap::Layout> {
+        self.layout_override
+            .or_else(|| self.reported_layout()?.legends())
+    }
+
+    /// Use these legends (and their form) instead of the reported layout.
+    pub fn set_keyboard_layout(&mut self, layout: keymap::Layout) {
+        self.layout_override = Some(layout);
+    }
+
+    /// Form of the keyboard: that of its layout, ISO (the reference keyboard) if unknown.
+    pub fn form(&mut self) -> keymap::Form {
+        self.keyboard_layout()
+            .map_or(keymap::Form::Iso, keymap::Layout::form)
     }
 
     /// Current lighting mode (`10:01`), read like IO Center does before any change.
@@ -798,13 +838,21 @@ impl<T: Transport> Session<T> {
     }
 
     /// Per-LED colors (`10:0d`, volatile), switching to realtime mode if needed.
+    /// LEDs the keyboard does not have ([`Self::form`]) are left out, such as
+    /// colors of an ISO keyboard's profile shown on an ANSI keyboard.
     pub fn set_leds(&mut self, leds: &[Led]) -> Result<()> {
         self.check_writable()?;
+        let form = self.form();
+        let leds: Vec<Led> = leds
+            .iter()
+            .copied()
+            .filter(|l| crate::layout::exists(l.index, form))
+            .collect();
         // Switching to realtime mode resets every LED: only do it when needed.
         if self.lighting_mode()? != LightingMode::Realtime {
             self.send_lighting_mode(p::MODE_REALTIME)?;
         }
-        for message in p::update(leds, self.request_id, self.sid) {
+        for message in p::update(&leds, self.request_id, self.sid) {
             self.next_request_id();
             self.send(&message)?;
             sleep(LED_MESSAGE_DELAY);
@@ -1246,23 +1294,55 @@ mod tests {
     }
 
     #[test]
+    fn layout_is_asked_once_and_leds_follow_the_form() {
+        let iso: Vec<Led> = crate::layout::all_leds(keymap::Form::Iso)
+            .map(|i| Led::new(i, Rgb::new(1, 2, 3)))
+            .collect();
+        // ANSI, US
+        let mut kb = FakeKeyboard::new(&KNOWN, p::MODE_REALTIME);
+        kb.answers.insert(p::GET_LAYOUT, vec![0, 0]);
+        let mut session = Session::with_request_id(&mut kb, false, 1).unwrap();
+        assert_eq!(session.keyboard_layout(), Some(keymap::Layout::Us));
+        assert_eq!(session.form(), keymap::Form::Ansi);
+        session.set_leds(&iso).unwrap();
+        let asked = kb.commands().iter().filter(|c| *c == "07:01").count();
+        assert_eq!(asked, 1);
+        // the ISO keys are left out
+        assert_eq!(kb.leds.len(), 164);
+        assert!(!kb.leds.contains_key(&0x77) && !kb.leds.contains_key(&0x7e));
+
+        // no answer: ISO, the reference keyboard
+        let mut kb = FakeKeyboard::new(&KNOWN, p::MODE_REALTIME);
+        let mut session = Session::with_request_id(&mut kb, false, 1).unwrap();
+        assert_eq!(session.keyboard_layout(), None);
+        assert_eq!(session.form(), keymap::Form::Iso);
+        // a layout set by the user wins
+        session.set_keyboard_layout(keymap::Layout::Us);
+        assert_eq!(session.form(), keymap::Form::Ansi);
+    }
+
+    #[test]
     fn set_leds_switches_to_custom_only_when_needed() {
-        let leds: Vec<Led> = crate::layout::all_leds()
+        let leds: Vec<Led> = crate::layout::all_leds(keymap::Form::Iso)
             .map(|i| Led::new(i, Rgb::new(1, 2, 3)))
             .collect();
 
         let mut kb = FakeKeyboard::new(&KNOWN, p::MODE_GENERAL);
+        kb.answers.insert(p::GET_LAYOUT, vec![1, 1]);
         let mut session = Session::with_request_id(&mut kb, false, 1).unwrap();
         session.set_leds(&leds).unwrap();
         assert_eq!(
             kb.commands(),
             [
-                "03:01", "10:01", "10:02", "10:0d", "10:0d", "10:0d", "10:0d", "10:0d"
+                "03:01", "07:01", "10:01", "10:02", "10:0d", "10:0d", "10:0d", "10:0d", "10:0d"
             ]
         );
+        assert_eq!(kb.leds.len(), 166);
 
+        // a set layout is not asked for
         let mut kb = FakeKeyboard::new(&KNOWN, p::MODE_REALTIME);
         let mut session = Session::with_request_id(&mut kb, false, 1).unwrap();
+        session.set_keyboard_layout(keymap::Layout::De);
         session.set_leds(&leds).unwrap();
         assert_eq!(
             kb.commands(),

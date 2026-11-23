@@ -4,6 +4,43 @@ All notable changes to QuietLinux. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [0.3.0] - 2026-11-23
+
+ANSI keyboards, **experimental**. The ANSI US key map comes from
+[bbossa's lightmount](https://github.com/bbossa/keyboard_bequiet_lightmount_rgb)
+0.3.0/0.3.1, where an owner of an ANSI US Light Mount confirmed it key by key
+with `lightmount calibrate`. It has not been confirmed with QuietLinux yet:
+QuietLinux says so wherever it is used. Reports from ANSI owners are welcome
+(`quietlinux info` and `quietlinux calibrate`, see
+[docs/contributing.md](docs/contributing.md#device-reports)). Nothing changes
+for ISO keyboards.
+
+### Added
+
+- **ANSI keyboards (experimental)**: QuietLinux knows which keys an ANSI
+  keyboard has: `Backslash` is the key above Enter (LED `62`), there is no
+  `IntlBackslash`, Enter is flat and the left Shift long (110 keys with the
+  knob, ISO: 111). US legends (`--layout us`)
+- The form is read from the layout the keyboard reports (`07:01`); `--layout us`
+  sets it when an ANSI keyboard is not recognized
+- The command line prints a note on stderr when a command uses the keys of an
+  ANSI keyboard; `info` shows `Layout: ANSI, US (experimental in QuietLinux)`
+- The window draws the ANSI keyboard, shows "ANSI keyboard: experimental" in
+  the title line and explains it on the Keys tab; `--demo-layout us` simulates
+  an ANSI keyboard
+- JSON: `info` has `form` (`ISO` or `ANSI`)
+
+### Changed
+
+- `--layout` now also decides which keys there are (`us`: ANSI) and replaces
+  the reported layout for every command, not only for what is displayed
+- `keys` and `zones` say which form they list; `calibrate` checks the keys of
+  the keyboard's form
+- Per-key colors are sent only to LEDs the keyboard has: a profile or layout
+  from a keyboard of the other form shows what fits. `apply` and
+  `profile switch` leave out bindings of keys the keyboard does not have, with
+  a note
+
 ## [0.2.2] - 2026-11-23
 
 An update of a library the window is built with, for a security advisory.
@@ -134,6 +171,7 @@ layout, firmware 2.3.0; other firmware versions are read-only unless
 - Website keys open only `http(s)` addresses, without a shell, at most one a
   second
 
+[0.3.0]: https://github.com/xSTYX19x/QuietLinux/releases/tag/v0.3.0
 [0.2.2]: https://github.com/xSTYX19x/QuietLinux/releases/tag/v0.2.2
 [0.2.1]: https://github.com/xSTYX19x/QuietLinux/releases/tag/v0.2.1
 [0.2.0]: https://github.com/xSTYX19x/QuietLinux/releases/tag/v0.2.0

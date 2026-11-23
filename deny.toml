@@ -14,6 +14,8 @@ ignore = [
     { id = "RUSTSEC-2026-0370", reason = "zvariant: part of zbus 5, which Slint's winit backend uses for desktop settings; merged into zbus 6, which Slint does not use yet" },
     { id = "RUSTSEC-2026-0371", reason = "zbus_names: as zvariant, merged into zbus 6" },
     { id = "RUSTSEC-2026-0372", reason = "zvariant_derive: as zvariant, merged into zbus 6" },
+    { id = "RUSTSEC-2026-0441", reason = "pin-utils: through spin_on, which slint-build and slint-macros run at compile time only; not in the programs" },
+    { id = "RUSTSEC-2026-0543", reason = "chrono: i-slint-core uses it for date and time functions; Slint 1.19 needs Rust 1.95, check again when moving to it" },
 ]
 
 [licenses]
